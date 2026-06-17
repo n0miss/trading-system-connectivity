@@ -1,2 +1,11 @@
-// Binance JSON WebSocket decoder.
-// Populated in Stage 2.7.
+mod error;
+mod spot;
+
+pub use error::JsonError;
+pub use spot::{
+    parse_spot_message,
+    SpotBookTicker,
+    SpotDepthUpdate,
+    SpotEvent,
+    SpotTrade,
+};
