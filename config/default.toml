@@ -1,0 +1,49 @@
+# Crypto CEX market data connector — default configuration
+# Override any value with environment variables:
+#   CONNECTOR__INSTANCE__ID=1
+#   CONNECTOR__SYMBOLS__UNIVERSE=BTCUSDT,ETHUSDT
+
+[instance]
+id     = 0        # zero-based; must be < total
+total  = 1
+venue  = "binance_spot"   # binance_spot | binance_futures
+market = "spot"            # spot | usdm_futures
+
+[sharding]
+# Fixed for a deployment generation. 16 = small, 64 = medium, 128+ = large.
+total_logical_shards = 16
+
+[symbols]
+# Empty = auto-discover from exchange info at startup.
+universe = []
+
+[aeron]
+media_driver_dir = "/dev/shm/aeron"
+ipc_enabled      = true
+# udp_endpoint   = "10.0.0.2:40123"   # uncomment for cross-host consumers
+mtu              = 1408   # bytes; must be in 576..=65535
+term_length_mib  = 64     # must be a power of two
+archive_enabled  = false
+
+[websocket]
+url                        = "wss://stream.binance.com:9443/stream"
+ping_interval_secs         = 20
+max_streams_per_connection = 1024
+reconnect_delay_ms         = 500
+forced_reconnect_secs      = 86400   # Binance 24 h limit
+
+[rest]
+base_url    = "https://api.binance.com"
+timeout_ms  = 5000
+max_retries = 3
+
+[recovery]
+# Per-symbol recovery buffer limits (addendum §1.3)
+max_buffered_events          = 2048
+max_buffered_bytes           = 4194304   # 4 MiB
+max_buffer_age_secs          = 10
+max_recovery_attempts        = 5
+circuit_break_cooldown_secs  = 30
+
+[metrics]
+prometheus_port = 9090
