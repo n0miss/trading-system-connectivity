@@ -8,6 +8,7 @@ use crate::{
 };
 
 /// REST client for fetching Binance exchange info.
+#[derive(Clone)]
 pub struct RestClient {
     http:     Client,
     base_url: String,

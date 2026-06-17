@@ -8,6 +8,8 @@ pub mod recovery;
 pub mod circuit_breaker;
 pub mod bbo_validator;
 pub mod snapshot_validator;
+pub mod symbol_state;
+pub mod shard_engine;
 
 pub use error::AdapterError;
 pub use stream::{SpotStream, build_url};
@@ -15,10 +17,12 @@ pub use connection_manager::{ConnectionManager, RawFrame};
 pub use normalizer::{NormalizeCtx, NormalizeError, normalize_spot_event};
 pub use sequence::{SequenceValidator, ValidateResult, ValidationState};
 pub use recovery_buffer::{BufferedDelta, OverflowReason, PushResult, RecoveryBuffer};
-pub use recovery::{RecoveryError, RecoveryOutcome, run_spot_recovery};
+pub use recovery::{RecoveryError, RecoveryOutcome, apply_spot_snapshot, run_spot_recovery};
 pub use circuit_breaker::{CircuitBreaker, CircuitState};
 pub use bbo_validator::{BboValidator, BboCheckResult};
 pub use snapshot_validator::{
     check_snapshot, SnapshotCheckResult, SnapshotValidatorConfig,
     INTERVAL_SECS as SNAPSHOT_INTERVAL_SECS,
 };
+pub use symbol_state::SymbolState;
+pub use shard_engine::ShardEngine;
