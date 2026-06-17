@@ -1,2 +1,7 @@
-// Binance Spot WebSocket connection manager and normalizer.
-// Populated in Stage 2.6.
+mod error;
+mod stream;
+mod connection_manager;
+
+pub use error::AdapterError;
+pub use stream::{SpotStream, build_url};
+pub use connection_manager::{ConnectionManager, RawFrame};
