@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use connector_core::{BookDelta, BookSnapshot, PriceLevel};
+use connector_core::{BookDelta, BookSnapshot, BookStaleReason, PriceLevel};
 
 // ---------------------------------------------------------------------------
 // OrderBook
@@ -13,7 +13,11 @@ use connector_core::{BookDelta, BookSnapshot, PriceLevel};
 /// lowest price = `min_key`). A `qty` of zero signals level removal; the book
 /// enforces this invariant — zero-qty entries are never retained.
 ///
-/// No sequence validation is performed here (Stage 3).
+/// Staleness is tracked separately from the level data so the recovery
+/// procedure (Stage 3.14) can apply a snapshot and then explicitly call
+/// [`mark_recovered`] when all conditions are met.
+///
+/// [`mark_recovered`]: OrderBook::mark_recovered
 pub struct OrderBook {
     /// price → qty, best bid = maximum key.
     bids: BTreeMap<i64, i64>,
@@ -21,6 +25,8 @@ pub struct OrderBook {
     asks: BTreeMap<i64, i64>,
     symbol:         String,
     last_update_id: u64,
+    stale:          bool,
+    stale_reason:   Option<BookStaleReason>,
 }
 
 impl OrderBook {
@@ -30,6 +36,8 @@ impl OrderBook {
             asks:           BTreeMap::new(),
             symbol:         symbol.into(),
             last_update_id: 0,
+            stale:          false,
+            stale_reason:   None,
         }
     }
 
@@ -40,6 +48,8 @@ impl OrderBook {
     pub fn bid_depth(&self)      -> usize { self.bids.len() }
     pub fn ask_depth(&self)      -> usize { self.asks.len() }
     pub fn is_empty(&self)       -> bool  { self.bids.is_empty() && self.asks.is_empty() }
+    pub fn is_stale(&self)       -> bool  { self.stale }
+    pub fn stale_reason(&self)   -> Option<BookStaleReason> { self.stale_reason }
 
     /// Best (highest-price) bid level, or `None` if the bid side is empty.
     pub fn best_bid(&self) -> Option<PriceLevel> {
@@ -59,6 +69,24 @@ impl OrderBook {
     /// Iterate asks in ascending price order (best first).
     pub fn asks(&self) -> impl Iterator<Item = PriceLevel> + '_ {
         self.asks.iter().map(|(&price, &qty)| PriceLevel { price, qty })
+    }
+
+    // --- Staleness ---
+
+    /// Mark the book as stale with the given reason.
+    ///
+    /// The level data is preserved so recovery (Stage 3.14) can inspect it,
+    /// but callers should not rely on the levels being accurate while stale.
+    pub fn mark_stale(&mut self, reason: BookStaleReason) {
+        self.stale        = true;
+        self.stale_reason = Some(reason);
+    }
+
+    /// Clear the stale flag.  Call this after the recovery procedure has
+    /// successfully re-synchronised the book (Stage 3.14).
+    pub fn mark_recovered(&mut self) {
+        self.stale        = false;
+        self.stale_reason = None;
     }
 
     // --- Mutations ---
@@ -113,7 +141,8 @@ fn apply_levels(side: &mut BTreeMap<i64, i64>, levels: &[PriceLevel]) {
 mod tests {
     use super::*;
     use connector_core::{
-        MarketType, MessageHeader, MessageType, VenueId, SCHEMA_VERSION, TS_NONE, UPDATE_ID_NONE,
+        BookStaleReason, MarketType, MessageHeader, MessageType, VenueId,
+        SCHEMA_VERSION, TS_NONE, UPDATE_ID_NONE,
     };
 
     fn hdr(msg_type: MessageType) -> MessageHeader {
@@ -342,5 +371,48 @@ mod tests {
     fn symbol_is_preserved() {
         let book = OrderBook::new("SOLUSDT");
         assert_eq!(book.symbol(), "SOLUSDT");
+    }
+
+    // --- staleness ---
+
+    #[test]
+    fn new_book_is_not_stale() {
+        let book = OrderBook::new("BTCUSDT");
+        assert!(!book.is_stale());
+        assert_eq!(book.stale_reason(), None);
+    }
+
+    #[test]
+    fn mark_stale_sets_flag_and_reason() {
+        let mut book = OrderBook::new("BTCUSDT");
+        book.mark_stale(BookStaleReason::SequenceGap);
+        assert!(book.is_stale());
+        assert_eq!(book.stale_reason(), Some(BookStaleReason::SequenceGap));
+    }
+
+    #[test]
+    fn mark_recovered_clears_stale_flag() {
+        let mut book = OrderBook::new("BTCUSDT");
+        book.mark_stale(BookStaleReason::SequenceGap);
+        book.mark_recovered();
+        assert!(!book.is_stale());
+        assert_eq!(book.stale_reason(), None);
+    }
+
+    #[test]
+    fn mark_stale_does_not_erase_level_data() {
+        let mut book = OrderBook::new("BTCUSDT");
+        book.apply_delta(&delta(vec![level(100, 10)], vec![level(101, 5)], 1));
+        book.mark_stale(BookStaleReason::WebSocketReconnect);
+        assert_eq!(book.bid_depth(), 1);
+        assert_eq!(book.ask_depth(), 1);
+    }
+
+    #[test]
+    fn mark_stale_can_be_overwritten_with_different_reason() {
+        let mut book = OrderBook::new("BTCUSDT");
+        book.mark_stale(BookStaleReason::SequenceGap);
+        book.mark_stale(BookStaleReason::BboMismatch);
+        assert_eq!(book.stale_reason(), Some(BookStaleReason::BboMismatch));
     }
 }

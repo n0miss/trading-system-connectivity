@@ -1,15 +1,21 @@
-//! Stage 2.11 — End-to-end smoke test: live Binance Spot → normalizer → order book.
+//! Stage 2.11 / 3.12 — End-to-end smoke test: live Binance Spot → normalizer → order book.
 //!
 //! Pipeline:
 //!   Binance REST  →  InstrumentDefinition (price/qty scales)
 //!   Binance WS    →  RawFrame
-//!                 →  parse_spot_message   (SpotEvent)
-//!                 →  normalize_spot_event (NormalizedMessage)
-//!                 →  OrderBook::apply_delta
+//!                 →  parse_spot_message    (SpotEvent)
+//!                 →  normalize_spot_event  (NormalizedMessage)
+//!                 →  SequenceValidator     (U/u rules §2.2)
+//!                 →  OrderBook::apply_delta / mark_stale
 //!                 →  ShardedPublisher::offer  (NullPublication — counts without I/O)
 //!
 //! Subscribes to BTCUSDT bookTicker, depth@100ms, and trade streams for 30 s
 //! (or Ctrl-C), printing per-second stats to stdout.
+//!
+//! NOTE (Stage 3.12): The sequence validator is seeded with the first delta's
+//! `first_update_id - 1` as a synthetic snapshot so the smoke test runs without
+//! a REST depth-snapshot fetch.  Proper initialisation (REST snapshot → bridge)
+//! is implemented in Stage 3.14.
 //!
 //!   cargo run --example spot_e2e
 
@@ -20,11 +26,11 @@ use tokio::sync::{mpsc, watch};
 
 use binance_spot_adapter::{
     build_url as ws_build_url, normalize_spot_event, ConnectionManager, NormalizeCtx, RawFrame,
-    SpotStream,
+    SequenceValidator, SpotStream, ValidateResult,
 };
 use connector_aeron::build_null;
 use connector_config::WebSocketConfig;
-use connector_core::{MarketType, NormalizedMessage, VenueId};
+use connector_core::{BookStaleReason, MarketType, NormalizedMessage, VenueId};
 use connector_order_book::OrderBook;
 use connector_refdata::RestClient;
 use protocol_json::parse_spot_message;
@@ -99,6 +105,7 @@ async fn main() -> anyhow::Result<()> {
     // Single shard (shard 0) for this smoke test.
     let mut publisher   = build_null(&[0]);
     let mut book        = OrderBook::new(SYMBOL);
+    let mut validator   = SequenceValidator::new();
     let mut seq         = 0u64;
     let mut encode_buf  = vec![0u8; 8 * 1024];
 
@@ -118,6 +125,7 @@ async fn main() -> anyhow::Result<()> {
     let mut msgs_this_sec: u64          = 0;
     let mut trade_count:   u64          = 0;
     let mut parse_errors:  u64          = 0;
+    let mut gap_count:     u64          = 0;
     let mut bbo:           Option<Bbo>  = None;
 
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
@@ -147,13 +155,14 @@ async fn main() -> anyhow::Result<()> {
             }
 
             _ = ticker.tick() => {
-                let pub0 = publisher.publication(0).unwrap();
+                let pub0     = publisher.publication(0).unwrap();
                 let book_bid = book.best_bid();
                 let book_ask = book.best_ask();
+                let stale_tag = if book.is_stale() { " [STALE]" } else { "" };
 
                 println!(
                     "{:>6} msg/s | {:>8} total | {} | trades {:>5} | \
-                     book bid={} ask={} ({}/{}lvls) | \
+                     book bid={} ask={} ({}/{}lvls){} | gaps {} | \
                      pub {}/{} B",
                     msgs_this_sec,
                     total_msgs,
@@ -163,6 +172,8 @@ async fn main() -> anyhow::Result<()> {
                     book_ask.map(|l| fmt(l.price, inst.price_scale)).as_deref().unwrap_or("–"),
                     book.bid_depth(),
                     book.ask_depth(),
+                    stale_tag,
+                    gap_count,
                     pub0.messages_offered,
                     pub0.bytes_offered,
                 );
@@ -196,7 +207,35 @@ async fn main() -> anyhow::Result<()> {
                 // --- apply to book / capture stats ---
                 match &msg {
                     NormalizedMessage::BookDelta(bd) => {
-                        book.apply_delta(bd);
+                        // Seed the validator on the very first delta (smoke-test
+                        // simplification — proper REST-snapshot init is Stage 3.14).
+                        if validator.last_valid_id().is_none() {
+                            validator.on_snapshot(bd.first_update_id.saturating_sub(1));
+                        }
+
+                        match validator.validate(bd.first_update_id, bd.final_update_id) {
+                            ValidateResult::Apply => {
+                                if book.is_stale() {
+                                    // Should not happen in this simplified flow,
+                                    // but guard just in case.
+                                } else {
+                                    book.apply_delta(bd);
+                                }
+                            }
+                            ValidateResult::Gap { expected, actual, last_valid } => {
+                                gap_count += 1;
+                                tracing::warn!(
+                                    expected,
+                                    actual,
+                                    last_valid,
+                                    gap = actual - expected,
+                                    "sequence gap — marking book stale (TODO Stage 3.14: recovery)",
+                                );
+                                book.mark_stale(BookStaleReason::SequenceGap);
+                            }
+                            ValidateResult::Discard => {}
+                            ValidateResult::Buffering => {}
+                        }
                     }
                     NormalizedMessage::BestBidOffer(b) => {
                         bbo = Some(Bbo {
@@ -237,6 +276,8 @@ async fn main() -> anyhow::Result<()> {
     println!("Final summary");
     println!("  messages processed : {total_msgs}");
     println!("  trades             : {trade_count}");
+    println!("  sequence gaps      : {gap_count}");
+    println!("  book stale         : {}", book.is_stale());
     println!("  parse errors       : {parse_errors}");
     println!("  book bid levels    : {}", book.bid_depth());
     println!("  book ask levels    : {}", book.ask_depth());
