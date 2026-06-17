@@ -8,11 +8,15 @@ name = "connector"
 path = "src/main.rs"
 
 [dependencies]
-connector-core    = { workspace = true }
-connector-config  = { workspace = true }
-connector-refdata = { workspace = true }
-anyhow            = { workspace = true }
-tokio             = { workspace = true }
-tracing           = { workspace = true }
-tracing-subscriber = { workspace = true }
-clap              = { workspace = true }
+connector-core       = { workspace = true }
+connector-config     = { workspace = true }
+connector-refdata    = { workspace = true }
+connector-order-book = { workspace = true }
+connector-aeron      = { workspace = true }
+binance-spot-adapter = { workspace = true }
+protocol-json        = { workspace = true }
+anyhow               = { workspace = true }
+tokio                = { workspace = true }
+tracing              = { workspace = true }
+tracing-subscriber   = { workspace = true }
+clap                 = { workspace = true }
