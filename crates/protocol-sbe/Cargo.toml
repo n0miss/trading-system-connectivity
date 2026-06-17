@@ -1,0 +1,8 @@
+[package]
+name    = "protocol-sbe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+connector-core = { workspace = true }
+thiserror      = { workspace = true }

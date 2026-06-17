@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/connector-core",
+    "crates/connector-config",
+    "crates/protocol-json",
+    "crates/protocol-sbe",
+    "crates/order-book",
+    "crates/refdata",
+    "crates/aeron-publisher",
+    "crates/metrics",
+    "crates/replay",
+    "crates/binance-spot-adapter",
+    "crates/binance-futures-adapter",
+    "bin/connector",
+]
+
+[workspace.dependencies]
+connector-core       = { path = "crates/connector-core" }
+connector-config     = { path = "crates/connector-config" }
+protocol-json        = { path = "crates/protocol-json" }
+protocol-sbe         = { path = "crates/protocol-sbe" }
+connector-order-book = { path = "crates/order-book" }
+connector-refdata    = { path = "crates/refdata" }
+connector-aeron      = { path = "crates/aeron-publisher" }
+connector-metrics    = { path = "crates/metrics" }
+connector-replay     = { path = "crates/replay" }
+binance-spot-adapter    = { path = "crates/binance-spot-adapter" }
+binance-futures-adapter = { path = "crates/binance-futures-adapter" }
+
+anyhow              = "1"
+thiserror           = "2"
+tokio               = { version = "1", features = ["full"] }
+tracing             = "0.1"
+tracing-subscriber  = { version = "0.3", features = ["env-filter", "json"] }
+serde               = { version = "1", features = ["derive"] }
+serde_json          = "1"
+clap                = { version = "4", features = ["derive"] }
+config              = "0.14"

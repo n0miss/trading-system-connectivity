@@ -1,0 +1,9 @@
+[package]
+name    = "connector-replay"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+connector-core = { workspace = true }
+thiserror      = { workspace = true }
+tokio          = { workspace = true }

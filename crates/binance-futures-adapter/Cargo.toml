@@ -1,0 +1,12 @@
+[package]
+name    = "binance-futures-adapter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+connector-core   = { workspace = true }
+connector-config = { workspace = true }
+protocol-json    = { workspace = true }
+thiserror        = { workspace = true }
+tokio            = { workspace = true }
+tracing          = { workspace = true }

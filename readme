@@ -1,0 +1,921 @@
+Crypto CEX Market Data Connectivity — Specification v0.1
+1. Objective
+Build a high-performance Rust connectivity service for crypto centralized exchanges, starting with Binance Spot and Binance Futures.
+
+The service must collect live market data, normalize it into internal binary messages, publish it to trading algorithms through Aeron, and provide enough redundancy, observability, and replay capability for high-frequency trading use cases.
+
+2. Initial Scope
+Phase 1 — Binance Market Data
+Supported venues:
+
+Binance Spot
+Binance USD-M Futures
+Supported protocols:
+
+WebSocket JSON
+Binance Spot SBE market data where available
+REST API for snapshots, reference data, and recovery
+Supported outbound transport:
+
+Aeron IPC for local same-host consumers
+Aeron UDP for cross-host consumers
+Aeron Archive for recording/replay, if enabled
+3. Required Data Feeds
+3.1 Critical Live Feeds
+Best Bid/Offer
+Purpose:
+
+Fast top-of-book view
+Spread monitoring
+Simple market making
+Cross-exchange arbitrage
+Health checks against full local book
+Required fields:
+
+venue
+market type: spot, futures
+symbol
+exchange event timestamp
+local receive timestamp
+best bid price
+best bid quantity
+best ask price
+best ask quantity
+exchange update id, where available
+Priority: Mandatory.
+
+L2 Incremental Order Book
+Purpose:
+
+Maintain local order book
+Compute order book imbalance
+Detect pressure, queue changes, liquidity withdrawal
+Feed execution algos and alpha models
+Required fields:
+
+venue
+symbol
+first update id
+final update id
+previous update id, where available
+exchange event timestamp
+exchange transaction timestamp, where available
+local receive timestamp
+bid updates: price, quantity
+ask updates: price, quantity
+Priority: Mandatory.
+
+The system must validate sequence continuity. If a sequence gap is detected, the local book must be marked stale and rebuilt from a fresh REST snapshot plus buffered WebSocket updates.
+
+Trades
+Purpose:
+
+Aggressor flow
+Short-term momentum
+Trade imbalance
+Toxicity detection
+VWAP and micro-price features
+Required fields:
+
+venue
+symbol
+trade id or aggregate trade id
+price
+quantity
+trade timestamp
+local receive timestamp
+aggressor side if derivable
+buyer-is-maker flag if provided
+Priority: Mandatory.
+
+For Spot, prefer raw trade stream when available. Aggregate trades can be collected as an additional lower-volume feed. For Futures, aggregate trade stream is required.
+
+3.2 Derivatives-Specific Feeds
+Mark Price / Index Price / Funding Rate
+Purpose:
+
+Futures fair value
+Liquidation risk
+Basis and funding models
+Risk checks before sending orders
+Required fields:
+
+symbol
+mark price
+index price
+funding rate
+next funding time
+exchange event timestamp
+local receive timestamp
+Priority: Mandatory for futures.
+
+Liquidation Stream
+Purpose:
+
+Stress detection
+Market regime detection
+Short-term directional signals
+Volatility and liquidity-risk monitoring
+Required fields:
+
+symbol
+side
+order type
+time in force
+original quantity
+price
+average price
+order status
+last filled quantity
+exchange event timestamp
+local receive timestamp
+Priority: Recommended for futures.
+
+Open Interest and Long/Short Data
+Purpose:
+
+Medium-frequency risk and regime signals
+Funding/basis models
+Positioning context
+Collection mode:
+
+REST polling
+Not part of the lowest-latency path
+Priority: Optional in Phase 1, recommended in Phase 2.
+
+3.3 Reference and State Data
+Instrument Metadata
+Purpose:
+
+Normalize all symbols into internal instrument ids
+Validate price and quantity precision
+Validate tick size, step size, min notional, contract type, status
+Required fields:
+
+venue
+symbol
+base asset
+quote asset
+market type
+tick size
+step size
+min quantity
+min notional
+contract size, where applicable
+trading status
+onboard/delist timestamps, where applicable
+Collection mode:
+
+REST at startup
+Periodic refresh
+Refresh on detected symbol-status change
+Priority: Mandatory.
+
+Order Book Snapshots
+Purpose:
+
+Build initial local book
+Recover after sequence gap
+Periodic book validation
+Required fields:
+
+symbol
+snapshot update id
+bid levels
+ask levels
+local receive timestamp
+Priority: Mandatory.
+
+3.4 Private Account and Execution Feeds
+These are required once the system sends orders.
+
+Required events:
+
+Order accepted
+Order rejected
+Order canceled
+Order expired
+Trade execution
+Partial fill
+Full fill
+Balance update
+Position update
+Margin update
+Funding fee update
+Priority: Not required for market-data-only Phase 1, mandatory before live trading.
+
+4. Normalized Internal Message Model
+All outbound messages must be binary encoded and versioned.
+
+Common header:
+
+schema version
+message type
+venue id
+market type
+instrument id
+source connection id
+publisher instance id
+sequence number
+exchange event timestamp
+exchange transaction timestamp, optional
+local receive timestamp
+local publish timestamp
+Message types:
+
+InstrumentDefinition
+TradingStatus
+BookSnapshot
+BookDelta
+BestBidOffer
+Trade
+MarkPrice
+FundingRate
+Liquidation
+OpenInterest
+AccountUpdate
+OrderUpdate
+Heartbeat
+FeedStatus
+GapDetected
+BookStale
+BookRecovered
+Numeric representation:
+
+Prices and quantities must not use floating point.
+Use scaled integers or fixed-point decimals.
+Each instrument definition must define price scale and quantity scale.
+5. Connectivity Process Design
+Each connector instance contains:
+
+Connection manager Handles WebSocket lifecycle, reconnects, ping/pong, subscription state, and forced 24-hour reconnects.
+
+REST client Fetches exchange info, depth snapshots, server time, open interest, and recovery data.
+
+Decoder Parses JSON or SBE into exchange-native structs.
+
+Normalizer Converts exchange-native messages into internal messages.
+
+Order book engine Maintains local L2 book per symbol, validates update sequence, detects gaps, and handles rebuild.
+
+Publisher Publishes normalized messages to Aeron.
+
+Recorder Optionally writes raw inbound messages and normalized outbound messages to local storage or Aeron Archive.
+
+Metrics and health module Publishes latency, message rate, reconnect count, stale books, dropped messages, and sequence gaps.
+
+6. Aeron Publication Layout
+Recommended initial layout:
+
+One Aeron stream for normalized market data per venue/market/shard.
+One Aeron stream for feed status.
+One Aeron stream for reference data.
+One Aeron stream for private execution/account data.
+Optional raw-data stream for recording/debugging.
+Example stream split:
+
+binance.spot.md.shard.0
+binance.spot.md.shard.1
+binance.usdm.md.shard.0
+binance.usdm.md.shard.1
+binance.refdata
+binance.status
+binance.private
+Each shard must have a single logical publisher to preserve deterministic sequence ordering.
+
+7. Sharding Model
+Symbols are assigned to connector shards using deterministic hashing:
+
+instrument_id % total_shards == shard_id
+
+Each instance receives:
+
+instance_id
+total_instances
+venue
+market type
+symbol universe
+shard assignment
+The assignment must be deterministic so that active/standby and replay systems can reproduce the same routing.
+
+8. Redundancy Model
+Phase 1 redundancy:
+
+Active/passive per shard.
+Passive instance connects and validates data but does not publish as primary.
+Passive can publish to a shadow Aeron stream for comparison.
+Phase 2 redundancy:
+
+Active/active duplicate collectors.
+Downstream sequencer or arbiter selects the best feed per instrument.
+Duplicate detection based on exchange update id and event timestamp.
+Automatic failover when primary feed is stale.
+Required feed states:
+
+Connecting
+Live
+Degraded
+Stale
+Recovering
+Recovered
+Failed
+9. Latency Requirements
+Every message must carry at least:
+
+exchange event timestamp
+local receive timestamp
+local publish timestamp
+Metrics:
+
+exchange event to local receive latency
+local receive to publish latency
+publish to algo receive latency
+sequence gap count
+reconnect count
+stale book count
+messages per second
+bytes per second
+parse time
+normalization time
+Aeron offer failure/backpressure count
+Initial target:
+
+Avoid allocations in hot path after startup.
+Avoid floating point conversion in hot path.
+Avoid string symbol lookup in hot path.
+Publish binary messages with preallocated buffers.
+Pin hot feed threads where possible.
+Use bounded queues only where strictly necessary.
+10. AWS Deployment
+Recommended initial topology:
+
+One Auto Scaling group or ECS service per venue/market type.
+Instances deployed in a low-latency placement group when algorithms consume data in the same Availability Zone.
+Separate redundancy group in another Availability Zone for disaster recovery.
+Time synchronization configured on every host.
+Metrics exported to Prometheus-compatible monitoring.
+Logs written asynchronously and never on the hot path.
+For lowest latency:
+
+Benchmark AWS regions empirically against Binance endpoints.
+Keep connector and algo processes in the same Availability Zone when using Aeron UDP.
+Prefer Aeron IPC for same-host communication.
+Use dedicated instances or isolated hosts for production trading.
+Disable unnecessary OS services.
+Tune CPU governor, NIC queues, socket buffers, and kernel networking parameters.
+11. Rust Implementation Requirements
+Runtime:
+
+Rust stable
+Linux x86_64
+Tokio or equivalent only for network I/O
+Hot-path processing should avoid unnecessary async boundaries
+Performance requirements:
+
+Preallocated buffers
+Zero-copy parsing where possible
+No heap allocation in steady-state book updates
+Fixed-point numeric representation
+Lock-free or single-writer data structures in hot path
+Per-symbol order book owned by one thread/shard
+Backpressure handling for Aeron publication failure
+Graceful degradation when consumers are slow
+Suggested internal crates/modules:
+
+connector-core
+binance-spot-adapter
+binance-futures-adapter
+protocol-json
+protocol-sbe
+order-book
+refdata
+aeron-publisher
+metrics
+replay
+config
+12. Recovery Rules
+The connector must rebuild a local book when:
+
+WebSocket reconnects
+Sequence gap is detected
+Snapshot update id is incompatible with buffered events
+No book update is received within configured stale timeout
+Parser detects malformed event
+Exchange sends shutdown or maintenance event
+Recovery procedure:
+
+Mark book stale.
+Continue buffering incoming deltas.
+Fetch REST depth snapshot.
+Discard buffered events older than snapshot update id.
+Validate first applicable event bridges the snapshot.
+Apply buffered events.
+Mark book recovered.
+Publish BookRecovered event.
+13. Acceptance Criteria for Phase 1
+The system is acceptable when:
+
+It can collect Binance Spot BBO, trades, and L2 book deltas.
+It can collect Binance USD-M Futures BBO, aggregate trades, L2 book deltas, mark price, funding, and liquidations.
+It can build and maintain a valid local order book.
+It detects and recovers from sequence gaps.
+It publishes normalized binary messages through Aeron.
+It records raw or normalized data for replay.
+It exposes latency and health metrics.
+It supports multiple connector instances with deterministic sharding.
+It survives WebSocket disconnect/reconnect without manual intervention.
+It runs continuously for more than 24 hours with planned connection rotation.
+Market Data Connectivity — Spec Addendum v0.2
+1. Recovery Buffering Policy
+1.1 Principle
+Book deltas must never be silently dropped.
+
+If the connector cannot guarantee a continuous order book sequence, the book must be marked stale, publication of that book must stop, and recovery must restart from a fresh REST snapshot.
+
+1.2 Buffer Types
+Each symbol has a dedicated recovery buffer used only while the book is initializing or recovering.
+
+The recovery buffer is not the normal runtime queue. In normal operation, book deltas are applied immediately by the shard thread.
+
+1.3 Default Limits
+Per symbol:
+
+Limit	Default
+Max buffered delta events	2,048
+Max buffered bytes	4 MiB
+Max buffer age	10 seconds
+Max recovery attempts before circuit break	5
+Circuit-break cooldown	30 seconds
+Per connector process:
+
+Limit	Default
+Max total recovery buffer memory	512 MiB
+Max symbols recovering at once	10% of assigned symbols, minimum 10
+Max concurrent REST snapshot requests	Configurable, default 8
+1.4 Overflow Behaviour
+If a symbol recovery buffer exceeds event, byte, or age limits:
+
+Drop the recovery buffer.
+Mark the symbol book as STALE.
+Publish BookStale.
+Restart the recovery process from a new REST snapshot.
+Increment recovery_buffer_overflow_total.
+If repeated overflow occurs, put the symbol into DEGRADED state and reduce recovery retry frequency.
+The connector must not publish deltas for a stale book.
+
+1.5 Feed-Specific Overflow Policy
+Feed	Drop allowed?	Overflow action
+Book delta	No	Mark book stale and recover
+BBO	No silent drop	Publish latest only if explicitly configured as conflated BBO
+Trades	No in production	If configured for research mode, drop oldest and publish TradeGap
+Mark price / funding	Yes, latest-value semantics	Keep latest value
+Ticker / stats	Yes	Keep latest value
+Liquidation	No preferred	Drop only under explicit degraded mode
+Reference data	No	Retry until success or fail startup
+2. Order Book Validation
+2.1 Validation Layers
+The connector must validate books using four layers:
+
+Sequence validation
+Top-of-book validation
+Snapshot validation
+Cross-instance validation
+2.2 Sequence Validation
+For Spot:
+
+Ignore deltas where u <= local_last_update_id.
+If U > local_last_update_id + 1, the book has missed events.
+Mark stale and rebuild.
+For USD-M Futures:
+
+First applicable event must bridge the REST snapshot update id.
+During live processing, each event’s pu must equal the previous event’s u.
+If not, mark stale and rebuild.
+2.3 Top-of-Book Validation
+For every applied book delta:
+
+Best bid must be strictly less than best ask.
+Best bid and ask quantities must be positive.
+Empty bid or ask side is invalid during normal trading.
+Local top of book should match the exchange BBO stream when both are fresh.
+If local book and BBO stream disagree:
+
+Case	Action
+One-off mismatch lasting less than 250 ms	Increment warning metric
+Mismatch lasting more than 250 ms	Mark symbol DEGRADED
+Mismatch lasting more than 1 second	Mark book STALE and rebuild
+2.4 Snapshot Validation
+Periodic REST snapshot validation is used as a slow correctness check, not as the primary source of truth.
+
+Default policy:
+
+Validate top 20 levels every 60 seconds for high-priority symbols.
+Validate top 5 levels every 5 minutes for low-priority symbols.
+Validate immediately after recovery.
+Do not compare snapshots that are too old relative to local event time.
+Snapshot validation tolerance:
+
+Field	Tolerance
+Price level existence	Exact for top N when comparable
+Price value	Exact integer tick value
+Quantity	Exact if snapshot timestamp/update id is comparable
+Quantity	Warning only if snapshot is stale or update id is not comparable
+2.5 Cross-Instance Validation
+In active/passive mode, passive collectors should maintain their own books and publish checksums to a status stream.
+
+Each instance publishes:
+
+Symbol
+Local update id
+Best bid/ask
+Top 5 checksum
+Top 20 checksum
+Last exchange event timestamp
+Last local receive timestamp
+Recovery state
+The monitor compares active and passive instances.
+
+If checksums diverge:
+
+Check sequence freshness.
+Prefer the instance with the newer valid sequence.
+If both claim valid but disagree for more than 500 ms, mark the symbol suspect.
+If divergence persists for more than 2 seconds, trigger active/passive failover or rebuild both books.
+3. SBE Protocol
+3.1 Source of Truth
+SBE decoding must be generated from the official Binance Spot SBE XML schema.
+
+Reverse-engineered schemas are not allowed.
+
+The schema file must be versioned in the repository and include:
+
+Original upstream schema file
+Generated Rust decoder code
+Schema id
+Schema version
+Semantic version
+Generation timestamp
+Code generator version
+3.2 Supported SBE Messages
+Initial supported SBE stream messages:
+
+TradesStreamEvent
+BestBidAskStreamEvent
+DepthSnapshotStreamEvent
+DepthDiffStreamEvent
+3.3 SBE Implementation Requirement
+The protocol-sbe crate must provide:
+
+Decoder for official Binance Spot SBE stream schema
+Schema-version validation at startup
+Compatibility checks for minor schema version changes
+Fallback to JSON if SBE is unavailable
+Golden binary fixtures from captured Binance messages
+Unit tests comparing SBE-decoded output with equivalent JSON-normalized messages
+3.4 SBE Runtime Policy
+Preferred feed order for Binance Spot:
+
+SBE stream for trade, BBO, and depth where supported.
+JSON WebSocket fallback.
+REST only for snapshots and reference data.
+4. Shard Count and Instance Count
+4.1 Principle
+Shard count is fixed for a deployment generation.
+
+Instance count can change, but shard ids must remain stable.
+
+Do not assign symbols directly to instances. Assign symbols to logical shards, then assign shards to instances.
+
+4.2 Recommended Model
+Use:
+
+symbol -> instrument_id -> logical_shard_id -> instance_id
+Where:
+
+logical_shard_id = hash(venue, market_type, symbol) % total_logical_shards
+instance_id = logical_shard_id % active_instance_count
+4.3 Initial Defaults
+Deployment size	Logical shards	Expected use
+Small	16	Initial prototype
+Medium	64	Full Binance Spot or Futures
+Large	128+	Multi-exchange, many symbols
+Do not use “1 shard = 1 instance”.
+
+A good starting point is:
+
+4 to 16 logical shards per physical instance.
+One hot processing thread per active shard group.
+Keep high-volume symbols isolated when needed.
+4.4 Dynamic Scaling
+Changing total_logical_shards requires a deployment generation change.
+
+A deployment generation change must:
+
+Start new connector group.
+Build books in shadow mode.
+Compare active and shadow feeds.
+Switch downstream algos to new generation.
+Stop old generation.
+No in-place shard-count mutation is allowed in Phase 1.
+
+5. Aeron Configuration and Backpressure
+5.1 Initial Aeron Channel Defaults
+For same-host connector-to-algo communication:
+
+aeron:ipc
+For cross-host communication inside the same AWS placement group:
+
+aeron:udp?endpoint=<host>:<port>|mtu=1408|term-length=64m
+Initial defaults:
+
+Parameter	Default
+MTU	1408 bytes
+Term length	64 MiB
+Media driver threading	Dedicated
+Aeron directory	/dev/shm/aeron
+Idle strategy	Busy spin for production hot path
+Archive recording	Enabled for market-data streams
+These are benchmark defaults, not final constants. They must be validated under real message rates.
+
+5.2 Publication Model
+Each Aeron publication is owned by one shard thread.
+
+No multiple-writer publication in the hot path.
+
+Each message has:
+
+Connector sequence number
+Aeron stream id
+Aeron session id
+Publication timestamp
+Source instance id
+Source shard id
+5.3 Backpressure Policy
+The connector must not block the WebSocket read loop indefinitely.
+
+On Aeron offer failure:
+
+Retry with bounded spin for a very short configured budget.
+If still backpressured, publish a local metric.
+If backpressure persists, mark publication DEGRADED.
+If backpressure exceeds the configured maximum, disconnect/restart the affected shard or fail over to another instance.
+Default policy:
+
+Condition	Action
+Offer fails briefly	Spin/retry
+Offer fails > 100 µs	Increment warning metric
+Offer fails > 1 ms	Mark stream degraded
+Offer fails > 10 ms	Trigger shard restart or failover
+Offer fails repeatedly	Stop publishing and mark feed failed
+For order book deltas, do not drop and continue as if healthy.
+
+For latest-value feeds, optional conflation is allowed only if configured.
+
+6. Private Execution Data
+6.1 Phase
+Private execution data should be Phase 1.5, not Phase 2.
+
+Reason: before live trading, the system needs order-state correctness, fill correlation, latency measurement, and reconciliation.
+
+6.2 Required Components
+Phase 1.5 must include:
+
+Order gateway
+Client order id generator
+Order state machine
+User data stream listener
+Execution report normalizer
+REST reconciliation process
+Drop-copy or secondary account listener where available
+Persistent order journal
+6.3 Correlation Keys
+Every outbound order must include an internal client order id.
+
+Correlation keys:
+
+Internal order id
+Venue order id
+Client order id
+Strategy id
+Account id
+Symbol
+Side
+Price
+Quantity
+Order creation timestamp
+Local send timestamp
+The order state machine must handle:
+
+Acknowledgement before REST response
+Execution before acknowledgement
+Cancel acknowledgement after fill
+Unknown order status after timeout
+Duplicate execution report
+Out-of-order execution events
+STP expiry
+Amend/replace events
+6.4 Reconciliation
+The system must reconcile:
+
+Open orders
+Recent fills
+Balances
+Positions
+Funding fees
+Commissions
+Reconciliation must run:
+
+At startup
+After reconnect
+After unknown order status
+Periodically in the background
+Before enabling live trading after failover
+7. Latency SLA
+7.1 Timestamping
+Every message must carry:
+
+Exchange event timestamp
+Exchange transaction timestamp, if provided
+Local socket receive timestamp
+Decode completion timestamp
+Book apply timestamp
+Aeron publication timestamp
+Algo receive timestamp, added by consumer
+7.2 Initial Internal Latency Targets
+These targets exclude exchange publication delay and public internet/network path.
+
+Hop	Target p50	Target p99
+Socket receive → decoded native message	< 10 µs	< 50 µs
+Decode → normalized internal message	< 5 µs	< 25 µs
+Book delta apply	< 10 µs	< 50 µs
+Normalize → Aeron offer	< 5 µs	< 25 µs
+Aeron IPC publish → local algo receive	< 10 µs	< 50 µs
+Connector hot-path total, receive → publish	< 50 µs	< 250 µs
+Stretch target:
+
+local socket receive → Aeron publish p99 < 100 µs
+Do not define SLA as “exchange event timestamp to local receive” because that includes exchange-side batching, internet route, AWS region, and clock differences. Track it, but do not treat it as a deterministic software SLA.
+
+7.3 Stale Book SLA
+Event	Target
+Gap detection	Immediate on offending event
+Mark stale	< 100 µs after gap detection
+Snapshot request start	< 10 ms
+Normal recovery	< 2 seconds
+Recovery alert	> 5 seconds
+Circuit break	> 5 failed recoveries or > 30 seconds stale
+8. Testing and Replay
+8.1 Required Test Types
+The project must include:
+
+Unit tests for parsers
+Unit tests for order book apply logic
+Golden-file tests for JSON and SBE messages
+Property tests for order book invariants
+Integration tests with recorded Binance data
+Stress tests with synthetic high-volume symbols
+Chaos tests for disconnects and REST slowness
+Replay tests through Aeron
+8.2 Market Data Replayer
+The system must include a replayer that can replay:
+
+Raw WebSocket payloads
+Normalized internal messages
+Aeron Archive recordings
+Replay modes:
+
+Mode	Description
+As-fast-as-possible	Max throughput test
+Original timing	Preserve original inter-message gaps
+Scaled timing	Replay at 2x, 10x, 100x speed
+Deterministic	Same input produces same output sequence
+Fault injection	Inject gaps, duplicates, reorderings, and delays
+8.3 Symbol Universe Testing
+The test harness must support:
+
+1 symbol
+10 symbols
+100 symbols
+1,000+ symbols
+Top-volume symbols only
+Full exchange symbol universe
+Mixed spot and futures symbols
+Synthetic tests must include:
+
+High update-rate BTC/ETH-like symbols
+Illiquid symbols
+Symbols with zero updates
+Delisting/trading halt events
+Wide spreads
+Empty side edge cases
+Large price-level update batches
+9. Exchange-Specific Quirks Matrix
+The codebase must include a venue quirks matrix.
+
+9.1 Binance Spot
+Known quirks:
+
+24-hour WebSocket connection lifetime.
+Server sends ping frames; client must respond with pong.
+Incoming client messages are rate-limited.
+Maximum streams per connection.
+JSON timestamps are milliseconds by default unless microsecond mode is requested.
+SBE timestamps are microseconds.
+Local book recovery uses U, u, and REST lastUpdateId.
+Depth snapshots are capped and do not guarantee knowledge of levels outside the snapshot.
+User data listen-key streams are deprecated in favor of WebSocket API user data streams.
+9.2 Binance USD-M Futures
+Known quirks:
+
+Market streams use routed URL paths such as /public, /market, and /private.
+Depth events include U, u, and pu.
+Correct live sequence requires pu == previous.u.
+Depth updates may be 100 ms, 250 ms, or 500 ms depending on stream.
+RPI orders are excluded from normal diff depth.
+User order updates arrive as ORDER_TRADE_UPDATE.
+Fast trade-lite private execution events may be available but contain fewer fields.
+9.3 Required Quirk Documentation Fields
+Each venue adapter must document:
+
+WebSocket URL
+Authentication model
+Compression behaviour
+Ping/pong policy
+Connection lifetime
+Subscription rate limits
+Max streams per connection
+Sequence fields
+Snapshot endpoint
+Snapshot depth limit
+Recovery algorithm
+Timestamp units
+Numeric encoding
+Known breaking changes
+Test fixtures
+10. Active/Active Failover and Arbiter
+10.1 Modes
+Supported modes:
+
+Active/passive
+Active/active with shadow validation
+Active/active with arbiter-selected publication
+Phase 1 should implement active/passive.
+
+Phase 2 should implement active/active arbitration.
+
+10.2 Arbiter Input
+Each collector publishes feed-quality metadata:
+
+Instance id
+Shard id
+Symbol
+Feed state
+Last update id
+Last event timestamp
+Last local receive timestamp
+Gap count
+Recovery count
+BBO/book mismatch count
+Top 5 checksum
+Publish latency
+Exchange-to-local latency estimate
+Aeron backpressure count
+10.3 Arbiter Selection Rules
+The arbiter chooses the best feed per symbol using this priority order:
+
+Feed must be LIVE.
+Sequence must be valid.
+Book must not be stale.
+Prefer newer update id.
+Prefer lower local receive latency.
+Prefer lower gap/recovery count.
+Prefer matching passive checksums.
+Prefer configured primary instance if all else is equal.
+10.4 Failover Thresholds
+Condition	Action
+No update for stale timeout	Switch to backup
+Sequence gap	Switch to backup if backup is valid
+Book/BBO mismatch > 1s	Switch or rebuild
+Aeron backpressure > threshold	Switch
+Process heartbeat missed	Switch
+AWS instance unhealthy	Switch
+Failover must publish:
+
+Old source instance
+New source instance
+Symbol or shard affected
+Reason
+Last valid update id
+Failover timestamp
+10.5 Duplicate Handling
+In active/active mode, duplicate events are identified by:
+
+Venue
+Symbol
+Message type
+Exchange update id or trade id
+Event timestamp
+Price/quantity payload hash when needed
+The arbiter must guarantee downstream algorithms receive one canonical sequence per symbol.
+
+
