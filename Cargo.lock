@@ -287,8 +287,10 @@ dependencies = [
 name = "connector-aeron"
 version = "0.1.0"
 dependencies = [
+ "connector-config",
  "connector-core",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
