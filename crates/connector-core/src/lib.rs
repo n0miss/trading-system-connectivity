@@ -1,2 +1,7 @@
-// Core types: message header, normalized messages, and feed state.
-// Populated in Stage 1.2 and 1.3.
+mod error;
+mod header;
+mod types;
+
+pub use error::Error;
+pub use header::{MessageHeader, HEADER_SIZE, SCHEMA_VERSION, TS_NONE};
+pub use types::{MarketType, MessageType, VenueId};
