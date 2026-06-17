@@ -126,6 +126,8 @@ version = "0.1.0"
 dependencies = [
  "connector-config",
  "connector-core",
+ "connector-order-book",
+ "connector-refdata",
  "futures-util",
  "protocol-json",
  "thiserror 2.0.18",
@@ -278,6 +280,7 @@ name = "connector"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "binance-futures-adapter",
  "binance-spot-adapter",
  "clap",
  "connector-aeron",

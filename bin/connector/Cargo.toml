@@ -13,7 +13,8 @@ connector-config     = { workspace = true }
 connector-refdata    = { workspace = true }
 connector-order-book = { workspace = true }
 connector-aeron      = { workspace = true }
-binance-spot-adapter = { workspace = true }
+binance-spot-adapter    = { workspace = true }
+binance-futures-adapter = { workspace = true }
 protocol-json        = { workspace = true }
 anyhow               = { workspace = true }
 tokio                = { workspace = true }

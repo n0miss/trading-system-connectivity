@@ -60,7 +60,34 @@ impl RestClient {
             self.base_url, inst.symbol,
         );
 
-        debug!(%url, symbol = %inst.symbol, "fetching depth snapshot");
+        debug!(%url, symbol = %inst.symbol, "fetching spot depth snapshot");
+
+        let bytes = self.http
+            .get(&url)
+            .send()
+            .await?
+            .error_for_status()?
+            .bytes()
+            .await?;
+
+        crate::normalizer::parse_depth_snapshot(&bytes, inst, recv_ts)
+    }
+
+    /// Fetch a Binance USDT-M Futures depth snapshot (`/fapi/v1/depth?limit=1000`)
+    /// and return it as a [`BookSnapshot`] with scaled integer levels.
+    ///
+    /// `recv_ts` is the nanosecond timestamp to embed in the message header.
+    pub async fn fetch_futures_depth_snapshot(
+        &self,
+        inst:    &InstrumentDefinition,
+        recv_ts: i64,
+    ) -> Result<BookSnapshot, RefDataError> {
+        let url = format!(
+            "{}/fapi/v1/depth?symbol={}&limit=1000",
+            self.base_url, inst.symbol,
+        );
+
+        debug!(%url, symbol = %inst.symbol, "fetching futures depth snapshot");
 
         let bytes = self.http
             .get(&url)
