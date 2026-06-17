@@ -1,3 +1,6 @@
+pub mod sharding;
+pub use sharding::shard_for_symbol;
+
 use connector_core::{MarketType, VenueId};
 use serde::Deserialize;
 use thiserror::Error;
@@ -210,6 +213,34 @@ impl ConnectorConfig {
         let id    = self.instance.id;
         let n     = self.instance.total;
         (0..total).filter(|&s| s % n == id).collect()
+    }
+
+    /// Compute the logical shard for a symbol.
+    ///
+    /// `logical_shard_id = fnv1a_32(venue || market || symbol) % total_logical_shards`
+    pub fn shard_for(&self, venue: VenueId, market: MarketType, symbol: &str) -> u32 {
+        shard_for_symbol(venue, market, symbol, self.sharding.total_logical_shards)
+    }
+
+    /// Returns `true` if this instance owns the shard for `symbol`.
+    pub fn owns_symbol(&self, venue: VenueId, market: MarketType, symbol: &str) -> bool {
+        self.shard_for(venue, market, symbol) % self.instance.total == self.instance.id
+    }
+
+    /// Filter a symbol iterator to only those owned by this instance.
+    ///
+    /// Use at startup to derive the per-instance subscription list from the
+    /// full symbol universe.
+    pub fn filter_owned_symbols<'a>(
+        &self,
+        venue:   VenueId,
+        market:  MarketType,
+        symbols: impl IntoIterator<Item = &'a str>,
+    ) -> Vec<&'a str> {
+        symbols
+            .into_iter()
+            .filter(|s| self.owns_symbol(venue, market, s))
+            .collect()
     }
 
     /// Validate all fields. Called automatically by `load`.
@@ -510,5 +541,81 @@ base_url = "https://api.binance.com"
     fn empty_symbol_universe_is_valid() {
         let toml = VALID_TOML.replace(r#"universe = ["BTCUSDT", "ETHUSDT"]"#, r#"universe = []"#);
         load(&toml).unwrap();
+    }
+
+    // --- shard_for / owns_symbol / filter_owned_symbols (§4.18) ---
+
+    #[test]
+    fn shard_for_is_in_range() {
+        let cfg = load(VALID_TOML).unwrap(); // 16 shards
+        let s = cfg.shard_for(VenueId::BinanceSpot, MarketType::Spot, "BTCUSDT");
+        assert!(s < 16, "shard {s} out of range");
+    }
+
+    #[test]
+    fn shard_for_is_deterministic() {
+        let cfg = load(VALID_TOML).unwrap();
+        let a = cfg.shard_for(VenueId::BinanceSpot, MarketType::Spot, "BTCUSDT");
+        let b = cfg.shard_for(VenueId::BinanceSpot, MarketType::Spot, "BTCUSDT");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn owns_symbol_consistent_with_shard_for() {
+        let cfg = load(VALID_TOML).unwrap(); // instance 0 of 2
+        let symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"];
+        for s in &symbols {
+            let shard = cfg.shard_for(VenueId::BinanceSpot, MarketType::Spot, s);
+            let owned = cfg.owns_symbol(VenueId::BinanceSpot, MarketType::Spot, s);
+            assert_eq!(owned, shard % 2 == 0, "owns_symbol mismatch for {s}");
+        }
+    }
+
+    #[test]
+    fn filter_owned_symbols_partitions_universe() {
+        let universe = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT",
+                        "DOGEUSDT", "AVAXUSDT", "ADAUSDT", "TRXUSDT", "LINKUSDT"];
+
+        let toml0 = VALID_TOML; // instance 0 of 2
+        let toml1 = VALID_TOML.replace("id     = 0", "id     = 1");
+        let cfg0 = load(toml0).unwrap();
+        let cfg1 = load(&toml1).unwrap();
+
+        let owned0 = cfg0.filter_owned_symbols(
+            VenueId::BinanceSpot, MarketType::Spot, universe,
+        );
+        let owned1 = cfg1.filter_owned_symbols(
+            VenueId::BinanceSpot, MarketType::Spot, universe,
+        );
+
+        // Non-overlapping.
+        for s in &owned0 {
+            assert!(!owned1.contains(s), "{s} claimed by both instances");
+        }
+
+        // Covers every symbol exactly once.
+        let mut combined: Vec<&str> = owned0.iter().chain(owned1.iter()).copied().collect();
+        combined.sort_unstable();
+        let mut expected: Vec<&str> = universe.iter().copied().collect();
+        expected.sort_unstable();
+        assert_eq!(combined, expected, "partition misses or duplicates symbols");
+    }
+
+    #[test]
+    fn single_instance_owns_all_symbols() {
+        let toml = VALID_TOML.replace("total  = 2", "total  = 1");
+        let cfg  = load(&toml).unwrap();
+        let universe = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
+        let owned = cfg.filter_owned_symbols(VenueId::BinanceSpot, MarketType::Spot, universe);
+        assert_eq!(owned, universe.as_slice());
+    }
+
+    #[test]
+    fn filter_owned_symbols_is_empty_for_empty_universe() {
+        let cfg = load(VALID_TOML).unwrap();
+        let owned = cfg.filter_owned_symbols(
+            VenueId::BinanceSpot, MarketType::Spot, std::iter::empty::<&str>(),
+        );
+        assert!(owned.is_empty());
     }
 }
