@@ -26,13 +26,14 @@ use tokio::sync::{mpsc, watch};
 
 use binance_spot_adapter::{
     build_url as ws_build_url, normalize_spot_event, run_spot_recovery,
+    CircuitBreaker, CircuitState,
     ConnectionManager, NormalizeCtx, OverflowReason, PushResult, RawFrame,
     RecoveryBuffer, SequenceValidator, SpotStream, ValidateResult,
 };
-use connector_aeron::build_null;
+use connector_aeron::{build_null, NullPublication, ShardedPublisher};
 use connector_config::WebSocketConfig;
 use connector_core::{
-    BookRecovered, BookStale, BookStaleReason, GapDetected,
+    BookRecovered, BookStale, BookStaleReason, FeedState, FeedStatus, GapDetected,
     MarketType, MessageHeader, MessageType, NormalizedMessage, VenueId,
     SCHEMA_VERSION, TS_NONE,
 };
@@ -112,6 +113,8 @@ async fn main() -> anyhow::Result<()> {
     let mut book         = OrderBook::new(SYMBOL);
     let mut validator    = SequenceValidator::new();
     let mut recovery_buf = RecoveryBuffer::new();
+    let mut circuit      = CircuitBreaker::new();
+    let mut feed_state   = FeedState::Connecting;
     let mut seq          = 0u64;
     let mut encode_buf   = vec![0u8; 8 * 1024];
 
@@ -163,16 +166,84 @@ async fn main() -> anyhow::Result<()> {
             }
 
             _ = ticker.tick() => {
+                let now = now_nanos();
+
+                // If the book is stale and the circuit is closed, retry recovery.
+                if book.is_stale() {
+                    match circuit.check(now) {
+                        CircuitState::Closed => {
+                            tracing::info!(
+                                failures = circuit.failures(),
+                                "book stale — retrying recovery on tick",
+                            );
+                            set_feed_state(
+                                FeedState::Recovering, &mut feed_state,
+                                &mut encode_buf, &mut publisher, &ctx, &inst,
+                                &mut seq, now,
+                            );
+                            match run_spot_recovery(
+                                &rest, &inst, now,
+                                &mut book, &mut validator, &mut recovery_buf,
+                            ).await {
+                                Ok(outcome) => {
+                                    recover_count += 1;
+                                    circuit.record_success();
+                                    let msg = BookRecovered {
+                                        header: ctrl_hdr(
+                                            MessageType::BookRecovered, &ctx, &inst,
+                                            &mut seq, now,
+                                        ),
+                                        symbol:             inst.symbol.clone(),
+                                        snapshot_update_id: outcome.snapshot_id,
+                                    };
+                                    if let Ok(n) = msg.encode_into(&mut encode_buf) {
+                                        let _ = publisher.offer(0, &encode_buf[..n]);
+                                    }
+                                    set_feed_state(
+                                        FeedState::Live, &mut feed_state,
+                                        &mut encode_buf, &mut publisher, &ctx, &inst,
+                                        &mut seq, now,
+                                    );
+                                    tracing::info!(
+                                        snapshot_id = outcome.snapshot_id,
+                                        replayed    = outcome.replayed,
+                                        "tick recovery succeeded",
+                                    );
+                                }
+                                Err(e) => {
+                                    let opened = circuit.record_failure(now);
+                                    tracing::warn!("tick recovery failed: {e}");
+                                    if opened {
+                                        set_feed_state(
+                                            FeedState::Degraded, &mut feed_state,
+                                            &mut encode_buf, &mut publisher, &ctx, &inst,
+                                            &mut seq, now,
+                                        );
+                                        tracing::error!(
+                                            cooldown_s = circuit.cooldown_ns() / 1_000_000_000,
+                                            "circuit opened — DEGRADED",
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        CircuitState::Open { retry_after_ns } => {
+                            let remaining_s = (retry_after_ns - now).max(0) / 1_000_000_000;
+                            tracing::debug!(remaining_s, "circuit open — skipping recovery tick");
+                        }
+                    }
+                }
+
                 let pub0     = publisher.publication(0).unwrap();
                 let book_bid = book.best_bid();
                 let book_ask = book.best_ask();
-                let stale_tag = if book.is_stale() { " [STALE]" } else { "" };
+                let state_tag = format!(" [{feed_state:?}]");
 
                 println!(
                     "{:>6} msg/s | {:>8} total | {} | trades {:>5} | \
                      book bid={} ask={} ({}/{}lvls){} | \
-                     gaps {} rcvr {} ovfl {} | buf {}/{} | \
-                     pub {}/{} B",
+                     gaps {} rcvr {} ovfl {} cb {}/{} | \
+                     buf {}/{} | pub {}/{} B",
                     msgs_this_sec,
                     total_msgs,
                     bbo.as_ref().map(|b| b.to_string()).as_deref().unwrap_or("BBO –"),
@@ -181,10 +252,12 @@ async fn main() -> anyhow::Result<()> {
                     book_ask.map(|l| fmt(l.price, inst.price_scale)).as_deref().unwrap_or("–"),
                     book.bid_depth(),
                     book.ask_depth(),
-                    stale_tag,
+                    state_tag,
                     gap_count,
                     recover_count,
                     overflow_count,
+                    circuit.failures(),
+                    circuit.max_attempts(),
                     recovery_buf.len(),
                     recovery_buf.total_bytes(),
                     pub0.messages_offered,
@@ -278,59 +351,127 @@ async fn main() -> anyhow::Result<()> {
                                     actual,
                                     last_valid,
                                     gap = actual - expected,
-                                    "sequence gap — starting recovery",
+                                    "sequence gap",
                                 );
 
                                 // Buffer the gap-causing delta (it may bridge after the
                                 // REST snapshot is applied).
-                                push_to_recovery(
+                                let now = now_nanos();
+                                let overflowed = push_to_recovery(
                                     &mut recovery_buf, bd, frame.recv_ts,
                                     encoded_len, &mut overflow_count,
                                 );
+                                if overflowed {
+                                    // Buffer overflow counts as a recovery failure.
+                                    let opened = circuit.record_failure(now);
+                                    if opened {
+                                        set_feed_state(
+                                            FeedState::Degraded, &mut feed_state,
+                                            &mut encode_buf, &mut publisher,
+                                            &ctx, &inst, &mut seq, now,
+                                        );
+                                        tracing::error!("circuit opened on buffer overflow — DEGRADED");
+                                    }
+                                }
 
-                                // Fetch REST snapshot and replay the buffer.
+                                // Attempt recovery if circuit is closed.
                                 // Frames arriving during the REST call accumulate in
                                 // frame_rx (capacity 1 024) and are processed after.
-                                let now = now_nanos();
-                                match run_spot_recovery(
-                                    &rest, &inst, now,
-                                    &mut book, &mut validator, &mut recovery_buf,
-                                ).await {
-                                    Ok(outcome) => {
-                                        recover_count += 1;
-                                        let recovered_msg = BookRecovered {
-                                            header: ctrl_hdr(
-                                                MessageType::BookRecovered, &ctx, &inst,
-                                                &mut seq, now,
-                                            ),
-                                            symbol:             inst.symbol.clone(),
-                                            snapshot_update_id: outcome.snapshot_id,
-                                        };
-                                        if let Ok(n) = recovered_msg.encode_into(&mut encode_buf) {
-                                            let _ = publisher.offer(0, &encode_buf[..n]);
-                                        }
-                                        tracing::info!(
-                                            snapshot_id = outcome.snapshot_id,
-                                            replayed    = outcome.replayed,
-                                            discarded   = outcome.discarded,
-                                            "book recovered",
+                                match circuit.check(now) {
+                                    CircuitState::Open { retry_after_ns } => {
+                                        let remaining_s =
+                                            (retry_after_ns - now).max(0) / 1_000_000_000;
+                                        tracing::warn!(
+                                            remaining_s,
+                                            "circuit open — deferring recovery",
+                                        );
+                                        set_feed_state(
+                                            FeedState::Degraded, &mut feed_state,
+                                            &mut encode_buf, &mut publisher,
+                                            &ctx, &inst, &mut seq, now,
                                         );
                                     }
-                                    Err(e) => {
-                                        tracing::error!(
-                                            "recovery failed: {e} \
-                                             — book remains stale (TODO Stage 3.15: DEGRADED)",
+                                    CircuitState::Closed => {
+                                        set_feed_state(
+                                            FeedState::Recovering, &mut feed_state,
+                                            &mut encode_buf, &mut publisher,
+                                            &ctx, &inst, &mut seq, now,
                                         );
+                                        match run_spot_recovery(
+                                            &rest, &inst, now,
+                                            &mut book, &mut validator, &mut recovery_buf,
+                                        ).await {
+                                            Ok(outcome) => {
+                                                recover_count += 1;
+                                                circuit.record_success();
+                                                let msg = BookRecovered {
+                                                    header: ctrl_hdr(
+                                                        MessageType::BookRecovered, &ctx,
+                                                        &inst, &mut seq, now,
+                                                    ),
+                                                    symbol:             inst.symbol.clone(),
+                                                    snapshot_update_id: outcome.snapshot_id,
+                                                };
+                                                if let Ok(n) = msg.encode_into(&mut encode_buf) {
+                                                    let _ = publisher.offer(0, &encode_buf[..n]);
+                                                }
+                                                set_feed_state(
+                                                    FeedState::Live, &mut feed_state,
+                                                    &mut encode_buf, &mut publisher,
+                                                    &ctx, &inst, &mut seq, now,
+                                                );
+                                                tracing::info!(
+                                                    snapshot_id = outcome.snapshot_id,
+                                                    replayed    = outcome.replayed,
+                                                    discarded   = outcome.discarded,
+                                                    "book recovered",
+                                                );
+                                            }
+                                            Err(e) => {
+                                                let opened = circuit.record_failure(now);
+                                                tracing::warn!("recovery failed: {e}");
+                                                if opened {
+                                                    set_feed_state(
+                                                        FeedState::Degraded, &mut feed_state,
+                                                        &mut encode_buf, &mut publisher,
+                                                        &ctx, &inst, &mut seq, now,
+                                                    );
+                                                    tracing::error!(
+                                                        cooldown_s = circuit.cooldown_ns()
+                                                            / 1_000_000_000,
+                                                        "circuit opened — DEGRADED",
+                                                    );
+                                                } else {
+                                                    set_feed_state(
+                                                        FeedState::Stale, &mut feed_state,
+                                                        &mut encode_buf, &mut publisher,
+                                                        &ctx, &inst, &mut seq, now,
+                                                    );
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
 
                             ValidateResult::Buffering => {
                                 // Already stale — accumulate for replay once recovery fires.
-                                push_to_recovery(
+                                let overflowed = push_to_recovery(
                                     &mut recovery_buf, bd, frame.recv_ts,
                                     encoded_len, &mut overflow_count,
                                 );
+                                if overflowed {
+                                    let now = now_nanos();
+                                    let opened = circuit.record_failure(now);
+                                    if opened {
+                                        set_feed_state(
+                                            FeedState::Degraded, &mut feed_state,
+                                            &mut encode_buf, &mut publisher,
+                                            &ctx, &inst, &mut seq, now,
+                                        );
+                                        tracing::error!("circuit opened on buffer overflow — DEGRADED");
+                                    }
+                                }
                             }
 
                             ValidateResult::Discard => {}
@@ -429,17 +570,41 @@ fn ctrl_hdr(
     }
 }
 
-/// Push `delta` to `buf`; on overflow, clear the buffer, increment the counter,
-/// and log an error (Stage 3.15 will transition to DEGRADED instead).
+/// Transition `current` to `new`, publish a `FeedStatus` message, and log.
+/// No-ops if the state is unchanged.
+fn set_feed_state(
+    new:        FeedState,
+    current:    &mut FeedState,
+    encode_buf: &mut Vec<u8>,
+    publisher:  &mut ShardedPublisher<NullPublication>,
+    ctx:        &NormalizeCtx,
+    inst:       &connector_core::InstrumentDefinition,
+    seq:        &mut u64,
+    ts:         i64,
+) {
+    if *current == new { return; }
+    *current = new;
+    let msg = FeedStatus {
+        header: ctrl_hdr(MessageType::FeedStatus, ctx, inst, seq, ts),
+        state:  new,
+    };
+    if let Ok(n) = msg.encode_into(encode_buf) {
+        let _ = publisher.offer(0, &encode_buf[..n]);
+    }
+    tracing::info!(?new, "feed state → {new:?}");
+}
+
+/// Push `delta` to `buf`; on overflow, clear the buffer and increment the counter.
+/// Returns `true` if an overflow occurred so the caller can engage the circuit breaker.
 fn push_to_recovery(
     buf: &mut RecoveryBuffer,
     delta: &connector_core::BookDelta,
     recv_ts: i64,
     encoded_size: usize,
     overflow_count: &mut u64,
-) {
+) -> bool {
     match buf.push(delta.clone(), recv_ts, encoded_size) {
-        PushResult::Accepted => {}
+        PushResult::Accepted => false,
         PushResult::Overflow(reason) => {
             *overflow_count += 1;
             let reason_str = match reason {
@@ -447,11 +612,9 @@ fn push_to_recovery(
                 OverflowReason::EventCount => "event_count",
                 OverflowReason::ByteSize   => "byte_size",
             };
-            tracing::error!(
-                reason = reason_str,
-                "recovery buffer overflow — cleared (TODO Stage 3.15: DEGRADED)",
-            );
+            tracing::error!(reason = reason_str, "recovery buffer overflow — cleared");
             buf.clear();
+            true
         }
     }
 }
