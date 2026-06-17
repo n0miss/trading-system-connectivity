@@ -1,6 +1,6 @@
 use connector_core::{
-    InstrumentDefinition, MarketType, MessageHeader, MessageType, VenueId,
-    SCHEMA_VERSION, TS_NONE,
+    BookSnapshot, InstrumentDefinition, MarketType, MessageHeader, MessageType,
+    PriceLevel, VenueId, SCHEMA_VERSION, TS_NONE,
 };
 use serde::Deserialize;
 
@@ -242,6 +242,70 @@ pub fn parse_exchange_info(
         out.push(normalize_symbol(sym, venue_id, market_type, instance_id, first_seq + i as u64)?);
     }
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Depth snapshot parsing
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Deserialize)]
+pub(crate) struct DepthSnapshotResponse {
+    #[serde(rename = "lastUpdateId")]
+    pub last_update_id: u64,
+    pub bids: Vec<[String; 2]>,
+    pub asks: Vec<[String; 2]>,
+}
+
+/// Parse a Binance `/api/v3/depth` JSON response into a [`BookSnapshot`].
+///
+/// `recv_ts` is the nanosecond timestamp when the HTTP response was received.
+pub fn parse_depth_snapshot(
+    json:    &[u8],
+    inst:    &InstrumentDefinition,
+    recv_ts: i64,
+) -> Result<BookSnapshot, RefDataError> {
+    let resp: DepthSnapshotResponse = serde_json::from_slice(json)?;
+
+    let header = MessageHeader {
+        schema_version:    SCHEMA_VERSION,
+        message_type:      MessageType::BookSnapshot,
+        venue_id:          inst.header.venue_id,
+        market_type:       inst.header.market_type,
+        instrument_id:     inst.header.instrument_id,
+        connection_id:     0,
+        instance_id:       inst.header.instance_id,
+        sequence_number:   0,
+        exchange_event_ts: TS_NONE,
+        exchange_tx_ts:    TS_NONE,
+        local_recv_ts:     recv_ts,
+        local_publish_ts:  recv_ts,
+    };
+
+    let bids = parse_price_levels(&resp.bids, inst.price_scale, inst.qty_scale)?;
+    let asks = parse_price_levels(&resp.asks, inst.price_scale, inst.qty_scale)?;
+
+    Ok(BookSnapshot {
+        header,
+        symbol:    inst.symbol.clone(),
+        update_id: resp.last_update_id,
+        bids,
+        asks,
+    })
+}
+
+fn parse_price_levels(
+    levels:      &[[String; 2]],
+    price_scale: u32,
+    qty_scale:   u32,
+) -> Result<Vec<PriceLevel>, RefDataError> {
+    levels
+        .iter()
+        .map(|[price_str, qty_str]| {
+            let price = parse_scaled(price_str, price_scale)?;
+            let qty   = parse_scaled(qty_str,   qty_scale)?;
+            Ok(PriceLevel { price, qty })
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -619,5 +683,80 @@ mod tests {
         let defs = parse_exchange_info(SPOT_JSON, VenueId::BinanceSpot, MarketType::Spot, 1, 50).unwrap();
         let seqs: Vec<u64> = defs.iter().map(|d| d.header.sequence_number).collect();
         assert_eq!(seqs, vec![50, 51, 52]);
+    }
+
+    // ---- depth snapshot ------------------------------------------------
+
+    fn btcusdt_def() -> InstrumentDefinition {
+        parse_exchange_info(SPOT_JSON_FOR_TESTS, VenueId::BinanceSpot, MarketType::Spot, 1, 0)
+            .unwrap()
+            .into_iter()
+            .find(|d| d.symbol == "BTCUSDT")
+            .unwrap()
+    }
+
+    const DEPTH_JSON: &[u8] = br#"{
+        "lastUpdateId": 1234567890,
+        "bids": [
+            ["96500.00", "0.50000000"],
+            ["96499.00", "1.00000000"]
+        ],
+        "asks": [
+            ["96501.00", "0.25000000"],
+            ["96502.00", "0.75000000"]
+        ]
+    }"#;
+
+    #[test]
+    fn parse_depth_snapshot_update_id() {
+        let inst = btcusdt_def();
+        let snap = parse_depth_snapshot(DEPTH_JSON, &inst, 0).unwrap();
+        assert_eq!(snap.update_id, 1_234_567_890);
+    }
+
+    #[test]
+    fn parse_depth_snapshot_level_counts() {
+        let inst = btcusdt_def();
+        let snap = parse_depth_snapshot(DEPTH_JSON, &inst, 0).unwrap();
+        assert_eq!(snap.bids.len(), 2);
+        assert_eq!(snap.asks.len(), 2);
+    }
+
+    #[test]
+    fn parse_depth_snapshot_bid_price_scaled() {
+        let inst = btcusdt_def();
+        let snap = parse_depth_snapshot(DEPTH_JSON, &inst, 0).unwrap();
+        // price_scale=8 (tickSize "0.01000000" → 8 decimal places)
+        // "96500.00" → 96500 * 10^8 = 9_650_000_000_000
+        assert_eq!(snap.bids[0].price, 9_650_000_000_000);
+        // "96499.00" → 96499 * 10^8 = 9_649_900_000_000
+        assert_eq!(snap.bids[1].price, 9_649_900_000_000);
+    }
+
+    #[test]
+    fn parse_depth_snapshot_qty_scaled() {
+        let inst = btcusdt_def();
+        let snap = parse_depth_snapshot(DEPTH_JSON, &inst, 0).unwrap();
+        // qty_scale=8 (stepSize "0.00001000" → 8 decimal places)
+        // "0.50000000" → 50_000_000
+        assert_eq!(snap.bids[0].qty, 50_000_000);
+    }
+
+    #[test]
+    fn parse_depth_snapshot_header_fields() {
+        let inst = btcusdt_def();
+        let recv_ts = 9_999_999_999_i64;
+        let snap = parse_depth_snapshot(DEPTH_JSON, &inst, recv_ts).unwrap();
+        assert_eq!(snap.header.message_type,  MessageType::BookSnapshot);
+        assert_eq!(snap.header.venue_id,      VenueId::BinanceSpot);
+        assert_eq!(snap.header.market_type,   MarketType::Spot);
+        assert_eq!(snap.header.local_recv_ts, recv_ts);
+        assert_eq!(snap.symbol,               "BTCUSDT");
+    }
+
+    #[test]
+    fn parse_depth_snapshot_invalid_json_errors() {
+        let inst = btcusdt_def();
+        assert!(parse_depth_snapshot(b"not json", &inst, 0).is_err());
     }
 }

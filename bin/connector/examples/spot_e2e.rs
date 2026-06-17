@@ -25,12 +25,17 @@ use anyhow::{anyhow, Context};
 use tokio::sync::{mpsc, watch};
 
 use binance_spot_adapter::{
-    build_url as ws_build_url, normalize_spot_event, ConnectionManager, NormalizeCtx, OverflowReason,
-    PushResult, RawFrame, RecoveryBuffer, SequenceValidator, SpotStream, ValidateResult,
+    build_url as ws_build_url, normalize_spot_event, run_spot_recovery,
+    ConnectionManager, NormalizeCtx, OverflowReason, PushResult, RawFrame,
+    RecoveryBuffer, SequenceValidator, SpotStream, ValidateResult,
 };
 use connector_aeron::build_null;
 use connector_config::WebSocketConfig;
-use connector_core::{BookStaleReason, MarketType, NormalizedMessage, VenueId};
+use connector_core::{
+    BookRecovered, BookStale, BookStaleReason, GapDetected,
+    MarketType, MessageHeader, MessageType, NormalizedMessage, VenueId,
+    SCHEMA_VERSION, TS_NONE,
+};
 use connector_order_book::OrderBook;
 use connector_refdata::RestClient;
 use protocol_json::parse_spot_message;
@@ -128,6 +133,7 @@ async fn main() -> anyhow::Result<()> {
     let mut parse_errors:  u64          = 0;
     let mut gap_count:     u64          = 0;
     let mut overflow_count: u64         = 0;
+    let mut recover_count: u64          = 0;
     let mut bbo:           Option<Bbo>  = None;
 
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
@@ -165,7 +171,7 @@ async fn main() -> anyhow::Result<()> {
                 println!(
                     "{:>6} msg/s | {:>8} total | {} | trades {:>5} | \
                      book bid={} ask={} ({}/{}lvls){} | \
-                     gaps {} ovfl {} | buf {}/{} | \
+                     gaps {} rcvr {} ovfl {} | buf {}/{} | \
                      pub {}/{} B",
                     msgs_this_sec,
                     total_msgs,
@@ -177,6 +183,7 @@ async fn main() -> anyhow::Result<()> {
                     book.ask_depth(),
                     stale_tag,
                     gap_count,
+                    recover_count,
                     overflow_count,
                     recovery_buf.len(),
                     recovery_buf.total_bytes(),
@@ -222,11 +229,10 @@ async fn main() -> anyhow::Result<()> {
                 // --- apply to book / capture stats ---
                 match &msg {
                     NormalizedMessage::BookDelta(bd) => {
-                        // Stage 3.12: validate sequence; Stage 3.13: buffer while stale.
-                        //
-                        // Smoke-test simplification: seed the validator with the first
-                        // delta's U-1 as a synthetic snapshot (Stage 3.14 replaces this
-                        // with a proper REST depth snapshot).
+                        // Startup simplification: seed the validator with the first
+                        // delta's U-1 so the very first event bridges into Active
+                        // state.  After a gap, run_spot_recovery replaces this with
+                        // a proper REST depth snapshot (Stage 3.14).
                         if validator.last_valid_id().is_none() {
                             validator.on_snapshot(bd.first_update_id.saturating_sub(1));
                         }
@@ -238,27 +244,92 @@ async fn main() -> anyhow::Result<()> {
 
                             ValidateResult::Gap { expected, actual, last_valid } => {
                                 gap_count += 1;
+
+                                // Publish GapDetected.
+                                let gap_msg = GapDetected {
+                                    header: ctrl_hdr(
+                                        MessageType::GapDetected, &ctx, &inst,
+                                        &mut seq, frame.recv_ts,
+                                    ),
+                                    symbol:             inst.symbol.clone(),
+                                    expected_update_id: expected,
+                                    received_update_id: actual,
+                                };
+                                if let Ok(n) = gap_msg.encode_into(&mut encode_buf) {
+                                    let _ = publisher.offer(0, &encode_buf[..n]);
+                                }
+
+                                // Publish BookStale and mark the book.
+                                book.mark_stale(BookStaleReason::SequenceGap);
+                                let stale_msg = BookStale {
+                                    header: ctrl_hdr(
+                                        MessageType::BookStale, &ctx, &inst,
+                                        &mut seq, frame.recv_ts,
+                                    ),
+                                    symbol: inst.symbol.clone(),
+                                    reason: BookStaleReason::SequenceGap,
+                                };
+                                if let Ok(n) = stale_msg.encode_into(&mut encode_buf) {
+                                    let _ = publisher.offer(0, &encode_buf[..n]);
+                                }
+
                                 tracing::warn!(
                                     expected,
                                     actual,
                                     last_valid,
                                     gap = actual - expected,
-                                    "sequence gap — book stale, buffering for recovery",
+                                    "sequence gap — starting recovery",
                                 );
-                                book.mark_stale(BookStaleReason::SequenceGap);
-                                // Buffer the gap-causing delta (may bridge after snapshot).
+
+                                // Buffer the gap-causing delta (it may bridge after the
+                                // REST snapshot is applied).
                                 push_to_recovery(
-                                    &mut recovery_buf, bd, frame.recv_ts, encoded_len,
-                                    &mut overflow_count,
+                                    &mut recovery_buf, bd, frame.recv_ts,
+                                    encoded_len, &mut overflow_count,
                                 );
-                                // TODO Stage 3.14: trigger REST snapshot fetch + recovery.
+
+                                // Fetch REST snapshot and replay the buffer.
+                                // Frames arriving during the REST call accumulate in
+                                // frame_rx (capacity 1 024) and are processed after.
+                                let now = now_nanos();
+                                match run_spot_recovery(
+                                    &rest, &inst, now,
+                                    &mut book, &mut validator, &mut recovery_buf,
+                                ).await {
+                                    Ok(outcome) => {
+                                        recover_count += 1;
+                                        let recovered_msg = BookRecovered {
+                                            header: ctrl_hdr(
+                                                MessageType::BookRecovered, &ctx, &inst,
+                                                &mut seq, now,
+                                            ),
+                                            symbol:             inst.symbol.clone(),
+                                            snapshot_update_id: outcome.snapshot_id,
+                                        };
+                                        if let Ok(n) = recovered_msg.encode_into(&mut encode_buf) {
+                                            let _ = publisher.offer(0, &encode_buf[..n]);
+                                        }
+                                        tracing::info!(
+                                            snapshot_id = outcome.snapshot_id,
+                                            replayed    = outcome.replayed,
+                                            discarded   = outcome.discarded,
+                                            "book recovered",
+                                        );
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "recovery failed: {e} \
+                                             — book remains stale (TODO Stage 3.15: DEGRADED)",
+                                        );
+                                    }
+                                }
                             }
 
                             ValidateResult::Buffering => {
-                                // Already stale — accumulate for replay.
+                                // Already stale — accumulate for replay once recovery fires.
                                 push_to_recovery(
-                                    &mut recovery_buf, bd, frame.recv_ts, encoded_len,
-                                    &mut overflow_count,
+                                    &mut recovery_buf, bd, frame.recv_ts,
+                                    encoded_len, &mut overflow_count,
                                 );
                             }
 
@@ -303,6 +374,7 @@ async fn main() -> anyhow::Result<()> {
     println!("  messages processed : {total_msgs}");
     println!("  trades             : {trade_count}");
     println!("  sequence gaps      : {gap_count}");
+    println!("  recoveries         : {recover_count}");
     println!("  buffer overflows   : {overflow_count}");
     println!("  book stale         : {}", book.is_stale());
     println!("  recovery buf       : {} events / {} bytes", recovery_buf.len(), recovery_buf.total_bytes());
@@ -323,6 +395,39 @@ async fn main() -> anyhow::Result<()> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Current time in nanoseconds since the Unix epoch.
+fn now_nanos() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as i64
+}
+
+/// Build a `MessageHeader` for a control-plane message (GapDetected, BookStale, …).
+fn ctrl_hdr(
+    msg_type: MessageType,
+    ctx:      &NormalizeCtx,
+    inst:     &connector_core::InstrumentDefinition,
+    seq:      &mut u64,
+    ts:       i64,
+) -> MessageHeader {
+    *seq += 1;
+    MessageHeader {
+        schema_version:    SCHEMA_VERSION,
+        message_type:      msg_type,
+        venue_id:          ctx.venue_id,
+        market_type:       ctx.market_type,
+        instrument_id:     inst.header.instrument_id,
+        connection_id:     ctx.connection_id,
+        instance_id:       ctx.instance_id,
+        sequence_number:   *seq,
+        exchange_event_ts: TS_NONE,
+        exchange_tx_ts:    TS_NONE,
+        local_recv_ts:     ts,
+        local_publish_ts:  ts,
+    }
+}
 
 /// Push `delta` to `buf`; on overflow, clear the buffer, increment the counter,
 /// and log an error (Stage 3.15 will transition to DEGRADED instead).

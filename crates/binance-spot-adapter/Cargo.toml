@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 connector-core       = { workspace = true }
 connector-config     = { workspace = true }
+connector-order-book = { workspace = true }
+connector-refdata    = { workspace = true }
 protocol-json        = { workspace = true }
 thiserror            = { workspace = true }
 tokio                = { workspace = true }

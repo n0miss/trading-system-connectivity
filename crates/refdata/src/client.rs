@@ -1,4 +1,4 @@
-use connector_core::{InstrumentDefinition, MarketType, VenueId};
+use connector_core::{BookSnapshot, InstrumentDefinition, MarketType, VenueId};
 use reqwest::Client;
 use tracing::debug;
 
@@ -43,6 +43,33 @@ impl RestClient {
             .await?;
 
         parse_exchange_info(&bytes, venue_id, market_type, instance_id, first_seq)
+    }
+
+    /// Fetch a Binance Spot depth snapshot (`/api/v3/depth?limit=1000`) and
+    /// return it as a [`BookSnapshot`] with scaled integer price and quantity levels.
+    ///
+    /// `recv_ts` is the nanosecond timestamp to embed in the message header.
+    pub async fn fetch_spot_depth_snapshot(
+        &self,
+        inst:    &InstrumentDefinition,
+        recv_ts: i64,
+    ) -> Result<BookSnapshot, RefDataError> {
+        let url = format!(
+            "{}/api/v3/depth?symbol={}&limit=1000",
+            self.base_url, inst.symbol,
+        );
+
+        debug!(%url, symbol = %inst.symbol, "fetching depth snapshot");
+
+        let bytes = self.http
+            .get(&url)
+            .send()
+            .await?
+            .error_for_status()?
+            .bytes()
+            .await?;
+
+        crate::normalizer::parse_depth_snapshot(&bytes, inst, recv_ts)
     }
 }
 
