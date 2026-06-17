@@ -36,7 +36,6 @@ impl TryFrom<u8> for MarketType {
     }
 }
 
-/// All normalized outbound message types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum MessageType {
@@ -81,6 +80,87 @@ impl TryFrom<u8> for MessageType {
             16 => Ok(Self::BookStale),
             17 => Ok(Self::BookRecovered),
             _  => Err(Error::UnknownMessageType(v)),
+        }
+    }
+}
+
+/// Feed health state, published in FeedStatus messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum FeedState {
+    Connecting = 1,
+    Live       = 2,
+    Degraded   = 3,
+    Stale      = 4,
+    Recovering = 5,
+    Recovered  = 6,
+    Failed     = 7,
+}
+
+impl TryFrom<u8> for FeedState {
+    type Error = Error;
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            1 => Ok(Self::Connecting),
+            2 => Ok(Self::Live),
+            3 => Ok(Self::Degraded),
+            4 => Ok(Self::Stale),
+            5 => Ok(Self::Recovering),
+            6 => Ok(Self::Recovered),
+            7 => Ok(Self::Failed),
+            _ => Err(Error::UnknownFeedState(v)),
+        }
+    }
+}
+
+/// Aggressor side in a trade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum AggressorSide {
+    Unknown = 0,
+    Buy     = 1,
+    Sell    = 2,
+}
+
+impl TryFrom<u8> for AggressorSide {
+    type Error = Error;
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(Self::Unknown),
+            1 => Ok(Self::Buy),
+            2 => Ok(Self::Sell),
+            _ => Err(Error::UnknownAggressorSide(v)),
+        }
+    }
+}
+
+/// Reason a book was marked stale, carried in BookStale messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum BookStaleReason {
+    SequenceGap          = 1,
+    WebSocketReconnect   = 2,
+    SnapshotIncompatible = 3,
+    StaleTimeout         = 4,
+    MalformedEvent       = 5,
+    ExchangeShutdown     = 6,
+    BboMismatch          = 7,
+    BufferOverflow       = 8,
+}
+
+impl TryFrom<u8> for BookStaleReason {
+    type Error = Error;
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            1 => Ok(Self::SequenceGap),
+            2 => Ok(Self::WebSocketReconnect),
+            3 => Ok(Self::SnapshotIncompatible),
+            4 => Ok(Self::StaleTimeout),
+            5 => Ok(Self::MalformedEvent),
+            6 => Ok(Self::ExchangeShutdown),
+            7 => Ok(Self::BboMismatch),
+            8 => Ok(Self::BufferOverflow),
+            _ => Err(Error::UnknownBookStaleReason(v)),
         }
     }
 }
