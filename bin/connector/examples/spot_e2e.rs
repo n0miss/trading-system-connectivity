@@ -26,6 +26,7 @@ use tokio::sync::{mpsc, watch};
 
 use binance_spot_adapter::{
     build_url as ws_build_url, normalize_spot_event, run_spot_recovery,
+    BboCheckResult, BboValidator,
     CircuitBreaker, CircuitState,
     ConnectionManager, NormalizeCtx, OverflowReason, PushResult, RawFrame,
     RecoveryBuffer, SequenceValidator, SpotStream, ValidateResult,
@@ -114,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
     let mut validator    = SequenceValidator::new();
     let mut recovery_buf = RecoveryBuffer::new();
     let mut circuit      = CircuitBreaker::new();
+    let mut bbo_validator = BboValidator::new();
     let mut feed_state   = FeedState::Connecting;
     let mut seq          = 0u64;
     let mut encode_buf   = vec![0u8; 8 * 1024];
@@ -130,14 +132,15 @@ async fn main() -> anyhow::Result<()> {
     // -------------------------------------------------------------------------
     // 5. Main loop — process frames, print stats every second.
     // -------------------------------------------------------------------------
-    let mut total_msgs:    u64          = 0;
-    let mut msgs_this_sec: u64          = 0;
-    let mut trade_count:   u64          = 0;
-    let mut parse_errors:  u64          = 0;
-    let mut gap_count:     u64          = 0;
-    let mut overflow_count: u64         = 0;
-    let mut recover_count: u64          = 0;
-    let mut bbo:           Option<Bbo>  = None;
+    let mut total_msgs:      u64          = 0;
+    let mut msgs_this_sec:   u64          = 0;
+    let mut trade_count:     u64          = 0;
+    let mut parse_errors:    u64          = 0;
+    let mut gap_count:       u64          = 0;
+    let mut overflow_count:  u64          = 0;
+    let mut recover_count:   u64          = 0;
+    let mut bbo_stale_count: u64          = 0;
+    let mut bbo:             Option<Bbo>  = None;
 
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
     ticker.tick().await; // skip the immediate first tick
@@ -188,6 +191,7 @@ async fn main() -> anyhow::Result<()> {
                                 Ok(outcome) => {
                                     recover_count += 1;
                                     circuit.record_success();
+                                    bbo_validator.clear();
                                     let msg = BookRecovered {
                                         header: ctrl_hdr(
                                             MessageType::BookRecovered, &ctx, &inst,
@@ -242,7 +246,7 @@ async fn main() -> anyhow::Result<()> {
                 println!(
                     "{:>6} msg/s | {:>8} total | {} | trades {:>5} | \
                      book bid={} ask={} ({}/{}lvls){} | \
-                     gaps {} rcvr {} ovfl {} cb {}/{} | \
+                     gaps {} bbo {} rcvr {} ovfl {} cb {}/{} | \
                      buf {}/{} | pub {}/{} B",
                     msgs_this_sec,
                     total_msgs,
@@ -254,6 +258,7 @@ async fn main() -> anyhow::Result<()> {
                     book.ask_depth(),
                     state_tag,
                     gap_count,
+                    bbo_stale_count,
                     recover_count,
                     overflow_count,
                     circuit.failures(),
@@ -404,6 +409,7 @@ async fn main() -> anyhow::Result<()> {
                                             Ok(outcome) => {
                                                 recover_count += 1;
                                                 circuit.record_success();
+                                                bbo_validator.clear();
                                                 let msg = BookRecovered {
                                                     header: ctrl_hdr(
                                                         MessageType::BookRecovered, &ctx,
@@ -486,6 +492,58 @@ async fn main() -> anyhow::Result<()> {
                             p_scale:   inst.price_scale,
                             q_scale:   inst.qty_scale,
                         });
+
+                        // Validate top-of-book only when the book is live.
+                        if !book.is_stale() {
+                            let book_bid = book.best_bid().map(|l| l.price);
+                            let book_ask = book.best_ask().map(|l| l.price);
+                            match bbo_validator.check(
+                                frame.recv_ts,
+                                book_bid, book_ask,
+                                b.bid_price, b.ask_price,
+                            ) {
+                                BboCheckResult::Ok => {}
+                                BboCheckResult::Degrade { mismatch_ns } => {
+                                    tracing::warn!(
+                                        mismatch_ms = mismatch_ns / 1_000_000,
+                                        "BBO mismatch — degrading",
+                                    );
+                                    set_feed_state(
+                                        FeedState::Degraded, &mut feed_state,
+                                        &mut encode_buf, &mut publisher,
+                                        &ctx, &inst, &mut seq, frame.recv_ts,
+                                    );
+                                }
+                                BboCheckResult::MarkStale { mismatch_ns } => {
+                                    bbo_stale_count += 1;
+                                    bbo_validator.clear();
+                                    tracing::warn!(
+                                        mismatch_ms = mismatch_ns / 1_000_000,
+                                        "BBO mismatch exceeded 1 s — marking book stale",
+                                    );
+                                    book.mark_stale(BookStaleReason::BboMismatch);
+                                    let stale_msg = BookStale {
+                                        header: ctrl_hdr(
+                                            MessageType::BookStale, &ctx, &inst,
+                                            &mut seq, frame.recv_ts,
+                                        ),
+                                        symbol: inst.symbol.clone(),
+                                        reason: BookStaleReason::BboMismatch,
+                                    };
+                                    if let Ok(n) = stale_msg.encode_into(&mut encode_buf) {
+                                        let _ = publisher.offer(0, &encode_buf[..n]);
+                                    }
+                                    set_feed_state(
+                                        FeedState::Stale, &mut feed_state,
+                                        &mut encode_buf, &mut publisher,
+                                        &ctx, &inst, &mut seq, frame.recv_ts,
+                                    );
+                                }
+                            }
+                        } else {
+                            // Book is already stale — don't accumulate a spurious timer.
+                            bbo_validator.clear();
+                        }
                     }
                     NormalizedMessage::Trade(_) => {
                         trade_count += 1;
@@ -515,6 +573,7 @@ async fn main() -> anyhow::Result<()> {
     println!("  messages processed : {total_msgs}");
     println!("  trades             : {trade_count}");
     println!("  sequence gaps      : {gap_count}");
+    println!("  BBO stale events   : {bbo_stale_count}");
     println!("  recoveries         : {recover_count}");
     println!("  buffer overflows   : {overflow_count}");
     println!("  book stale         : {}", book.is_stale());
