@@ -35,11 +35,11 @@ use binance_spot_adapter::{
     RecoveryBuffer, ShardEngine, SpotStream, ValidateResult,
     build_url as ws_build_url, normalize_spot_event,
 };
-use connector_aeron::{build_null, NullPublication, ShardedPublisher};
+use connector_aeron::{build_null, Heartbeater, NullPublication, ShardedPublisher};
 use connector_config::{shard_for_symbol, WebSocketConfig};
 use connector_core::{
     BookRecovered, BookStale, BookStaleReason, FeedState, FeedStatus, GapDetected,
-    MarketType, MessageHeader, MessageType, NormalizedMessage, VenueId,
+    Heartbeat, MarketType, MessageHeader, MessageType, NormalizedMessage, VenueId,
     SCHEMA_VERSION, TS_NONE,
 };
 use connector_refdata::RestClient;
@@ -152,8 +152,9 @@ async fn run_shard(
         connection_id: shard_id,
     };
 
-    let mut seq        = 0u64;
-    let mut encode_buf = vec![0u8; 8 * 1024];
+    let mut seq         = 0u64;
+    let mut encode_buf  = vec![0u8; 8 * 1024];
+    let mut heartbeater = Heartbeater::new();
 
     // Per-symbol counters are kept separate from protocol state so we can borrow
     // `engine` mutably while also reading/writing `counters`.
@@ -319,6 +320,17 @@ async fn run_shard(
                     let _ = qs; // suppress if unused in fmt
                 }
                 for c in counters.values_mut() { c.msgs_this_sec = 0; }
+
+                // Publish a shard-level heartbeat so downstream consumers can
+                // detect feed staleness even during quiet markets.
+                if heartbeater.is_due(now) {
+                    let hb = Heartbeat { header: shard_hdr(MessageType::Heartbeat, &ctx, &mut seq, now) };
+                    if let Ok(n) = hb.encode_into(&mut encode_buf) {
+                        let _ = publisher.offer(shard_id, &encode_buf[..n]);
+                    }
+                    heartbeater.record_beat(now);
+                    tracing::debug!(shard_id, "heartbeat published");
+                }
             }
 
             // -----------------------------------------------------------------
@@ -798,6 +810,31 @@ fn ctrl_hdr(
         venue_id:          ctx.venue_id,
         market_type:       ctx.market_type,
         instrument_id:     inst.header.instrument_id,
+        connection_id:     ctx.connection_id,
+        instance_id:       ctx.instance_id,
+        sequence_number:   *seq,
+        exchange_event_ts: TS_NONE,
+        exchange_tx_ts:    TS_NONE,
+        local_recv_ts:     ts,
+        local_publish_ts:  ts,
+    }
+}
+
+/// Build a shard-level `MessageHeader` (instrument_id = 0) for messages that
+/// cover the whole shard rather than a single instrument (e.g. `Heartbeat`).
+fn shard_hdr(
+    msg_type: MessageType,
+    ctx:      &NormalizeCtx,
+    seq:      &mut u64,
+    ts:       i64,
+) -> MessageHeader {
+    *seq += 1;
+    MessageHeader {
+        schema_version:    SCHEMA_VERSION,
+        message_type:      msg_type,
+        venue_id:          ctx.venue_id,
+        market_type:       ctx.market_type,
+        instrument_id:     0,
         connection_id:     ctx.connection_id,
         instance_id:       ctx.instance_id,
         sequence_number:   *seq,
