@@ -1,2 +1,5 @@
-// Binance USD-M Futures WebSocket connection manager and normalizer.
-// Populated in Stage 5.21.
+mod error;
+pub mod stream;
+
+pub use error::FuturesAdapterError;
+pub use stream::{FuturesStream, FUTURES_WS_BASE, build_url};
