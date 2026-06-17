@@ -27,6 +27,7 @@ use tokio::sync::{mpsc, watch};
 use binance_spot_adapter::{
     build_url as ws_build_url, normalize_spot_event, run_spot_recovery,
     BboCheckResult, BboValidator,
+    check_snapshot, SnapshotCheckResult, SnapshotValidatorConfig, SNAPSHOT_INTERVAL_SECS,
     CircuitBreaker, CircuitState,
     ConnectionManager, NormalizeCtx, OverflowReason, PushResult, RawFrame,
     RecoveryBuffer, SequenceValidator, SpotStream, ValidateResult,
@@ -139,11 +140,14 @@ async fn main() -> anyhow::Result<()> {
     let mut gap_count:       u64          = 0;
     let mut overflow_count:  u64          = 0;
     let mut recover_count:   u64          = 0;
-    let mut bbo_stale_count: u64          = 0;
-    let mut bbo:             Option<Bbo>  = None;
+    let mut bbo_stale_count:  u64          = 0;
+    let mut snap_incompat:    u64          = 0;
+    let mut bbo:              Option<Bbo>  = None;
 
-    let mut ticker = tokio::time::interval(Duration::from_secs(1));
-    ticker.tick().await; // skip the immediate first tick
+    let mut ticker            = tokio::time::interval(Duration::from_secs(1));
+    let mut validation_ticker = tokio::time::interval(Duration::from_secs(SNAPSHOT_INTERVAL_SECS));
+    ticker.tick().await;            // skip the immediate first tick
+    validation_ticker.tick().await; // skip the immediate first tick
 
     let deadline = tokio::time::sleep(Duration::from_secs(RUN_SECS));
     tokio::pin!(deadline);
@@ -246,7 +250,7 @@ async fn main() -> anyhow::Result<()> {
                 println!(
                     "{:>6} msg/s | {:>8} total | {} | trades {:>5} | \
                      book bid={} ask={} ({}/{}lvls){} | \
-                     gaps {} bbo {} rcvr {} ovfl {} cb {}/{} | \
+                     gaps {} bbo {} snap {} rcvr {} ovfl {} cb {}/{} | \
                      buf {}/{} | pub {}/{} B",
                     msgs_this_sec,
                     total_msgs,
@@ -259,6 +263,7 @@ async fn main() -> anyhow::Result<()> {
                     state_tag,
                     gap_count,
                     bbo_stale_count,
+                    snap_incompat,
                     recover_count,
                     overflow_count,
                     circuit.failures(),
@@ -270,6 +275,61 @@ async fn main() -> anyhow::Result<()> {
                 );
 
                 msgs_this_sec = 0;
+            }
+
+            _ = validation_ticker.tick() => {
+                // Periodic REST depth snapshot validation (§3.17).
+                // Only run when the book is live and has data to compare.
+                if !book.is_stale() && book.bid_depth() > 0 && book.ask_depth() > 0 {
+                    let now = now_nanos();
+                    tracing::debug!("periodic snapshot validation — fetching REST snapshot");
+                    match rest.fetch_spot_depth_snapshot(&inst, now).await {
+                        Ok(snapshot) => {
+                            let cfg = SnapshotValidatorConfig::default();
+                            match check_snapshot(
+                                book.bids(), book.asks(), &snapshot, &cfg,
+                            ) {
+                                SnapshotCheckResult::Compatible => {
+                                    tracing::debug!(
+                                        snapshot_id = snapshot.update_id,
+                                        "periodic snapshot: compatible",
+                                    );
+                                }
+                                SnapshotCheckResult::Incompatible {
+                                    bid_mismatches, ask_mismatches, snapshot_id,
+                                } => {
+                                    snap_incompat += 1;
+                                    tracing::warn!(
+                                        bid_mismatches,
+                                        ask_mismatches,
+                                        snapshot_id,
+                                        "periodic snapshot incompatible — marking book stale",
+                                    );
+                                    book.mark_stale(BookStaleReason::SnapshotIncompatible);
+                                    let stale_msg = BookStale {
+                                        header: ctrl_hdr(
+                                            MessageType::BookStale, &ctx, &inst,
+                                            &mut seq, now,
+                                        ),
+                                        symbol: inst.symbol.clone(),
+                                        reason: BookStaleReason::SnapshotIncompatible,
+                                    };
+                                    if let Ok(n) = stale_msg.encode_into(&mut encode_buf) {
+                                        let _ = publisher.offer(0, &encode_buf[..n]);
+                                    }
+                                    set_feed_state(
+                                        FeedState::Stale, &mut feed_state,
+                                        &mut encode_buf, &mut publisher,
+                                        &ctx, &inst, &mut seq, now,
+                                    );
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("periodic snapshot fetch failed: {e}");
+                        }
+                    }
+                }
             }
 
             frame = frame_rx.recv() => {
@@ -574,6 +634,7 @@ async fn main() -> anyhow::Result<()> {
     println!("  trades             : {trade_count}");
     println!("  sequence gaps      : {gap_count}");
     println!("  BBO stale events   : {bbo_stale_count}");
+    println!("  snapshot incompatible: {snap_incompat}");
     println!("  recoveries         : {recover_count}");
     println!("  buffer overflows   : {overflow_count}");
     println!("  book stale         : {}", book.is_stale());
