@@ -269,6 +269,7 @@ dependencies = [
  "clap",
  "connector-config",
  "connector-core",
+ "connector-refdata",
  "tokio",
  "tracing",
  "tracing-subscriber",
