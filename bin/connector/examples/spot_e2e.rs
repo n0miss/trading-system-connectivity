@@ -25,8 +25,8 @@ use anyhow::{anyhow, Context};
 use tokio::sync::{mpsc, watch};
 
 use binance_spot_adapter::{
-    build_url as ws_build_url, normalize_spot_event, ConnectionManager, NormalizeCtx, RawFrame,
-    SequenceValidator, SpotStream, ValidateResult,
+    build_url as ws_build_url, normalize_spot_event, ConnectionManager, NormalizeCtx, OverflowReason,
+    PushResult, RawFrame, RecoveryBuffer, SequenceValidator, SpotStream, ValidateResult,
 };
 use connector_aeron::build_null;
 use connector_config::WebSocketConfig;
@@ -103,11 +103,12 @@ async fn main() -> anyhow::Result<()> {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
     // Single shard (shard 0) for this smoke test.
-    let mut publisher   = build_null(&[0]);
-    let mut book        = OrderBook::new(SYMBOL);
-    let mut validator   = SequenceValidator::new();
-    let mut seq         = 0u64;
-    let mut encode_buf  = vec![0u8; 8 * 1024];
+    let mut publisher    = build_null(&[0]);
+    let mut book         = OrderBook::new(SYMBOL);
+    let mut validator    = SequenceValidator::new();
+    let mut recovery_buf = RecoveryBuffer::new();
+    let mut seq          = 0u64;
+    let mut encode_buf   = vec![0u8; 8 * 1024];
 
     // -------------------------------------------------------------------------
     // 4. Spawn the WebSocket connection manager.
@@ -126,6 +127,7 @@ async fn main() -> anyhow::Result<()> {
     let mut trade_count:   u64          = 0;
     let mut parse_errors:  u64          = 0;
     let mut gap_count:     u64          = 0;
+    let mut overflow_count: u64         = 0;
     let mut bbo:           Option<Bbo>  = None;
 
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
@@ -162,7 +164,8 @@ async fn main() -> anyhow::Result<()> {
 
                 println!(
                     "{:>6} msg/s | {:>8} total | {} | trades {:>5} | \
-                     book bid={} ask={} ({}/{}lvls){} | gaps {} | \
+                     book bid={} ask={} ({}/{}lvls){} | \
+                     gaps {} ovfl {} | buf {}/{} | \
                      pub {}/{} B",
                     msgs_this_sec,
                     total_msgs,
@@ -174,6 +177,9 @@ async fn main() -> anyhow::Result<()> {
                     book.ask_depth(),
                     stale_tag,
                     gap_count,
+                    overflow_count,
+                    recovery_buf.len(),
+                    recovery_buf.total_bytes(),
                     pub0.messages_offered,
                     pub0.bytes_offered,
                 );
@@ -204,24 +210,32 @@ async fn main() -> anyhow::Result<()> {
                     }
                 };
 
+                // --- encode (gives us byte size for the recovery buffer) ---
+                let encoded_len = match msg.encode_into(&mut encode_buf) {
+                    Ok(len) => len,
+                    Err(e) => {
+                        tracing::warn!("encode error: {e}");
+                        continue;
+                    }
+                };
+
                 // --- apply to book / capture stats ---
                 match &msg {
                     NormalizedMessage::BookDelta(bd) => {
-                        // Seed the validator on the very first delta (smoke-test
-                        // simplification — proper REST-snapshot init is Stage 3.14).
+                        // Stage 3.12: validate sequence; Stage 3.13: buffer while stale.
+                        //
+                        // Smoke-test simplification: seed the validator with the first
+                        // delta's U-1 as a synthetic snapshot (Stage 3.14 replaces this
+                        // with a proper REST depth snapshot).
                         if validator.last_valid_id().is_none() {
                             validator.on_snapshot(bd.first_update_id.saturating_sub(1));
                         }
 
                         match validator.validate(bd.first_update_id, bd.final_update_id) {
                             ValidateResult::Apply => {
-                                if book.is_stale() {
-                                    // Should not happen in this simplified flow,
-                                    // but guard just in case.
-                                } else {
-                                    book.apply_delta(bd);
-                                }
+                                book.apply_delta(bd);
                             }
+
                             ValidateResult::Gap { expected, actual, last_valid } => {
                                 gap_count += 1;
                                 tracing::warn!(
@@ -229,12 +243,26 @@ async fn main() -> anyhow::Result<()> {
                                     actual,
                                     last_valid,
                                     gap = actual - expected,
-                                    "sequence gap — marking book stale (TODO Stage 3.14: recovery)",
+                                    "sequence gap — book stale, buffering for recovery",
                                 );
                                 book.mark_stale(BookStaleReason::SequenceGap);
+                                // Buffer the gap-causing delta (may bridge after snapshot).
+                                push_to_recovery(
+                                    &mut recovery_buf, bd, frame.recv_ts, encoded_len,
+                                    &mut overflow_count,
+                                );
+                                // TODO Stage 3.14: trigger REST snapshot fetch + recovery.
                             }
+
+                            ValidateResult::Buffering => {
+                                // Already stale — accumulate for replay.
+                                push_to_recovery(
+                                    &mut recovery_buf, bd, frame.recv_ts, encoded_len,
+                                    &mut overflow_count,
+                                );
+                            }
+
                             ValidateResult::Discard => {}
-                            ValidateResult::Buffering => {}
                         }
                     }
                     NormalizedMessage::BestBidOffer(b) => {
@@ -253,10 +281,8 @@ async fn main() -> anyhow::Result<()> {
                     _ => {}
                 }
 
-                // --- encode + offer (NullPublication) ---
-                if let Ok(len) = msg.encode_into(&mut encode_buf) {
-                    let _ = publisher.offer(0, &encode_buf[..len]);
-                }
+                // --- offer encoded bytes (NullPublication) ---
+                let _ = publisher.offer(0, &encode_buf[..encoded_len]);
 
                 total_msgs    += 1;
                 msgs_this_sec += 1;
@@ -277,7 +303,9 @@ async fn main() -> anyhow::Result<()> {
     println!("  messages processed : {total_msgs}");
     println!("  trades             : {trade_count}");
     println!("  sequence gaps      : {gap_count}");
+    println!("  buffer overflows   : {overflow_count}");
     println!("  book stale         : {}", book.is_stale());
+    println!("  recovery buf       : {} events / {} bytes", recovery_buf.len(), recovery_buf.total_bytes());
     println!("  parse errors       : {parse_errors}");
     println!("  book bid levels    : {}", book.bid_depth());
     println!("  book ask levels    : {}", book.ask_depth());
@@ -295,6 +323,33 @@ async fn main() -> anyhow::Result<()> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Push `delta` to `buf`; on overflow, clear the buffer, increment the counter,
+/// and log an error (Stage 3.15 will transition to DEGRADED instead).
+fn push_to_recovery(
+    buf: &mut RecoveryBuffer,
+    delta: &connector_core::BookDelta,
+    recv_ts: i64,
+    encoded_size: usize,
+    overflow_count: &mut u64,
+) {
+    match buf.push(delta.clone(), recv_ts, encoded_size) {
+        PushResult::Accepted => {}
+        PushResult::Overflow(reason) => {
+            *overflow_count += 1;
+            let reason_str = match reason {
+                OverflowReason::Age        => "age",
+                OverflowReason::EventCount => "event_count",
+                OverflowReason::ByteSize   => "byte_size",
+            };
+            tracing::error!(
+                reason = reason_str,
+                "recovery buffer overflow — cleared (TODO Stage 3.15: DEGRADED)",
+            );
+            buf.clear();
+        }
+    }
+}
 
 /// Render a scaled integer as a decimal string.
 fn fmt(value: i64, scale: u32) -> String {
