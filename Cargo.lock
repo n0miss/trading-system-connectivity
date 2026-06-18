@@ -363,6 +363,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "connector-order-gateway"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "connector-redundancy"
 version = "0.1.0"
 dependencies = [

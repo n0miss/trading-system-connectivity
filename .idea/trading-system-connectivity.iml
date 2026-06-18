@@ -12,6 +12,8 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/connector-core/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/crates/metrics/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/order-book/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/order-book/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/order-gateway/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/protocol-json/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/protocol-sbe/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/redundancy/src" isTestSource="false" />

@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/connector-core",
+    "crates/order-gateway",
     "crates/connector-config",
     "crates/protocol-json",
     "crates/protocol-sbe",
@@ -27,6 +28,7 @@ connector-aeron       = { path = "crates/aeron-publisher" }
 connector-metrics     = { path = "crates/metrics" }
 connector-replay      = { path = "crates/replay" }
 connector-redundancy  = { path = "crates/redundancy" }
+connector-order-gateway = { path = "crates/order-gateway" }
 binance-spot-adapter    = { path = "crates/binance-spot-adapter" }
 binance-futures-adapter = { path = "crates/binance-futures-adapter" }
 
