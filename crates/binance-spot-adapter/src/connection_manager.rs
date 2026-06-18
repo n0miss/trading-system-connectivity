@@ -3,7 +3,14 @@ use std::time::Duration;
 use connector_config::WebSocketConfig;
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::{mpsc, watch};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{
+        client::IntoClientRequest,
+        http::header::{HeaderName, HeaderValue},
+        Message,
+    },
+};
 use tracing::{info, warn};
 
 use crate::error::AdapterError;
@@ -109,7 +116,21 @@ async fn connect_and_run(
     tx: &mpsc::Sender<RawFrame>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<DisconnectReason, AdapterError> {
-    let (ws, _) = match connect_async(url).await {
+    let mut request = url
+        .into_client_request()
+        .map_err(|e| { warn!("failed to build request: {e}"); AdapterError::WebSocket(e) })?;
+    if let Some(key) = &config.api_key {
+        if let Ok(value) = HeaderValue::from_str(key) {
+            request.headers_mut().insert(
+                HeaderName::from_static("x-mbx-apikey"),
+                value,
+            );
+        } else {
+            warn!("api_key contains non-ASCII characters — X-MBX-APIKEY header skipped");
+        }
+    }
+
+    let (ws, _) = match connect_async(request).await {
         Ok(pair) => pair,
         Err(e) => {
             warn!("WebSocket connect failed: {e}");
@@ -294,6 +315,7 @@ mod tests {
 
         let config = WebSocketConfig {
             url: "wss://stream.binance.com:9443".to_string(),
+            api_key: None,
             ping_interval_secs: 20,
             max_streams_per_connection: 1024,
             reconnect_delay_ms: 500,

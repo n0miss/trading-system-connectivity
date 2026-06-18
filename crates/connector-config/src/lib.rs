@@ -100,6 +100,11 @@ pub struct AeronConfig {
 pub struct WebSocketConfig {
     pub url: String,
 
+    /// API key sent as `X-MBX-APIKEY` header at connection time.
+    /// Required for authenticated endpoints such as the Binance SBE stream.
+    #[serde(default)]
+    pub api_key: Option<String>,
+
     #[serde(default = "defaults::ping_interval_secs")]
     pub ping_interval_secs: u32,
 

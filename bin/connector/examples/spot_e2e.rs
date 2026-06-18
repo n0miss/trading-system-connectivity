@@ -165,6 +165,7 @@ async fn run_shard(
 
     let ws_cfg = WebSocketConfig {
         url:                        "wss://stream.binance.com:9443".into(),
+        api_key:                    None,
         ping_interval_secs:         20,
         max_streams_per_connection: 1024,
         reconnect_delay_ms:         500,

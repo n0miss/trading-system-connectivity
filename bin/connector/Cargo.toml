@@ -16,6 +16,7 @@ connector-aeron      = { workspace = true }
 binance-spot-adapter    = { workspace = true }
 binance-futures-adapter = { workspace = true }
 protocol-json        = { workspace = true }
+protocol-sbe         = { workspace = true }
 anyhow               = { workspace = true }
 tokio                = { workspace = true }
 tracing              = { workspace = true }

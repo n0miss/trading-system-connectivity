@@ -59,13 +59,13 @@ fn normalize_trade(
     NormalizedMessage::Trade(Trade {
         header: make_header(
             MessageType::Trade, inst, ctx, seq,
-            ms_to_ns(ev.event_time), recv_ts,
+            us_to_ns(ev.event_time), recv_ts,
         ),
         symbol:         inst.symbol.clone(),
         trade_id:       ev.trade_id as u64,
         price:          ev.price.to_scaled(inst.price_scale),
         qty:            ev.quantity.to_scaled(inst.qty_scale),
-        trade_ts:       ms_to_ns(ev.transact_time),
+        trade_ts:       us_to_ns(ev.transact_time),
         is_buyer_maker: ev.is_buyer_market_maker,
         aggressor_side,
     })
@@ -81,7 +81,7 @@ fn normalize_bbo(
     NormalizedMessage::BestBidOffer(BestBidOffer {
         header: make_header(
             MessageType::BestBidOffer, inst, ctx, seq,
-            ms_to_ns(ev.event_time), recv_ts,
+            us_to_ns(ev.event_time), recv_ts,
         ),
         symbol:    inst.symbol.clone(),
         bid_price: ev.best_bid_price.to_scaled(inst.price_scale),
@@ -116,7 +116,7 @@ fn normalize_depth_diff(
     NormalizedMessage::BookDelta(BookDelta {
         header: make_header(
             MessageType::BookDelta, inst, ctx, seq,
-            ms_to_ns(ev.event_time), recv_ts,
+            us_to_ns(ev.event_time), recv_ts,
         ),
         symbol:          inst.symbol.clone(),
         first_update_id: ev.first_update_id as u64,
@@ -163,8 +163,11 @@ fn take_seq(seq: &mut u64) -> u64 {
     n
 }
 
-fn ms_to_ns(ms: i64) -> i64 {
-    ms.saturating_mul(1_000_000)
+/// Convert SBE microsecond timestamp to nanoseconds.
+///
+/// The SBE stream uses microseconds (unlike the JSON streams which use ms).
+fn us_to_ns(us: i64) -> i64 {
+    us.saturating_mul(1_000)
 }
 
 fn sbe_aggressor_to_core(side: SbeAggressorSide) -> CoreAggressorSide {
@@ -261,7 +264,7 @@ mod tests {
         assert_eq!(tr.header.instrument_id,    42);
         assert_eq!(tr.header.sequence_number,  7);
         assert_eq!(tr.header.venue_id,         VenueId::BinanceSpot);
-        assert_eq!(tr.header.exchange_event_ts, 1_699_000_000_000_i64 * 1_000_000);
+        assert_eq!(tr.header.exchange_event_ts, 1_699_000_000_000_i64 * 1_000);
         assert_eq!(tr.header.exchange_tx_ts,   TS_NONE);
         assert_eq!(tr.header.local_recv_ts,    999);
         assert_eq!(seq, 8, "seq must advance by 1");
@@ -303,7 +306,7 @@ mod tests {
         ).unwrap();
         let NormalizedMessage::Trade(tr) = msg else { panic!() };
         assert_eq!(tr.trade_id, 12_345_678u64);
-        assert_eq!(tr.trade_ts, 1_699_000_001_000_i64 * 1_000_000);
+        assert_eq!(tr.trade_ts, 1_699_000_001_000_i64 * 1_000);
         assert!(!tr.is_buyer_maker);
         assert_eq!(tr.aggressor_side, CoreAggressorSide::Buy);
     }
@@ -364,7 +367,7 @@ mod tests {
 
         assert_eq!(bbo.header.instrument_id,    99);
         assert_eq!(bbo.header.sequence_number,  5);
-        assert_eq!(bbo.header.exchange_event_ts, 1_699_000_000_000_i64 * 1_000_000);
+        assert_eq!(bbo.header.exchange_event_ts, 1_699_000_000_000_i64 * 1_000);
         assert_eq!(bbo.header.exchange_tx_ts,   TS_NONE);
         assert_eq!(bbo.header.local_recv_ts,    42);
         assert_eq!(bbo.update_id, UPDATE_ID_NONE);
@@ -417,7 +420,7 @@ mod tests {
         let NormalizedMessage::BookDelta(bd) = msg else { panic!() };
 
         assert_eq!(bd.header.sequence_number,  10);
-        assert_eq!(bd.header.exchange_event_ts, 1_699_000_000_000_i64 * 1_000_000);
+        assert_eq!(bd.header.exchange_event_ts, 1_699_000_000_000_i64 * 1_000);
         assert_eq!(bd.first_update_id,          50_000_001u64);
         assert_eq!(bd.final_update_id,          50_000_005u64);
         assert_eq!(bd.prev_update_id,           50_000_000u64);

@@ -174,6 +174,7 @@ async fn run_shard(
 
     let ws_config = WebSocketConfig {
         url: FUTURES_WS_BASE.to_string(),
+        api_key: None,
         ping_interval_secs: 20,
         max_streams_per_connection: 1024,
         reconnect_delay_ms: 500,

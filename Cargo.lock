@@ -290,6 +290,7 @@ dependencies = [
  "connector-order-book",
  "connector-refdata",
  "protocol-json",
+ "protocol-sbe",
  "tokio",
  "tracing",
  "tracing-subscriber",
