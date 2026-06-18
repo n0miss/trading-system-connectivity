@@ -143,6 +143,10 @@ pub enum StatusCheckOutcome {
     Filled { exchange_id: u64, fills: Vec<(u64, i64, i64)> },
     /// Exchange reports the order is cancelled.
     Cancelled { exchange_id: u64 },
+    /// Exchange reports the order was rejected (e.g. PRICE_FILTER, MIN_NOTIONAL).
+    Rejected { reason: String },
+    /// Exchange reports the order expired (IOC/GTD time-in-force exhausted).
+    Expired { exchange_id: u64 },
     /// Exchange has no record of this order (never received or already purged).
     NotFound,
     /// REST call failed; the unknown-status check will be retried.
@@ -411,6 +415,16 @@ impl OrderSm {
             StatusCheckOutcome::Cancelled { .. } => {
                 self.status = SmStatus::Cancelled;
                 vec![SmAction::ApplyCancel]
+            }
+
+            StatusCheckOutcome::Rejected { reason } => {
+                self.status = SmStatus::Rejected;
+                vec![SmAction::ApplyReject { reason }]
+            }
+
+            StatusCheckOutcome::Expired { .. } => {
+                self.status = SmStatus::Expired;
+                vec![SmAction::ApplyExpire]
             }
 
             StatusCheckOutcome::NotFound => {

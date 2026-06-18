@@ -4,6 +4,7 @@ pub mod gateway;
 pub mod journal;
 pub mod machine;
 pub mod normalizer;
+pub mod reconciler;
 pub mod types;
 pub mod user_stream;
 
@@ -14,6 +15,12 @@ pub use journal::{Journal, JournalEntry};
 pub use machine::{
     SmAction, SmError, SmInput, SmStatus, StateMachineEngine, StatusCheckOutcome,
     DEFAULT_UNKNOWN_TIMEOUT_NS,
+};
+pub use reconciler::{
+    RawRestAccount, RawRestBalance, RawRestOrder, RawRestTrade,
+    ReconcileAction, ReconcileFill, ReconcileOrder, ReconcileRequest,
+    ReconciliationScheduler, Reconciler, RestOrderStatus,
+    DEFAULT_PERIODIC_INTERVAL_NS,
 };
 pub use normalizer::{
     AccountUpdate, AssetBalance, BalanceDelta, ExecutionType, ListenKeyState, NormalizedEvent,
