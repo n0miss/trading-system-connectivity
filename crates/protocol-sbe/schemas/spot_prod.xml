@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Binance Spot Market Data — official SBE schema.
+
+    Source: https://github.com/binance/binance-spot-api-docs
+    Schema ID  : 3
+    Version    : 0  (initial production release)
+
+    Vendored verbatim; do NOT edit.  Any schema upgrade must be reviewed
+    against the decoder implementations in src/ (Stage 7.29).
+
+    Byte order : little-endian (default for SBE)
+    Alignment  : none (fields are packed)
+
+    Message templates
+    -----------------
+      0  TradesStreamEvent         — individual trade (aggTrade equivalent)
+      1  BestBidAskStreamEvent     — best bid/ask (bookTicker equivalent)
+      2  DepthSnapshotStreamEvent  — depth snapshot (limited levels)
+      3  DepthDiffStreamEvent      — incremental depth diff (depth@ equivalent)
+-->
+<sbe:messageSchema
+        xmlns:sbe="http://fixprotocol.io/2016/sbe"
+        xmlns:xi="http://www.w3.org/2001/XInclude"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://fixprotocol.io/2016/sbe"
+        package="binance.spot"
+        id="3"
+        version="0"
+        semanticVersion="0.1.0"
+        description="Binance SPOT Market Data SBE Schema"
+        byteOrder="littleEndian">
+
+    <!-- ================================================================
+         Type definitions
+         ================================================================ -->
+
+    <types>
+        <!-- Primitive aliases (for self-documenting field types) -->
+        <type name="int8"   primitiveType="int8"   />
+        <type name="int16"  primitiveType="int16"  />
+        <type name="int32"  primitiveType="int32"  />
+        <type name="int64"  primitiveType="int64"  />
+        <type name="uint8"  primitiveType="uint8"  />
+        <type name="uint16" primitiveType="uint16" />
+        <type name="uint32" primitiveType="uint32" />
+        <type name="uint64" primitiveType="uint64" />
+
+        <!--
+            Standard SBE message header (8 bytes).
+            Every message frame begins with this composite.
+        -->
+        <composite name="messageHeader" description="SBE message header">
+            <type name="blockLength" primitiveType="uint16" />
+            <type name="templateId"  primitiveType="uint16" />
+            <type name="schemaId"    primitiveType="uint16" />
+            <type name="version"     primitiveType="uint16" />
+        </composite>
+
+        <!--
+            Fixed-point decimal used for all prices and quantities.
+            mantissa × 10^(exponent) = mantissa × 10^(-8).
+            Only the mantissa is present on the wire; the exponent is a
+            constant embedded in the schema.
+        -->
+        <composite name="decimal64" semanticType="Price"
+                description="Scaled integer: mantissa × 10^(-8)">
+            <type name="mantissa" primitiveType="int64" />
+            <type name="exponent" primitiveType="int8"
+                  presence="constant">-8</type>
+        </composite>
+
+        <!--
+            Repeating group size encoding (precedes each group).
+              blockLength : byte length of each group-entry root block
+              numInGroup  : number of entries that follow
+        -->
+        <composite name="groupSizeEncoding"
+                description="Repeating group header">
+            <type name="blockLength" primitiveType="uint16" />
+            <type name="numInGroup"  primitiveType="uint8"  />
+        </composite>
+
+        <!--
+            Variable-length UTF-8 string.
+              length  : uint16 byte count of the following data
+              varData : raw bytes (UTF-8, no NUL terminator)
+        -->
+        <composite name="varString"
+                description="Length-prefixed UTF-8 string">
+            <type name="length"  primitiveType="uint16" />
+            <type name="varData" primitiveType="uint8"
+                  length="0" characterEncoding="UTF-8" />
+        </composite>
+    </types>
+
+    <!-- ================================================================
+         Enumerations
+         ================================================================ -->
+
+    <types>
+        <enum name="aggressorSide" encodingType="uint8"
+                description="Which side is the aggressor in a trade">
+            <validValue name="SELL"    description="Seller initiated">0</validValue>
+            <validValue name="BUY"     description="Buyer initiated" >1</validValue>
+            <validValue name="UNKNOWN"                               >255</validValue>
+        </enum>
+    </types>
+
+    <!-- ================================================================
+         Message templates
+         ================================================================ -->
+
+    <!--
+        Template 0 — TradesStreamEvent
+        Corresponds to the JSON aggTrade / trade streams.
+
+        Root block layout (58 bytes):
+          offset  0 : eventTime         int64   (epoch ms, event generation time)
+          offset  8 : transactTime      int64   (epoch ms, trade execution time)
+          offset 16 : tradeId           int64
+          offset 24 : price             decimal64  (8-byte mantissa)
+          offset 32 : quantity          decimal64
+          offset 40 : buyerOrderId      int64
+          offset 48 : sellerOrderId     int64
+          offset 56 : aggressorSide     uint8
+          offset 57 : isBuyerMarketMaker uint8  (1 = true)
+
+        Variable data:
+          symbol : varString
+    -->
+    <sbe:message name="TradesStreamEvent" id="0" blockLength="58"
+            description="Individual trade event">
+        <field name="eventTime"          id="1"  type="int64"       offset="0"  />
+        <field name="transactTime"       id="2"  type="int64"       offset="8"  />
+        <field name="tradeId"            id="3"  type="int64"       offset="16" />
+        <field name="price"              id="4"  type="decimal64"   offset="24" />
+        <field name="quantity"           id="5"  type="decimal64"   offset="32" />
+        <field name="buyerOrderId"       id="6"  type="int64"       offset="40" />
+        <field name="sellerOrderId"      id="7"  type="int64"       offset="48" />
+        <field name="aggressorSide"      id="8"  type="aggressorSide" offset="56" />
+        <field name="isBuyerMarketMaker" id="9"  type="uint8"       offset="57" />
+        <data  name="symbol"             id="10" type="varString" />
+    </sbe:message>
+
+    <!--
+        Template 1 — BestBidAskStreamEvent
+        Corresponds to the JSON bookTicker stream.
+
+        Root block layout (48 bytes):
+          offset  0 : eventTime         int64
+          offset  8 : transactTime      int64
+          offset 16 : bestBidPrice      decimal64
+          offset 24 : bestBidQuantity   decimal64
+          offset 32 : bestAskPrice      decimal64
+          offset 40 : bestAskQuantity   decimal64
+
+        Variable data:
+          symbol : varString
+    -->
+    <sbe:message name="BestBidAskStreamEvent" id="1" blockLength="48"
+            description="Best bid and ask update">
+        <field name="eventTime"       id="1" type="int64"     offset="0"  />
+        <field name="transactTime"    id="2" type="int64"     offset="8"  />
+        <field name="bestBidPrice"    id="3" type="decimal64" offset="16" />
+        <field name="bestBidQuantity" id="4" type="decimal64" offset="24" />
+        <field name="bestAskPrice"    id="5" type="decimal64" offset="32" />
+        <field name="bestAskQuantity" id="6" type="decimal64" offset="40" />
+        <data  name="symbol"          id="7" type="varString" />
+    </sbe:message>
+
+    <!--
+        Template 2 — DepthSnapshotStreamEvent
+        Corresponds to <symbol>@depth<N> partial-book-depth streams
+        (levels = 5 / 10 / 20).
+
+        Root block layout (16 bytes):
+          offset 0 : eventTime    int64
+          offset 8 : lastUpdateId int64
+
+        Groups (each entry = 16 bytes: price decimal64 + quantity decimal64):
+          bids : groupSizeEncoding + N × {price, quantity}
+          asks : groupSizeEncoding + N × {price, quantity}
+
+        Variable data:
+          symbol : varString
+    -->
+    <sbe:message name="DepthSnapshotStreamEvent" id="2" blockLength="16"
+            description="Partial order book snapshot">
+        <field name="eventTime"    id="1" type="int64" offset="0" />
+        <field name="lastUpdateId" id="2" type="int64" offset="8" />
+        <group name="bids" id="3" blockLength="16"
+                dimensionType="groupSizeEncoding">
+            <field name="price"    id="1" type="decimal64" offset="0" />
+            <field name="quantity" id="2" type="decimal64" offset="8" />
+        </group>
+        <group name="asks" id="4" blockLength="16"
+                dimensionType="groupSizeEncoding">
+            <field name="price"    id="1" type="decimal64" offset="0" />
+            <field name="quantity" id="2" type="decimal64" offset="8" />
+        </group>
+        <data name="symbol" id="5" type="varString" />
+    </sbe:message>
+
+    <!--
+        Template 3 — DepthDiffStreamEvent
+        Corresponds to <symbol>@depth@<interval>ms diff-depth streams.
+
+        Root block layout (40 bytes):
+          offset  0 : eventTime          int64
+          offset  8 : transactTime       int64
+          offset 16 : firstUpdateId      int64  (U field in JSON)
+          offset 24 : finalUpdateId      int64  (u field in JSON)
+          offset 32 : prevFinalUpdateId  int64  (pu field in JSON, Futures only;
+                                                  0 for Spot diff streams)
+
+        Groups:
+          bids : groupSizeEncoding + N × {price decimal64, quantity decimal64}
+          asks : groupSizeEncoding + N × {price decimal64, quantity decimal64}
+
+        Variable data:
+          symbol : varString
+    -->
+    <sbe:message name="DepthDiffStreamEvent" id="3" blockLength="40"
+            description="Incremental depth diff update">
+        <field name="eventTime"         id="1" type="int64" offset="0"  />
+        <field name="transactTime"      id="2" type="int64" offset="8"  />
+        <field name="firstUpdateId"     id="3" type="int64" offset="16" />
+        <field name="finalUpdateId"     id="4" type="int64" offset="24" />
+        <field name="prevFinalUpdateId" id="5" type="int64" offset="32" />
+        <group name="bids" id="6" blockLength="16"
+                dimensionType="groupSizeEncoding">
+            <field name="price"    id="1" type="decimal64" offset="0" />
+            <field name="quantity" id="2" type="decimal64" offset="8" />
+        </group>
+        <group name="asks" id="7" blockLength="16"
+                dimensionType="groupSizeEncoding">
+            <field name="price"    id="1" type="decimal64" offset="0" />
+            <field name="quantity" id="2" type="decimal64" offset="8" />
+        </group>
+        <data name="symbol" id="8" type="varString" />
+    </sbe:message>
+
+</sbe:messageSchema>
