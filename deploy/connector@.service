@@ -1,0 +1,82 @@
+# Parameterised systemd unit for one connector shard.
+#
+# The instance specifier %i is the zero-based shard ID.
+#
+# Installation (4-shard deployment on one host):
+#   sudo cp deploy/connector@.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now connector@{0,1,2,3}
+#
+# To start/stop a single shard:
+#   sudo systemctl start connector@0
+#   sudo systemctl stop  connector@0
+#
+# Logs:
+#   journalctl -u connector@0 -f
+#
+# To change the total number of shards, edit TOTAL_SHARDS in
+# /etc/connector/env or override with an instance drop-in:
+#   sudo systemctl edit connector@0
+#     [Service]
+#     Environment=TOTAL_SHARDS=8
+
+[Unit]
+Description=Crypto CEX Market Data Connector — shard %i
+Documentation=https://github.com/your-org/trading-system-connectivity
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=connector
+Group=connector
+
+# Load shared environment (RUST_LOG, TOTAL_SHARDS, etc.)
+EnvironmentFile=-/etc/connector/env
+
+ExecStart=/usr/local/bin/connector \
+    --config /etc/connector/default.toml \
+    --shard-id %i \
+    --total-shards ${TOTAL_SHARDS:-1}
+
+# Restart on any non-zero exit; wait 2 s between attempts.
+Restart=on-failure
+RestartSec=2s
+# Stop restart attempts after 5 failures in 60 s.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# File descriptor limit (Aeron + network sockets).
+LimitNOFILE=65536
+
+# Increase real-time scheduling budget if using SCHED_FIFO inside the process.
+# LimitRTPRIO=10
+
+# Allow access to Aeron's shared-memory region.
+ReadWritePaths=/dev/shm/aeron
+
+# Hard-code log target; overridden by RUST_LOG in EnvironmentFile.
+Environment=RUST_LOG=info
+
+# Resource accounting (optional; useful for CPU profiling in cgroupv2 setups).
+CPUAccounting=yes
+MemoryAccounting=yes
+
+# CPU affinity — pin each shard to a dedicated physical core.
+# Core 0 is reserved for OS interrupts; shards start at core 1.
+# Adjust to match the host topology (`lscpu`, `numactl --hardware`).
+# CPUAffinity=%i+1   # bash arithmetic not supported; set explicitly below
+# To pin shard 0 → core 2, shard 1 → core 3, shard 2 → core 4, shard 3 → core 5:
+#   sudo systemctl edit connector@0 → CPUAffinity=2
+#   sudo systemctl edit connector@1 → CPUAffinity=3
+#   sudo systemctl edit connector@2 → CPUAffinity=4
+#   sudo systemctl edit connector@3 → CPUAffinity=5
+
+# Sandbox — tighten for production.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

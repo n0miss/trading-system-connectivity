@@ -1,0 +1,12 @@
+# /etc/connector/env
+# Environment variables loaded by connector@.service.
+# Copy this file to /etc/connector/env and edit as needed.
+# Lines starting with # are comments and are ignored.
+
+# Structured log level.  Set to "debug" for troubleshooting.
+RUST_LOG=info
+
+# Total number of logical shards deployed on this host.
+# Must match the number of connector@ instances started.
+# Example: if you start connector@{0,1,2,3}, set this to 4.
+TOTAL_SHARDS=1
