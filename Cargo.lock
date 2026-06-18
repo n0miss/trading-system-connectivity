@@ -357,6 +357,7 @@ name = "connector-order-book"
 version = "0.1.0"
 dependencies = [
  "connector-core",
+ "connector-replay",
  "proptest",
  "thiserror 2.0.18",
 ]

@@ -8,4 +8,5 @@ connector-core = { workspace = true }
 thiserror      = { workspace = true }
 
 [dev-dependencies]
-proptest = "1"
+proptest          = "1"
+connector-replay  = { workspace = true }
