@@ -18,12 +18,19 @@
 ///
 /// Per-message decoders for `TradesStreamEvent`, `BestBidAskStreamEvent`,
 /// `DepthSnapshotStreamEvent`, and `DepthDiffStreamEvent` are added in §7.29.
+pub mod aggressorside;
 pub mod decimal;
+pub mod decoders;
 pub mod error;
 pub mod header;
 pub mod template;
 
+pub use aggressorside::AggressorSide;
 pub use decimal::Decimal64;
+pub use decoders::{
+    decode_bbo, decode_depth_diff, decode_depth_snapshot, decode_message, decode_trade,
+    BboEvent, DepthDiffEvent, DepthLevel, DepthSnapshotEvent, SbeMessage, TradeEvent,
+};
 pub use error::SbeError;
 pub use header::{SbeHeader, SBE_HEADER_SIZE, SPOT_SCHEMA_ID, SPOT_SCHEMA_VERSION_MAX};
 pub use template::TemplateId;

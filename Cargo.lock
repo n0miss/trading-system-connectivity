@@ -1098,6 +1098,7 @@ name = "protocol-sbe"
 version = "0.1.0"
 dependencies = [
  "connector-core",
+ "protocol-json",
  "thiserror 2.0.18",
 ]
 
