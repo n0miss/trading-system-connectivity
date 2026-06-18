@@ -13,11 +13,14 @@ connector-config     = { workspace = true }
 connector-refdata    = { workspace = true }
 connector-order-book = { workspace = true }
 connector-aeron      = { workspace = true }
+connector-metrics    = { workspace = true }
 binance-spot-adapter    = { workspace = true }
 binance-futures-adapter = { workspace = true }
 protocol-json        = { workspace = true }
 protocol-sbe         = { workspace = true }
 anyhow               = { workspace = true }
+axum                 = { workspace = true }
+config               = { workspace = true }
 tokio                = { workspace = true }
 tracing              = { workspace = true }
 tracing-subscriber   = { workspace = true }

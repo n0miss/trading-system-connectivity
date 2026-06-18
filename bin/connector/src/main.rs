@@ -1,5 +1,8 @@
 use anyhow::Result;
+use axum::{Router, routing::get, http::StatusCode, response::IntoResponse};
 use clap::Parser;
+use connector_metrics::MetricsHandle;
+use std::sync::Arc;
 use tracing::info;
 
 #[derive(Parser)]
@@ -15,6 +18,16 @@ struct Args {
     total_shards: u32,
 }
 
+async fn metrics_handler(
+    axum::extract::State(metrics): axum::extract::State<MetricsHandle>,
+) -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        [("content-type", "text/plain; version=0.0.4")],
+        metrics.render_prometheus(),
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -26,6 +39,12 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
+    let cfg: connector_config::ConnectorConfig = config::Config::builder()
+        .add_source(config::File::with_name(&args.config))
+        .add_source(config::Environment::with_prefix("CONNECTOR").separator("__"))
+        .build()?
+        .try_deserialize()?;
+
     info!(
         config = %args.config,
         shard_id = args.shard_id,
@@ -33,8 +52,25 @@ async fn main() -> Result<()> {
         "connector starting"
     );
 
-    tokio::signal::ctrl_c().await?;
+    let metrics: MetricsHandle = Arc::new(connector_metrics::ConnectorMetrics::new());
 
-    info!("shutdown signal received");
+    let prometheus_port = cfg.metrics.prometheus_port;
+    let metrics_for_server = metrics.clone();
+    let app = Router::new()
+        .route("/metrics", get(metrics_handler))
+        .with_state(metrics_for_server);
+
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", prometheus_port)).await?;
+    info!(port = prometheus_port, "metrics server listening");
+
+    tokio::select! {
+        result = axum::serve(listener, app) => {
+            result?;
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("shutdown signal received");
+        }
+    }
+
     Ok(())
 }

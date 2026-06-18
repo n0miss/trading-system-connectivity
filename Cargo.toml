@@ -43,5 +43,6 @@ serde_json          = "1"
 clap                = { version = "4", features = ["derive"] }
 config              = "0.14"
 reqwest             = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+axum                = "0.7"
 tokio-tungstenite   = { version = "0.24", default-features = false, features = ["rustls-tls-webpki-roots", "connect"] }
 futures-util        = "0.3"
