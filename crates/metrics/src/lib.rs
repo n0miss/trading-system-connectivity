@@ -51,3 +51,17 @@ pub use counter::Counter;
 pub use histogram::{Histogram, BUCKET_BOUNDS, NUM_BOUNDS, NUM_BUCKETS};
 pub use registry::ConnectorMetrics;
 pub use render::render_prometheus;
+
+/// Convenience alias for a heap-allocated, shareable metrics registry.
+///
+/// Use this to thread a single [`ConnectorMetrics`] instance through multiple
+/// components (connection manager, normalizer, publisher) without copying.
+///
+/// ```rust
+/// use connector_metrics::{ConnectorMetrics, MetricsHandle};
+/// use std::sync::Arc;
+///
+/// let metrics: MetricsHandle = Arc::new(ConnectorMetrics::new());
+/// metrics.reconnects.increment();
+/// ```
+pub type MetricsHandle = std::sync::Arc<ConnectorMetrics>;

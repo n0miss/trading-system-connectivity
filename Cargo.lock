@@ -142,6 +142,7 @@ version = "0.1.0"
 dependencies = [
  "connector-config",
  "connector-core",
+ "connector-metrics",
  "connector-order-book",
  "connector-refdata",
  "futures-util",

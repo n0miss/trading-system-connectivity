@@ -1,6 +1,8 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use connector_config::WebSocketConfig;
+use connector_metrics::ConnectorMetrics;
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::{
@@ -14,6 +16,7 @@ use tokio_tungstenite::{
 use tracing::{info, warn};
 
 use crate::error::AdapterError;
+use crate::instrument::now_nanos;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -49,13 +52,28 @@ enum DisconnectReason {
 ///
 /// Owns the reconnect loop, ping/pong keepalive, and forced 24-hour rotation.
 /// Raw frames are forwarded over the caller-supplied mpsc channel.
+///
+/// Attach a metrics registry with [`with_metrics`] to count `messages_in`,
+/// `reconnects`, and `decode_errors` on the hot path without any allocations.
+///
+/// [`with_metrics`]: ConnectionManager::with_metrics
 pub struct ConnectionManager {
-    config: WebSocketConfig,
+    config:  WebSocketConfig,
+    metrics: Option<Arc<ConnectorMetrics>>,
 }
 
 impl ConnectionManager {
     pub fn new(config: WebSocketConfig) -> Self {
-        Self { config }
+        Self { config, metrics: None }
+    }
+
+    /// Attach a metrics registry.  Returns `self` for builder-style chaining.
+    ///
+    /// When set, every received frame increments `messages_in` and every
+    /// reconnect cycle increments `reconnects`.
+    pub fn with_metrics(mut self, m: Arc<ConnectorMetrics>) -> Self {
+        self.metrics = Some(m);
+        self
     }
 
     /// Connect to `url` and forward raw frames to `tx`.
@@ -77,16 +95,20 @@ impl ConnectionManager {
 
             info!(%url, reconnect_count, "connecting to Binance WebSocket");
 
-            let result = connect_and_run(url, &self.config, &tx, &mut shutdown).await;
+            let result = connect_and_run(
+                url, &self.config, &tx, &mut shutdown, self.metrics.as_deref(),
+            ).await;
 
             match result {
                 Ok(DisconnectReason::Shutdown) => break,
                 Ok(DisconnectReason::ForcedRotation) => {
                     info!("24h rotation — reconnecting immediately");
                     reconnect_count += 1;
+                    if let Some(m) = &self.metrics { m.reconnects.increment(); }
                 }
                 Ok(DisconnectReason::PeerClosed) | Err(_) => {
                     reconnect_count += 1;
+                    if let Some(m) = &self.metrics { m.reconnects.increment(); }
                     let delay = backoff_delay(reconnect_count, self.config.reconnect_delay_ms);
                     warn!(
                         reconnect_count,
@@ -111,10 +133,11 @@ impl ConnectionManager {
 
 /// Establish one WebSocket session and drive it until it ends for any reason.
 async fn connect_and_run(
-    url: &str,
-    config: &WebSocketConfig,
-    tx: &mpsc::Sender<RawFrame>,
+    url:      &str,
+    config:   &WebSocketConfig,
+    tx:       &mpsc::Sender<RawFrame>,
     shutdown: &mut watch::Receiver<bool>,
+    metrics:  Option<&ConnectorMetrics>,
 ) -> Result<DisconnectReason, AdapterError> {
     let mut request = url
         .into_client_request()
@@ -199,6 +222,7 @@ async fn connect_and_run(
                         break DisconnectReason::PeerClosed;
                     }
                     Some(Ok(Message::Text(text))) => {
+                        if let Some(m) = metrics { m.messages_in.increment(); }
                         let frame = RawFrame {
                             recv_ts:   now_nanos(),
                             payload:   text.into_bytes(),
@@ -209,6 +233,7 @@ async fn connect_and_run(
                         }
                     }
                     Some(Ok(Message::Binary(data))) => {
+                        if let Some(m) = metrics { m.messages_in.increment(); }
                         let frame = RawFrame {
                             recv_ts:   now_nanos(),
                             payload:   data,
@@ -249,14 +274,6 @@ pub(crate) fn backoff_delay(attempt: u32, base_ms: u64) -> Duration {
     let shift = attempt.saturating_sub(1).min(6); // up to 2^6 = 64×, then the 30 s cap kicks in
     let ms = base_ms.saturating_mul(1u64 << shift).min(30_000);
     Duration::from_millis(ms)
-}
-
-fn now_nanos() -> i64 {
-    use std::time::SystemTime;
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as i64
 }
 
 // ---------------------------------------------------------------------------

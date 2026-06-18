@@ -4,6 +4,7 @@ mod connection_manager;
 mod normalizer;
 mod sbe_normalizer;
 pub mod feed;
+pub mod instrument;
 pub mod sequence;
 pub mod recovery_buffer;
 pub mod recovery;
@@ -19,6 +20,9 @@ pub use connection_manager::{ConnectionManager, RawFrame};
 pub use normalizer::{NormalizeCtx, NormalizeError, normalize_spot_event};
 pub use sbe_normalizer::normalize_sbe_message;
 pub use feed::{decode_raw_frame, DecodedFrame, FeedError, FeedKind};
+pub use instrument::{
+    record_publish, record_sequence_gap, record_book_stale, record_offer_failure,
+};
 pub use sequence::{SequenceValidator, ValidateResult, ValidationState};
 pub use recovery_buffer::{BufferedDelta, OverflowReason, PushResult, RecoveryBuffer};
 pub use recovery::{RecoveryError, RecoveryOutcome, apply_spot_snapshot, run_spot_recovery};
