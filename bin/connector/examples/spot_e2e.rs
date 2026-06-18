@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::Context;
+use clap::Parser;
 use tokio::sync::{mpsc, watch};
 
 use binance_spot_adapter::{
@@ -45,9 +46,24 @@ use connector_core::{
 use connector_refdata::RestClient;
 use protocol_json::{parse_spot_message, SpotEvent};
 
-const SYMBOLS:      &[&str] = &["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"];
-const TOTAL_SHARDS: u32     = 2;
-const RUN_SECS:     u64     = 30;
+const SYMBOLS: &[&str] = &["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"];
+
+// ---------------------------------------------------------------------------
+// CLI
+// ---------------------------------------------------------------------------
+
+#[derive(Parser)]
+#[command(about = "Binance Spot multi-symbol sharded order-book demo")]
+struct Args {
+    /// Number of shards (WebSocket connections).  Each shard handles a subset
+    /// of symbols.  Must be between 1 and the number of symbols (4).
+    #[arg(long, default_value_t = 2)]
+    shards: u32,
+
+    /// How long to run before exiting (seconds).
+    #[arg(long, default_value_t = 30)]
+    secs: u64,
+}
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -60,6 +76,10 @@ async fn main() -> anyhow::Result<()> {
         .with_target(false)
         .compact()
         .init();
+
+    let args = Args::parse();
+    let total_shards = args.shards.max(1);
+    let run_secs     = args.secs;
 
     // Fetch exchange info for all symbols at once.
     let rest = RestClient::new("https://api.binance.com");
@@ -84,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
     let mut shard_map: HashMap<u32, Vec<_>> = HashMap::new();
     for inst in insts {
         let shard =
-            shard_for_symbol(VenueId::BinanceSpot, MarketType::Spot, &inst.symbol, TOTAL_SHARDS);
+            shard_for_symbol(VenueId::BinanceSpot, MarketType::Spot, &inst.symbol, total_shards);
         tracing::info!(symbol = %inst.symbol, shard, "assigned to shard");
         shard_map.entry(shard).or_default().push(inst);
     }
@@ -104,12 +124,12 @@ async fn main() -> anyhow::Result<()> {
         join_set.spawn(run_shard(shard_id, engine, rest_c, shutdown, publisher));
     }
 
-    println!("\nRunning for {RUN_SECS}s — Ctrl-C to stop early\n{:-<80}", "");
+    println!("\nRunning for {run_secs}s ({total_shards} shard(s)) — Ctrl-C to stop early\n{:-<80}", "");
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => { tracing::info!("Ctrl-C received"); }
-        _ = tokio::time::sleep(Duration::from_secs(RUN_SECS)) => {
-            tracing::info!("{RUN_SECS}s elapsed");
+        _ = tokio::time::sleep(Duration::from_secs(run_secs)) => {
+            tracing::info!("{run_secs}s elapsed");
         }
     }
 
