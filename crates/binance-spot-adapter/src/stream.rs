@@ -1,3 +1,9 @@
+/// Canonical base URL for the Binance Spot WebSocket combined-stream endpoint.
+///
+/// Port 443 is preferred over 9443 because standard HTTPS/WSS traffic is
+/// accepted by most firewalls and proxies whereas 9443 is often blocked.
+pub const SPOT_WS_BASE: &str = "wss://stream.binance.com:443";
+
 /// A Binance Spot WebSocket stream subscription.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpotStream {
@@ -38,6 +44,11 @@ mod tests {
     use super::*;
 
     #[test]
+    fn spot_ws_base_uses_port_443() {
+        assert!(SPOT_WS_BASE.contains(":443"), "SPOT_WS_BASE must use port 443");
+    }
+
+    #[test]
     fn stream_name_book_ticker() {
         assert_eq!(SpotStream::BookTicker.stream_name("BTCUSDT"), "btcusdt@bookTicker");
         assert_eq!(SpotStream::BookTicker.stream_name("btcusdt"), "btcusdt@bookTicker");
@@ -68,10 +79,10 @@ mod tests {
     #[test]
     fn build_url_single_stream() {
         let url = build_url(
-            "wss://stream.binance.com:9443",
+            SPOT_WS_BASE,
             &["btcusdt@bookTicker".to_string()],
         );
-        assert_eq!(url, "wss://stream.binance.com:9443/stream?streams=btcusdt@bookTicker");
+        assert_eq!(url, "wss://stream.binance.com:443/stream?streams=btcusdt@bookTicker");
     }
 
     #[test]
@@ -81,10 +92,10 @@ mod tests {
             "btcusdt@depth@100ms".to_string(),
             "ethusdt@trade".to_string(),
         ];
-        let url = build_url("wss://stream.binance.com:9443", &streams);
+        let url = build_url(SPOT_WS_BASE, &streams);
         assert_eq!(
             url,
-            "wss://stream.binance.com:9443/stream?streams=btcusdt@bookTicker/btcusdt@depth@100ms/ethusdt@trade",
+            "wss://stream.binance.com:443/stream?streams=btcusdt@bookTicker/btcusdt@depth@100ms/ethusdt@trade",
         );
     }
 }

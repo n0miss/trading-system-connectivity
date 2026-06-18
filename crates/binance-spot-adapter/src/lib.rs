@@ -15,7 +15,7 @@ pub mod symbol_state;
 pub mod shard_engine;
 
 pub use error::AdapterError;
-pub use stream::{SpotStream, build_url};
+pub use stream::{SpotStream, build_url, SPOT_WS_BASE};
 pub use connection_manager::{ConnectionManager, RawFrame};
 pub use normalizer::{NormalizeCtx, NormalizeError, normalize_spot_event};
 pub use sbe_normalizer::normalize_sbe_message;

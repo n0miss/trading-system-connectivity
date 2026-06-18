@@ -153,11 +153,16 @@ async fn connect_and_run(
         }
     }
 
-    let (ws, _) = match connect_async(request).await {
-        Ok(pair) => pair,
-        Err(e) => {
+    let connect_fut = connect_async(request);
+    let (ws, _) = match tokio::time::timeout(Duration::from_secs(10), connect_fut).await {
+        Ok(Ok(pair)) => pair,
+        Ok(Err(e)) => {
             warn!("WebSocket connect failed: {e}");
             return Err(AdapterError::WebSocket(e));
+        }
+        Err(_) => {
+            warn!("WebSocket connect timed out after 10s");
+            return Err(AdapterError::ConnectTimeout);
         }
     };
     info!("WebSocket session established");
@@ -331,7 +336,7 @@ mod tests {
         use connector_config::WebSocketConfig;
 
         let config = WebSocketConfig {
-            url: "wss://stream.binance.com:9443".to_string(),
+            url: "wss://stream.binance.com:443".to_string(),
             api_key: None,
             ping_interval_secs: 20,
             max_streams_per_connection: 1024,

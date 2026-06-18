@@ -33,7 +33,7 @@ use binance_spot_adapter::{
     CircuitState,
     ConnectionManager, NormalizeCtx, OverflowReason, PushResult, RawFrame,
     RecoveryBuffer, ShardEngine, SpotStream, ValidateResult,
-    build_url as ws_build_url, normalize_spot_event,
+    build_url as ws_build_url, normalize_spot_event, SPOT_WS_BASE,
 };
 use connector_aeron::{build_null, Heartbeater, NullPublication, ShardedPublisher};
 use connector_config::{shard_for_symbol, WebSocketConfig};
@@ -141,7 +141,7 @@ async fn run_shard(
         streams.push(SpotStream::Depth { update_speed_ms: 100 }.stream_name(sym));
         streams.push(SpotStream::Trade.stream_name(sym));
     }
-    let ws_url = ws_build_url("wss://stream.binance.com:9443", &streams);
+    let ws_url = ws_build_url(SPOT_WS_BASE, &streams);
 
     tracing::info!(shard_id, symbols = engine.symbol_count(), %ws_url, "shard starting");
 
@@ -164,7 +164,7 @@ async fn run_shard(
         .collect();
 
     let ws_cfg = WebSocketConfig {
-        url:                        "wss://stream.binance.com:9443".into(),
+        url:                        SPOT_WS_BASE.into(),
         api_key:                    None,
         ping_interval_secs:         20,
         max_streams_per_connection: 1024,
@@ -467,7 +467,20 @@ async fn run_shard(
 
                         match validate_result {
                             ValidateResult::Apply => {
-                                engine.get_mut(&symbol).unwrap().book.apply_delta(bd);
+                                let was_connecting = {
+                                    let state = engine.get_mut(&symbol).unwrap();
+                                    let c = state.feed_state == FeedState::Connecting;
+                                    state.book.apply_delta(bd);
+                                    c
+                                };
+                                if was_connecting {
+                                    let state = engine.get_mut(&symbol).unwrap();
+                                    set_feed_state(
+                                        FeedState::Live, shard_id, &mut state.feed_state,
+                                        &mut encode_buf, &mut publisher, &ctx, &state.inst,
+                                        &mut seq, frame.recv_ts,
+                                    );
+                                }
                             }
                             ValidateResult::Discard => {}
                             ValidateResult::Buffering => {
