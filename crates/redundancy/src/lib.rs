@@ -23,7 +23,12 @@
 /// [`InstanceRole`]: connector_core::InstanceRole
 /// [`Publication`]: connector_aeron::Publication
 
+pub mod arbiter;
 mod publisher;
 
 pub use connector_core::InstanceRole;
+pub use arbiter::{
+    process, ArbiterVerdict, ChecksumArbiter, FailoverTrigger, LogOnlyTrigger,
+    DEFAULT_WINDOW,
+};
 pub use publisher::ChecksumPublisher;
