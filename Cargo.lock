@@ -340,6 +340,7 @@ dependencies = [
 name = "connector-refdata"
 version = "0.1.0"
 dependencies = [
+ "connector-aeron",
  "connector-core",
  "reqwest",
  "serde",

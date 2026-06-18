@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-connector-core = { workspace = true }
-serde          = { workspace = true }
-serde_json     = { workspace = true }
-thiserror      = { workspace = true }
-tokio          = { workspace = true }
-reqwest        = { workspace = true }
-tracing        = { workspace = true }
+connector-core  = { workspace = true }
+connector-aeron = { workspace = true }
+serde           = { workspace = true }
+serde_json      = { workspace = true }
+thiserror       = { workspace = true }
+tokio           = { workspace = true }
+reqwest         = { workspace = true }
+tracing         = { workspace = true }

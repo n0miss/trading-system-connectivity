@@ -2,12 +2,14 @@ mod client;
 mod error;
 mod event;
 mod normalizer;
+mod publisher;
 mod registry;
 
 pub use client::RestClient;
 pub use error::RefDataError;
 pub use event::RefDataEvent;
 pub use normalizer::{derive_scale, parse_depth_snapshot, parse_exchange_info, parse_scaled, symbol_instrument_id};
+pub use publisher::{RefDataPublishError, RefDataPublisher};
 pub use registry::InstrumentRegistry;
 
 use connector_core::{InstrumentDefinition, MarketType, VenueId};
