@@ -1,0 +1,18 @@
+[package]
+name    = "shadow-compare"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "shadow-compare"
+path = "src/main.rs"
+
+[lib]
+name = "shadow_compare"
+path = "src/lib.rs"
+
+[dependencies]
+connector-core = { workspace = true }
+clap           = { workspace = true }
+tracing        = { workspace = true }
+tracing-subscriber = { workspace = true }

@@ -15,6 +15,7 @@ members = [
     "crates/binance-spot-adapter",
     "crates/binance-futures-adapter",
     "bin/connector",
+    "bin/shadow-compare",
 ]
 
 [workspace.dependencies]
