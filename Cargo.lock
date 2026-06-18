@@ -146,6 +146,7 @@ dependencies = [
  "connector-refdata",
  "futures-util",
  "protocol-json",
+ "protocol-sbe",
  "thiserror 2.0.18",
  "tokio",
  "tokio-tungstenite",

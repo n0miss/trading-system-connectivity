@@ -16,8 +16,11 @@ use crate::error::AdapterError;
 pub struct RawFrame {
     /// Nanoseconds since Unix epoch when the frame arrived at the socket.
     pub recv_ts: i64,
-    /// Raw payload bytes (UTF-8 JSON for text frames; binary/SBE for future use).
+    /// Raw payload bytes (UTF-8 JSON for text frames; SBE binary for binary frames).
     pub payload: Vec<u8>,
+    /// `true` when the WebSocket frame was received as a binary message (SBE);
+    /// `false` for text messages (JSON).
+    pub is_binary: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -176,15 +179,20 @@ async fn connect_and_run(
                     }
                     Some(Ok(Message::Text(text))) => {
                         let frame = RawFrame {
-                            recv_ts: now_nanos(),
-                            payload: text.into_bytes(),
+                            recv_ts:   now_nanos(),
+                            payload:   text.into_bytes(),
+                            is_binary: false,
                         };
                         if tx.send(frame).await.is_err() {
                             break DisconnectReason::Shutdown;
                         }
                     }
                     Some(Ok(Message::Binary(data))) => {
-                        let frame = RawFrame { recv_ts: now_nanos(), payload: data };
+                        let frame = RawFrame {
+                            recv_ts:   now_nanos(),
+                            payload:   data,
+                            is_binary: true,
+                        };
                         if tx.send(frame).await.is_err() {
                             break DisconnectReason::Shutdown;
                         }
