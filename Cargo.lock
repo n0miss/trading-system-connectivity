@@ -369,7 +369,6 @@ version = "0.1.0"
 dependencies = [
  "connector-core",
  "thiserror 2.0.18",
- "tokio",
 ]
 
 [[package]]
