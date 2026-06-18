@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use connector_core::{BookDelta, BookSnapshot, BookStaleReason, PriceLevel};
 
+pub mod harness;
+
 // ---------------------------------------------------------------------------
 // OrderBook
 // ---------------------------------------------------------------------------
