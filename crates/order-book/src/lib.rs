@@ -117,6 +117,48 @@ impl OrderBook {
         apply_levels(&mut self.asks, &delta.asks);
         self.last_update_id = delta.final_update_id;
     }
+
+    /// Compute a deterministic FNV-1a 64-bit checksum over the book state.
+    ///
+    /// The hash covers, in order:
+    /// 1. `last_update_id` (u64 little-endian) — catches sequence divergence.
+    /// 2. Every bid level in **descending** price order (best bid first):
+    ///    `price` (i64 LE) then `qty` (i64 LE).
+    /// 3. Every ask level in **ascending** price order (best ask first):
+    ///    `price` (i64 LE) then `qty` (i64 LE).
+    ///
+    /// Because the book is stored in a `BTreeMap`, iteration order is
+    /// canonical regardless of the order deltas were applied, so two
+    /// instances at the same `last_update_id` with the same levels will
+    /// always produce the same checksum.
+    pub fn checksum(&self) -> u64 {
+        const OFFSET: u64 = 14_695_981_039_346_656_037;
+        const PRIME:  u64 = 1_099_511_628_211;
+
+        let mut h = OFFSET;
+        let mut feed = |bytes: &[u8]| {
+            for &b in bytes {
+                h ^= b as u64;
+                h = h.wrapping_mul(PRIME);
+            }
+        };
+
+        feed(&self.last_update_id.to_le_bytes());
+
+        // Bids: BTreeMap iterates ascending by key; reverse for descending price.
+        for (&price, &qty) in self.bids.iter().rev() {
+            feed(&price.to_le_bytes());
+            feed(&qty.to_le_bytes());
+        }
+
+        // Asks: ascending price (BTreeMap natural order).
+        for (&price, &qty) in self.asks.iter() {
+            feed(&price.to_le_bytes());
+            feed(&qty.to_le_bytes());
+        }
+
+        h
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -414,5 +456,113 @@ mod tests {
         book.mark_stale(BookStaleReason::SequenceGap);
         book.mark_stale(BookStaleReason::BboMismatch);
         assert_eq!(book.stale_reason(), Some(BookStaleReason::BboMismatch));
+    }
+
+    // --- checksum ---
+
+    #[test]
+    fn empty_book_checksum_is_stable() {
+        let book = OrderBook::new("BTCUSDT");
+        assert_eq!(book.checksum(), book.checksum(), "checksum must be deterministic");
+    }
+
+    #[test]
+    fn checksum_changes_after_delta() {
+        let mut book = OrderBook::new("BTCUSDT");
+        let before = book.checksum();
+        book.apply_delta(&delta(vec![level(100, 10)], vec![], 1));
+        assert_ne!(book.checksum(), before, "checksum must change when book state changes");
+    }
+
+    #[test]
+    fn checksum_is_deterministic_for_same_state() {
+        let mut book = OrderBook::new("BTCUSDT");
+        book.apply_delta(&delta(
+            vec![level(200, 5), level(100, 10)],
+            vec![level(201, 3), level(202, 7)],
+            42,
+        ));
+        assert_eq!(book.checksum(), book.checksum());
+    }
+
+    #[test]
+    fn two_books_same_state_same_checksum() {
+        let levels_bid = vec![level(200, 5), level(100, 10)];
+        let levels_ask = vec![level(201, 3)];
+
+        let mut active  = OrderBook::new("BTCUSDT");
+        let mut passive = OrderBook::new("BTCUSDT");
+
+        // Apply identical deltas in the same sequence.
+        let d = delta(levels_bid, levels_ask, 7);
+        active.apply_delta(&d);
+        passive.apply_delta(&d);
+
+        assert_eq!(
+            active.checksum(), passive.checksum(),
+            "identical books must produce identical checksums"
+        );
+    }
+
+    #[test]
+    fn two_books_different_levels_different_checksum() {
+        let mut a = OrderBook::new("BTCUSDT");
+        let mut b = OrderBook::new("BTCUSDT");
+        a.apply_delta(&delta(vec![level(100, 10)], vec![], 1));
+        b.apply_delta(&delta(vec![level(100, 11)], vec![], 1)); // different qty
+        assert_ne!(a.checksum(), b.checksum());
+    }
+
+    #[test]
+    fn checksum_includes_update_id() {
+        // Same levels, different update_id → different checksum.
+        let mut a = OrderBook::new("BTCUSDT");
+        let mut b = OrderBook::new("BTCUSDT");
+        a.apply_delta(&delta(vec![level(100, 10)], vec![], 1));
+        b.apply_delta(&delta(vec![level(100, 10)], vec![], 2)); // update_id differs
+        assert_ne!(a.checksum(), b.checksum());
+    }
+
+    #[test]
+    fn checksum_covers_both_sides() {
+        let mut bid_only = OrderBook::new("BTCUSDT");
+        let mut ask_only = OrderBook::new("BTCUSDT");
+        let mut both     = OrderBook::new("BTCUSDT");
+
+        bid_only.apply_delta(&delta(vec![level(100, 10)], vec![], 1));
+        ask_only.apply_delta(&delta(vec![], vec![level(101, 5)], 1));
+        both.apply_delta(&delta(vec![level(100, 10)], vec![level(101, 5)], 1));
+
+        // All three have the same update_id but different book states.
+        assert_ne!(bid_only.checksum(), ask_only.checksum());
+        assert_ne!(bid_only.checksum(), both.checksum());
+        assert_ne!(ask_only.checksum(), both.checksum());
+    }
+
+    #[test]
+    fn checksum_insertion_order_does_not_matter() {
+        // Active receives bids in one order, passive in another.
+        // BTreeMap sorts by key so the resulting checksum should be identical.
+        let mut active  = OrderBook::new("BTCUSDT");
+        let mut passive = OrderBook::new("BTCUSDT");
+
+        active.apply_delta(&delta(vec![level(100, 1), level(200, 2)], vec![], 1));
+        // Passive gets the same levels but in reverse insertion order via two deltas.
+        passive.apply_delta(&delta(vec![level(200, 2)], vec![], 1));
+        passive.apply_delta(&delta(vec![level(100, 1)], vec![], 1));
+
+        assert_eq!(active.checksum(), passive.checksum());
+    }
+
+    #[test]
+    fn checksum_after_snapshot_matches_snapshot_state() {
+        let mut a = OrderBook::new("BTCUSDT");
+        let mut b = OrderBook::new("BTCUSDT");
+
+        let snap = snapshot(vec![level(100, 5), level(90, 3)], vec![level(101, 7)], 99);
+        a.apply_snapshot(&snap);
+        b.apply_snapshot(&snap);
+
+        assert_eq!(a.checksum(), b.checksum());
     }
 }

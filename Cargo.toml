@@ -10,21 +10,23 @@ members = [
     "crates/aeron-publisher",
     "crates/metrics",
     "crates/replay",
+    "crates/redundancy",
     "crates/binance-spot-adapter",
     "crates/binance-futures-adapter",
     "bin/connector",
 ]
 
 [workspace.dependencies]
-connector-core       = { path = "crates/connector-core" }
-connector-config     = { path = "crates/connector-config" }
-protocol-json        = { path = "crates/protocol-json" }
-protocol-sbe         = { path = "crates/protocol-sbe" }
-connector-order-book = { path = "crates/order-book" }
-connector-refdata    = { path = "crates/refdata" }
-connector-aeron      = { path = "crates/aeron-publisher" }
-connector-metrics    = { path = "crates/metrics" }
-connector-replay     = { path = "crates/replay" }
+connector-core        = { path = "crates/connector-core" }
+connector-config      = { path = "crates/connector-config" }
+protocol-json         = { path = "crates/protocol-json" }
+protocol-sbe          = { path = "crates/protocol-sbe" }
+connector-order-book  = { path = "crates/order-book" }
+connector-refdata     = { path = "crates/refdata" }
+connector-aeron       = { path = "crates/aeron-publisher" }
+connector-metrics     = { path = "crates/metrics" }
+connector-replay      = { path = "crates/replay" }
+connector-redundancy  = { path = "crates/redundancy" }
 binance-spot-adapter    = { path = "crates/binance-spot-adapter" }
 binance-futures-adapter = { path = "crates/binance-futures-adapter" }
 

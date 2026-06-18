@@ -203,7 +203,7 @@ mod tests {
             InstrumentDefinition, TradingStatus, BookSnapshot, BookDelta,
             BestBidOffer, Trade, MarkPrice, FundingRate, Liquidation,
             OpenInterest, AccountUpdate, OrderUpdate, Heartbeat,
-            FeedStatus, GapDetected, BookStale, BookRecovered,
+            FeedStatus, GapDetected, BookStale, BookRecovered, BookChecksum,
         ];
         for mt in all {
             let mut hdr = sample();

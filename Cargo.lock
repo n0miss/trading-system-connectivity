@@ -340,6 +340,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "connector-redundancy"
+version = "0.1.0"
+dependencies = [
+ "connector-aeron",
+ "connector-core",
+ "connector-order-book",
+ "tracing",
+]
+
+[[package]]
 name = "connector-refdata"
 version = "0.1.0"
 dependencies = [

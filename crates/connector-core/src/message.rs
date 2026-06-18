@@ -585,6 +585,69 @@ impl BookRecovered {
 }
 
 // ---------------------------------------------------------------------------
+// BookChecksum — redundancy / status stream (§9.34)
+// ---------------------------------------------------------------------------
+
+/// Deterministic book-state fingerprint published by passive instances.
+///
+/// After each [`BookDelta`] or [`BookSnapshot`] is applied, the passive
+/// instance computes an FNV-1a checksum over the full book state and sends
+/// this message to the **status stream**.  The cross-instance comparator
+/// (§9.35) reads both the active and passive status streams and triggers
+/// failover when the checksums diverge for the same `update_id`.
+///
+/// # Wire layout (after the 56-byte `MessageHeader`)
+///
+/// | Field       | Type | Bytes | Notes                         |
+/// |-------------|------|-------|-------------------------------|
+/// | `symbol`    | str  | 2+n   | u16 length-prefix, UTF-8      |
+/// | `update_id` | u64  | 8     | `last_update_id` at checksum time |
+/// | `bid_depth` | u32  | 4     | number of bid price levels    |
+/// | `ask_depth` | u32  | 4     | number of ask price levels    |
+/// | `checksum`  | u64  | 8     | FNV-1a 64-bit hash            |
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BookChecksum {
+    pub header:    MessageHeader,
+    /// Symbol this checksum covers (e.g. `"BTCUSDT"`).
+    pub symbol:    String,
+    /// The `last_update_id` of the book at checksum time.
+    pub update_id: u64,
+    /// Number of bid price levels in the book at checksum time.
+    pub bid_depth: u32,
+    /// Number of ask price levels in the book at checksum time.
+    pub ask_depth: u32,
+    /// FNV-1a 64-bit hash over `update_id || bids desc || asks asc`.
+    pub checksum:  u64,
+}
+
+impl BookChecksum {
+    pub fn encode_into(&self, buf: &mut [u8]) -> Result<usize, Error> {
+        self.header.encode_into(buf)?;
+        let mut enc = Encoder::new(&mut buf[HEADER_SIZE..]);
+        enc.put_str(&self.symbol)?;
+        enc.put_u64(self.update_id)?;
+        enc.put_u32(self.bid_depth)?;
+        enc.put_u32(self.ask_depth)?;
+        enc.put_u64(self.checksum)?;
+        Ok(HEADER_SIZE + enc.finish())
+    }
+
+    pub fn decode(buf: &[u8]) -> Result<Self, Error> {
+        let header = MessageHeader::decode(buf)?;
+        check_message_type!(header, MessageType::BookChecksum);
+        let mut dec = Decoder::new(&buf[HEADER_SIZE..]);
+        Ok(Self {
+            header,
+            symbol:    dec.get_str()?,
+            update_id: dec.get_u64()?,
+            bid_depth: dec.get_u32()?,
+            ask_depth: dec.get_u32()?,
+            checksum:  dec.get_u64()?,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Phase 1.5 stubs — body intentionally empty until the execution layer is built
 // ---------------------------------------------------------------------------
 
@@ -670,6 +733,9 @@ impl NormalizedMessage {
             MessageType::GapDetected          => Ok(Self::GapDetected(GapDetected::decode(buf)?)),
             MessageType::BookStale            => Ok(Self::BookStale(BookStale::decode(buf)?)),
             MessageType::BookRecovered        => Ok(Self::BookRecovered(BookRecovered::decode(buf)?)),
+            // BookChecksum is a status-stream message, not a market-data message.
+            // Route it through BookChecksum::decode() directly, not NormalizedMessage.
+            MessageType::BookChecksum => Err(Error::UnknownMessageType(MessageType::BookChecksum as u8)),
         }
     }
 

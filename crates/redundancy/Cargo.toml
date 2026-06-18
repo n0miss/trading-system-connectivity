@@ -1,0 +1,10 @@
+[package]
+name    = "connector-redundancy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+connector-core       = { workspace = true }
+connector-order-book = { workspace = true }
+connector-aeron      = { workspace = true }
+tracing              = { workspace = true }

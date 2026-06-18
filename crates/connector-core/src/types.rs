@@ -56,6 +56,8 @@ pub enum MessageType {
     GapDetected          = 15,
     BookStale            = 16,
     BookRecovered        = 17,
+    /// Published by passive instances to the status stream (§9.34).
+    BookChecksum         = 18,
 }
 
 impl TryFrom<u8> for MessageType {
@@ -79,7 +81,55 @@ impl TryFrom<u8> for MessageType {
             15 => Ok(Self::GapDetected),
             16 => Ok(Self::BookStale),
             17 => Ok(Self::BookRecovered),
+            18 => Ok(Self::BookChecksum),
             _  => Err(Error::UnknownMessageType(v)),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// InstanceRole
+// ---------------------------------------------------------------------------
+
+/// Whether this connector process is the active (primary) or passive (shadow) instance.
+///
+/// Both roles run the full pipeline and maintain their own order books.
+/// The difference is where their output goes:
+///
+/// * **Active** → publishes [`NormalizedMessage`]s to the main market-data Aeron stream.
+/// * **Passive** → publishes [`BookChecksum`] messages to the status stream so the
+///   cross-instance comparator (§9.35) can detect divergence and trigger failover.
+///
+/// Convention: instance 0 is `Active`; all others are `Passive`.
+/// For a standard two-instance deployment: `id = 0` → Active, `id = 1` → Passive.
+///
+/// [`NormalizedMessage`]: crate::NormalizedMessage
+/// [`BookChecksum`]: crate::BookChecksum
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum InstanceRole {
+    Active,
+    Passive,
+}
+
+impl InstanceRole {
+    /// Derive a role from a zero-based `instance_id`.
+    ///
+    /// Instance 0 is always Active.  This is intentionally simple: the
+    /// arbiter (§9.35) handles the failover logic when the active instance
+    /// diverges or goes silent.
+    pub fn from_instance_id(id: u32) -> Self {
+        if id == 0 { Self::Active } else { Self::Passive }
+    }
+
+    pub fn is_active(self)  -> bool { self == Self::Active  }
+    pub fn is_passive(self) -> bool { self == Self::Passive }
+}
+
+impl std::fmt::Display for InstanceRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Active  => f.write_str("active"),
+            Self::Passive => f.write_str("passive"),
         }
     }
 }
