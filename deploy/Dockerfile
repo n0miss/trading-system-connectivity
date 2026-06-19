@@ -3,20 +3,18 @@
 # Build:
 #   docker build -t connector:latest -f deploy/Dockerfile .
 #
-# Run (single shard):
+# Run (single instance):
 #   docker run --rm -p 9090:9090 \
 #     -v /dev/shm/aeron:/dev/shm/aeron \
 #     -e RUST_LOG=info \
-#     connector:latest --shard-id 0 --total-shards 1
+#     connector:latest
 #
-# Run (one container per shard on the same host, offset metrics ports by shard):
-#   for i in 0 1 2 3; do
-#     docker run -d --name connector-shard$i \
-#       -p $((9090+i)):9090 \
-#       -v /dev/shm/aeron:/dev/shm/aeron \
-#       -e RUST_LOG=info \
-#       connector:latest --shard-id $i --total-shards 4
-#   done
+# Run (multi-instance — set instance.id and instance.total in config, or via env):
+#   docker run -d --name connector-0 -p 9090:9090 \
+#     -e CONNECTOR__INSTANCE__ID=0 \
+#     -e CONNECTOR__INSTANCE__TOTAL=4 \
+#     -e RUST_LOG=info \
+#     connector:latest
 
 # ── Stage 1: build ───────────────────────────────────────────────────────────
 FROM rust:1-slim-bookworm AS builder
@@ -63,5 +61,4 @@ EXPOSE 9090
 USER connector
 
 ENTRYPOINT ["/usr/local/bin/connector", "--config", "/etc/connector/default.toml"]
-# Shard defaults — override with docker run arguments.
-CMD ["--shard-id", "0", "--total-shards", "1"]
+CMD []

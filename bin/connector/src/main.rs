@@ -16,12 +16,6 @@ use tracing::{info, warn};
 struct Args {
     #[arg(short, long, default_value = "config/default.toml")]
     config: String,
-
-    #[arg(long, default_value = "0")]
-    shard_id: u32,
-
-    #[arg(long, default_value = "1")]
-    total_shards: u32,
 }
 
 async fn metrics_handler(
@@ -119,11 +113,11 @@ async fn main() -> Result<()> {
         .try_deserialize()?;
 
     info!(
-        config       = %args.config,
-        shard_id     = args.shard_id,
-        total_shards = args.total_shards,
-        venue        = %cfg.instance.venue,
-        market       = %cfg.instance.market,
+        config      = %args.config,
+        instance_id = cfg.instance.id,
+        total       = cfg.instance.total,
+        venue       = %cfg.instance.venue,
+        market      = %cfg.instance.market,
         "connector starting"
     );
 
@@ -153,7 +147,8 @@ async fn main() -> Result<()> {
     );
     let events = refdata.refresh().await?;
 
-    let universe: Vec<String> = if cfg.symbols.universe.is_empty() {
+    // Full trading universe for this venue/market.
+    let all_symbols: Vec<String> = if cfg.symbols.universe.is_empty() {
         events
             .iter()
             .filter(|e| e.definition().is_trading)
@@ -162,7 +157,22 @@ async fn main() -> Result<()> {
     } else {
         cfg.symbols.universe.clone()
     };
-    info!(count = universe.len(), "symbol universe established");
+    info!(count = all_symbols.len(), "symbol universe established");
+
+    // Filter to only the symbols whose logical shard is owned by this instance.
+    // Ownership: shard_for(symbol) % instance.total == instance.id
+    let universe: Vec<String> = cfg
+        .filter_owned_symbols(venue_id, market_type, all_symbols.iter().map(String::as_str))
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    info!(
+        instance_id  = cfg.instance.id,
+        total        = cfg.instance.total,
+        owned        = universe.len(),
+        total_shards = cfg.sharding.total_logical_shards,
+        "shard assignment complete"
+    );
 
     // Shared instrument map — one Arc clone per connection task.
     let inst_map: Arc<HashMap<String, InstrumentDefinition>> = Arc::new(
@@ -173,8 +183,8 @@ async fn main() -> Result<()> {
     );
 
     // ── WebSocket connections ─────────────────────────────────────────────────
-    let shard_id    = args.shard_id;
     let instance_id = cfg.instance.id;
+    let shard_id    = instance_id;
     let max_streams = cfg.websocket.max_streams_per_connection as usize;
 
     let streams: Vec<String> = match venue_id {
