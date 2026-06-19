@@ -69,7 +69,8 @@ impl ConnectionManager {
                 break;
             }
 
-            info!(%url, reconnect_count, "connecting to Binance Futures WebSocket");
+            let base_url = url.split('?').next().unwrap_or(url);
+            info!(url = base_url, reconnect_count, "connecting to Binance Futures WebSocket");
 
             let result = connect_and_run(url, &self.config, &tx, &mut shutdown).await;
 
