@@ -5,7 +5,9 @@
 use std::time::Duration;
 
 use connector_config::WebSocketConfig;
+use connector_metrics::ConnectorMetrics;
 use futures_util::{SinkExt, StreamExt};
+use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{info, warn};
@@ -44,12 +46,18 @@ enum DisconnectReason {
 /// Owns the reconnect loop, ping/pong keepalive, and forced 24-hour rotation.
 /// Raw frames are forwarded over the caller-supplied mpsc channel.
 pub struct ConnectionManager {
-    config: WebSocketConfig,
+    config:  WebSocketConfig,
+    metrics: Option<Arc<ConnectorMetrics>>,
 }
 
 impl ConnectionManager {
     pub fn new(config: WebSocketConfig) -> Self {
-        Self { config }
+        Self { config, metrics: None }
+    }
+
+    pub fn with_metrics(mut self, m: Arc<ConnectorMetrics>) -> Self {
+        self.metrics = Some(m);
+        self
     }
 
     /// Connect to `url` and forward raw frames to `tx`.
@@ -72,16 +80,18 @@ impl ConnectionManager {
             let base_url = url.split('?').next().unwrap_or(url);
             info!(url = base_url, reconnect_count, "connecting to Binance Futures WebSocket");
 
-            let result = connect_and_run(url, &self.config, &tx, &mut shutdown).await;
+            let result = connect_and_run(url, &self.config, &tx, &mut shutdown, self.metrics.as_deref()).await;
 
             match result {
                 Ok(DisconnectReason::Shutdown) => break,
                 Ok(DisconnectReason::ForcedRotation) => {
                     info!("24h rotation — reconnecting immediately");
                     reconnect_count += 1;
+                    if let Some(m) = &self.metrics { m.reconnects.increment(); }
                 }
                 Ok(DisconnectReason::PeerClosed) | Err(_) => {
                     reconnect_count += 1;
+                    if let Some(m) = &self.metrics { m.reconnects.increment(); }
                     let delay = backoff_delay(reconnect_count, self.config.reconnect_delay_ms);
                     warn!(
                         reconnect_count,
@@ -106,10 +116,11 @@ impl ConnectionManager {
 
 /// Establish one WebSocket session and drive it until it ends for any reason.
 async fn connect_and_run(
-    url: &str,
-    config: &WebSocketConfig,
-    tx: &mpsc::Sender<RawFrame>,
+    url:      &str,
+    config:   &WebSocketConfig,
+    tx:       &mpsc::Sender<RawFrame>,
     shutdown: &mut watch::Receiver<bool>,
+    metrics:  Option<&ConnectorMetrics>,
 ) -> Result<DisconnectReason, FuturesAdapterError> {
     let (ws, _) = match connect_async(url).await {
         Ok(pair) => pair,
@@ -180,6 +191,7 @@ async fn connect_and_run(
                         break DisconnectReason::PeerClosed;
                     }
                     Some(Ok(Message::Text(text))) => {
+                        if let Some(m) = metrics { m.messages_in.increment(); }
                         let frame = RawFrame {
                             recv_ts: now_nanos(),
                             payload: text.into_bytes(),
@@ -189,6 +201,7 @@ async fn connect_and_run(
                         }
                     }
                     Some(Ok(Message::Binary(data))) => {
+                        if let Some(m) = metrics { m.messages_in.increment(); }
                         let frame = RawFrame { recv_ts: now_nanos(), payload: data };
                         if tx.send(frame).await.is_err() {
                             break DisconnectReason::Shutdown;

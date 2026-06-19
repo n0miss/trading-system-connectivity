@@ -85,8 +85,12 @@ async fn main() -> Result<()> {
     info!(port = prometheus_port, "metrics server listening");
 
     // ── Symbol discovery ──────────────────────────────────────────────────────
+    let rest_base_url = match venue_id {
+        VenueId::BinanceSpot    => cfg.rest.base_url.as_str(),
+        VenueId::BinanceFutures => "https://fapi.binance.com",
+    };
     let mut refdata = RefDataService::new(
-        &cfg.rest.base_url,
+        rest_base_url,
         venue_id,
         market_type,
         cfg.instance.id,
@@ -155,7 +159,8 @@ async fn main() -> Result<()> {
             }
             VenueId::BinanceFutures => {
                 tokio::spawn(async move {
-                    let mgr = binance_futures_adapter::ConnectionManager::new(ws);
+                    let mgr = binance_futures_adapter::ConnectionManager::new(ws)
+                        .with_metrics(m);
                     let (tx, mut rx) = mpsc::channel(4096);
                     tokio::spawn(async move { while rx.recv().await.is_some() {} });
                     mgr.run(&url, tx, sd).await;
