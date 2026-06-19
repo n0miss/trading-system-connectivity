@@ -62,8 +62,6 @@ EXPOSE 9090
 
 USER connector
 
-ENTRYPOINT ["/usr/local/bin/connector"]
-# Defaults — override with docker run arguments.
-CMD ["--config", "/etc/connector/default.toml", \
-     "--shard-id", "0", \
-     "--total-shards", "1"]
+ENTRYPOINT ["/usr/local/bin/connector", "--config", "/etc/connector/default.toml"]
+# Shard defaults — override with docker run arguments.
+CMD ["--shard-id", "0", "--total-shards", "1"]
