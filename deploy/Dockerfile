@@ -4,14 +4,15 @@
 #   docker build -t connector:latest -f deploy/Dockerfile .
 #
 # Run (single shard):
-#   docker run --rm --network host \
+#   docker run --rm -p 9090:9090 \
 #     -v /dev/shm/aeron:/dev/shm/aeron \
 #     -e RUST_LOG=info \
 #     connector:latest --shard-id 0 --total-shards 1
 #
-# Run (one container per shard on the same host):
+# Run (one container per shard on the same host, offset metrics ports by shard):
 #   for i in 0 1 2 3; do
-#     docker run -d --name connector-shard$i --network host \
+#     docker run -d --name connector-shard$i \
+#       -p $((9090+i)):9090 \
 #       -v /dev/shm/aeron:/dev/shm/aeron \
 #       -e RUST_LOG=info \
 #       connector:latest --shard-id $i --total-shards 4
@@ -56,6 +57,8 @@ COPY config/ /etc/connector/
 
 # /dev/shm/aeron is bind-mounted from the host at runtime (Aeron IPC).
 # The connector user must be able to write there; the host mount handles it.
+
+EXPOSE 9090
 
 USER connector
 
