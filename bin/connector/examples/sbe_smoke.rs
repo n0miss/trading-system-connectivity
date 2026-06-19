@@ -104,7 +104,7 @@ async fn main() -> std::process::ExitCode {
 
     let mgr = ConnectionManager::new(config);
     let mgr_task = tokio::spawn(async move {
-        mgr.run(&url, tx, shutdown_rx).await;
+        mgr.run(&url, move |frame| { let _ = tx.try_send(frame); }, shutdown_rx).await;
     });
 
     let deadline = tokio::time::sleep(Duration::from_secs(args.secs));

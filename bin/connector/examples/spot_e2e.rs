@@ -197,7 +197,7 @@ async fn run_shard(
     let mgr_handle = tokio::spawn({
         let url        = ws_url.clone();
         let shutdown_m = shutdown.clone();
-        async move { mgr.run(&url, frame_tx, shutdown_m).await }
+        async move { mgr.run(&url, move |frame| { let _ = frame_tx.try_send(frame); }, shutdown_m).await }
     });
 
     let mut ticker            = tokio::time::interval(Duration::from_secs(1));

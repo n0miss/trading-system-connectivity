@@ -186,7 +186,7 @@ async fn run_shard(
     let shutdown_ws = shutdown.clone();
     let ws_url_clone = ws_url.clone();
     tokio::spawn(async move {
-        mgr.run(&ws_url_clone, frame_tx, shutdown_ws).await;
+        mgr.run(&ws_url_clone, move |frame| { let _ = frame_tx.try_send(frame); }, shutdown_ws).await;
     });
 
     let mut seq         = 0u64;
