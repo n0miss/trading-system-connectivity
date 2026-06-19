@@ -59,14 +59,15 @@ pub(crate) fn now_nanos() -> i64 {
 ///
 /// # Latency accounting
 ///
-/// | Metric               | Delta                             |
-/// |----------------------|-----------------------------------|
-/// | `wire_latency`       | `local_recv_ts − exchange_event_ts`  |
-/// | `processing_latency` | `local_publish_ts − local_recv_ts`   |
-/// | `end_to_end_latency` | `local_publish_ts − exchange_event_ts` |
+/// | Metric               | Delta                                  | Requires exchange ts? |
+/// |----------------------|----------------------------------------|-----------------------|
+/// | `processing_latency` | `local_publish_ts − local_recv_ts`     | No — always recorded  |
+/// | `wire_latency`       | `local_recv_ts − exchange_event_ts`    | Yes                   |
+/// | `end_to_end_latency` | `local_publish_ts − exchange_event_ts` | Yes                   |
 ///
-/// Latencies are silently skipped when either source timestamp equals
-/// `TS_NONE` (0) — the histograms remain unaffected.
+/// `processing_latency` is recorded for every message (including bookTicker,
+/// which carries no exchange timestamp).  `wire_latency` and `end_to_end_latency`
+/// are only recorded when `exchange_event_ts != TS_NONE`.
 #[inline]
 pub fn record_publish(
     m:        &ConnectorMetrics,
@@ -75,9 +76,11 @@ pub fn record_publish(
 ) -> i64 {
     let publish_ts = now_nanos();
     m.messages_out.increment();
+    if recv_ts != TS_NONE {
+        m.processing_latency.record(publish_ts.saturating_sub(recv_ts));
+    }
     if event_ts != TS_NONE && recv_ts != TS_NONE {
         m.wire_latency.record(recv_ts.saturating_sub(event_ts));
-        m.processing_latency.record(publish_ts.saturating_sub(recv_ts));
         m.end_to_end_latency.record(publish_ts.saturating_sub(event_ts));
     }
     publish_ts
@@ -158,9 +161,10 @@ mod tests {
 
         // messages_out still increments — we did publish the message
         assert_eq!(m.messages_out.get(), 1);
-        // latency histograms stay empty
+        // processing_latency is recorded (only needs recv_ts, e.g. bookTicker)
+        assert_eq!(m.processing_latency.count(), 1);
+        // wire and e2e require a valid exchange timestamp — stay empty
         assert_eq!(m.wire_latency.count(),       0);
-        assert_eq!(m.processing_latency.count(), 0);
         assert_eq!(m.end_to_end_latency.count(), 0);
     }
 

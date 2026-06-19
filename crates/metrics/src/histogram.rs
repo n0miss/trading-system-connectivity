@@ -6,27 +6,32 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Upper bound of each histogram bucket in nanoseconds.
 ///
-/// Chosen to give fine resolution across the range a well-tuned feed should
-/// land in (< 1 ms) while still capturing outliers up to 100 ms.
+/// Fine-grained below 1 ms for co-located latency; coarser buckets up to 5 s
+/// so wire latency from non-colocated machines (internet RTT 50–500 ms)
+/// lands in a labelled bucket rather than `+Inf`.
 pub const BUCKET_BOUNDS: &[u64] = &[
-    1_000,        // 1 µs
-    5_000,        // 5 µs
-    10_000,       // 10 µs
-    25_000,       // 25 µs
-    50_000,       // 50 µs
-    100_000,      // 100 µs
-    250_000,      // 250 µs
-    500_000,      // 500 µs
-    1_000_000,    // 1 ms
-    2_500_000,    // 2.5 ms
-    5_000_000,    // 5 ms
-    10_000_000,   // 10 ms
-    25_000_000,   // 25 ms
-    50_000_000,   // 50 ms
-    100_000_000,  // 100 ms
+    1_000,           // 1 µs
+    5_000,           // 5 µs
+    10_000,          // 10 µs
+    25_000,          // 25 µs
+    50_000,          // 50 µs
+    100_000,         // 100 µs
+    250_000,         // 250 µs
+    500_000,         // 500 µs
+    1_000_000,       // 1 ms
+    2_500_000,       // 2.5 ms
+    5_000_000,       // 5 ms
+    10_000_000,      // 10 ms
+    25_000_000,      // 25 ms
+    50_000_000,      // 50 ms
+    100_000_000,     // 100 ms
+    200_000_000,     // 200 ms
+    500_000_000,     // 500 ms
+    1_000_000_000,   // 1 s
+    5_000_000_000,   // 5 s
 ];
 
-pub const NUM_BOUNDS: usize   = 15;
+pub const NUM_BOUNDS: usize   = 19;
 /// Total buckets: one per bound plus the `+Inf` catch-all.
 pub const NUM_BUCKETS: usize  = NUM_BOUNDS + 1;
 
@@ -184,7 +189,7 @@ mod tests {
     #[test]
     fn record_above_max_bound_goes_to_inf_bucket() {
         let h = hist();
-        h.record(200_000_000); // 200ms > 100ms (last bound)
+        h.record(10_000_000_000); // 10 s > 5 s (last bound) → +Inf
         assert_eq!(h.buckets[NUM_BUCKETS - 1].load(Ordering::Relaxed), 1);
     }
 
@@ -231,8 +236,8 @@ mod tests {
     fn p99_in_overflow_when_large_value_is_the_99th() {
         let h = hist();
         for _ in 0..99 { h.record(500_000); }
-        h.record(500_000_000); // 500ms — beyond all bounds
-        // 99th % (rank 100) → only reached after overflow bucket
+        h.record(10_000_000_000); // 10 s — beyond all bounds (max is 5 s)
+        // 100th % (rank 100) → only reached after overflow bucket
         assert_eq!(h.percentile(1.0), Some(u64::MAX));
     }
 
