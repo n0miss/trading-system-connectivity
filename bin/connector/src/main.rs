@@ -1,13 +1,15 @@
 use anyhow::Result;
 use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
 use clap::Parser;
-use connector_core::{MarketType, VenueId};
+use connector_core::{InstrumentDefinition, MarketType, NormalizedMessage, VenueId};
 use connector_metrics::MetricsHandle;
 use connector_refdata::RefDataService;
+use protocol_json::{FuturesEvent, SpotEvent, parse_futures_message, parse_spot_message};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Parser)]
 #[command(name = "connector", about = "Crypto CEX market data connector")]
@@ -46,6 +48,59 @@ fn parse_venue(venue: &str, market: &str) -> Result<(VenueId, MarketType)> {
     Ok((venue_id, market_type))
 }
 
+fn spot_symbol(event: &SpotEvent) -> Option<&str> {
+    match event {
+        SpotEvent::BookTicker(bt) => Some(&bt.symbol),
+        SpotEvent::DepthUpdate(du) => Some(&du.symbol),
+        SpotEvent::Trade(tr)       => Some(&tr.symbol),
+        SpotEvent::Unknown(_)      => None,
+    }
+}
+
+fn futures_symbol(event: &FuturesEvent) -> Option<&str> {
+    match event {
+        FuturesEvent::BookTicker(bt) => Some(&bt.symbol),
+        FuturesEvent::DepthUpdate(du) => Some(&du.symbol),
+        FuturesEvent::AggTrade(at)   => Some(&at.symbol),
+        FuturesEvent::MarkPrice(mp)  => Some(&mp.symbol),
+        FuturesEvent::ForceOrder(fo) => Some(&fo.order.symbol),
+        FuturesEvent::Unknown(_)     => None,
+    }
+}
+
+/// Encode one normalized message, stamp `local_publish_ts`, and offer it.
+///
+/// `local_publish_ts` is patched in-place at byte offset 48 of the header
+/// (see [`connector_core::header`] wire layout) so the publish timestamp is
+/// accurate without re-encoding the full message.
+fn publish_one(
+    msg:       &NormalizedMessage,
+    shard_id:  u32,
+    publisher: &mut connector_aeron::ShardedPublisher<connector_aeron::NullPublication>,
+    metrics:   &connector_metrics::ConnectorMetrics,
+    buf:       &mut [u8],
+) {
+    let len = match msg.encode_into(buf) {
+        Ok(n)  => n,
+        Err(e) => { warn!("encode error: {e}"); return; }
+    };
+    let hdr        = msg.header();
+    let publish_ts = binance_spot_adapter::record_publish(
+        metrics,
+        hdr.exchange_event_ts,
+        hdr.local_recv_ts,
+    );
+    // Patch local_publish_ts (offset 48, 8 bytes, little-endian).
+    buf[48..56].copy_from_slice(&publish_ts.to_le_bytes());
+
+    let offer = publisher
+        .offer(shard_id, &buf[..len])
+        .unwrap_or(connector_aeron::OfferResult::Closed);
+    if !offer.is_ok() {
+        binance_spot_adapter::record_offer_failure(metrics);
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -64,16 +119,16 @@ async fn main() -> Result<()> {
         .try_deserialize()?;
 
     info!(
-        config  = %args.config,
-        shard_id = args.shard_id,
+        config       = %args.config,
+        shard_id     = args.shard_id,
         total_shards = args.total_shards,
-        venue   = %cfg.instance.venue,
-        market  = %cfg.instance.market,
+        venue        = %cfg.instance.venue,
+        market       = %cfg.instance.market,
         "connector starting"
     );
 
     let (venue_id, market_type) = parse_venue(&cfg.instance.venue, &cfg.instance.market)?;
-    let metrics: MetricsHandle = Arc::new(connector_metrics::ConnectorMetrics::new());
+    let metrics: MetricsHandle   = Arc::new(connector_metrics::ConnectorMetrics::new());
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
     // ── Metrics HTTP server ───────────────────────────────────────────────────
@@ -109,27 +164,33 @@ async fn main() -> Result<()> {
     };
     info!(count = universe.len(), "symbol universe established");
 
+    // Shared instrument map — one Arc clone per connection task.
+    let inst_map: Arc<HashMap<String, InstrumentDefinition>> = Arc::new(
+        events
+            .iter()
+            .map(|e| (e.definition().symbol.clone(), e.definition().clone()))
+            .collect(),
+    );
+
     // ── WebSocket connections ─────────────────────────────────────────────────
+    let shard_id    = args.shard_id;
+    let instance_id = cfg.instance.id;
     let max_streams = cfg.websocket.max_streams_per_connection as usize;
 
     let streams: Vec<String> = match venue_id {
         VenueId::BinanceSpot => universe
             .iter()
-            .flat_map(|sym| {
-                [
-                    binance_spot_adapter::SpotStream::BookTicker.stream_name(sym),
-                    binance_spot_adapter::SpotStream::Depth { update_speed_ms: 100 }.stream_name(sym),
-                ]
-            })
+            .flat_map(|sym| [
+                binance_spot_adapter::SpotStream::BookTicker.stream_name(sym),
+                binance_spot_adapter::SpotStream::Depth { update_speed_ms: 100 }.stream_name(sym),
+            ])
             .collect(),
         VenueId::BinanceFutures => universe
             .iter()
-            .flat_map(|sym| {
-                [
-                    binance_futures_adapter::FuturesStream::BookTicker.stream_name(sym),
-                    binance_futures_adapter::FuturesStream::Depth { update_speed_ms: 100 }.stream_name(sym),
-                ]
-            })
+            .flat_map(|sym| [
+                binance_futures_adapter::FuturesStream::BookTicker.stream_name(sym),
+                binance_futures_adapter::FuturesStream::Depth { update_speed_ms: 100 }.stream_name(sym),
+            ])
             .collect(),
     };
 
@@ -143,30 +204,103 @@ async fn main() -> Result<()> {
         };
         info!(connection = i, streams = chunk.len(), "starting WebSocket connection");
 
-        let sd = shutdown_rx.clone();
-        let m  = metrics.clone();
-        let ws = cfg.websocket.clone();
+        let sd      = shutdown_rx.clone();
+        let m       = metrics.clone();
+        let ws      = cfg.websocket.clone();
+        let imap    = inst_map.clone();
+        let conn_id = i as u32;
 
         let task = match venue_id {
-            VenueId::BinanceSpot => {
+            VenueId::BinanceSpot => tokio::spawn(async move {
+                let mgr = binance_spot_adapter::ConnectionManager::new(ws)
+                    .with_metrics(m.clone());
+                let (tx, mut rx) =
+                    mpsc::channel::<binance_spot_adapter::RawFrame>(4096);
+
+                let ctx = binance_spot_adapter::NormalizeCtx {
+                    venue_id,
+                    market_type,
+                    instance_id,
+                    connection_id: conn_id,
+                };
+                let m2 = m.clone();
                 tokio::spawn(async move {
-                    let mgr = binance_spot_adapter::ConnectionManager::new(ws)
-                        .with_metrics(m);
-                    let (tx, mut rx) = mpsc::channel(4096);
-                    tokio::spawn(async move { while rx.recv().await.is_some() {} });
-                    mgr.run(&url, tx, sd).await;
-                })
-            }
-            VenueId::BinanceFutures => {
+                    let mut publisher = connector_aeron::build_null(&[shard_id]);
+                    let mut buf = vec![0u8; 65_536];
+                    let mut seq = 0u64;
+                    while let Some(frame) = rx.recv().await {
+                        let event = match parse_spot_message(&frame.payload) {
+                            Ok(e)  => e,
+                            Err(e) => { warn!("spot JSON: {e}"); continue; }
+                        };
+                        let symbol = match spot_symbol(&event) {
+                            Some(s) => s,
+                            None    => continue,
+                        };
+                        let inst = match imap.get(symbol) {
+                            Some(i) => i,
+                            None    => { warn!(symbol, "unknown instrument"); continue; }
+                        };
+                        let msg = match binance_spot_adapter::normalize_spot_event(
+                            &event, inst, &ctx, &mut seq, frame.recv_ts,
+                        ) {
+                            Ok(Some(m)) => m,
+                            Ok(None)    => continue,
+                            Err(e)      => { warn!("normalize: {e}"); continue; }
+                        };
+                        publish_one(&msg, shard_id, &mut publisher, &m2, &mut buf);
+                    }
+                });
+
+                mgr.run(&url, tx, sd).await;
+            }),
+
+            VenueId::BinanceFutures => tokio::spawn(async move {
+                let mgr = binance_futures_adapter::ConnectionManager::new(ws)
+                    .with_metrics(m.clone());
+                let (tx, mut rx) =
+                    mpsc::channel::<binance_futures_adapter::RawFrame>(4096);
+
+                let ctx = binance_futures_adapter::NormalizeCtx {
+                    venue_id,
+                    market_type,
+                    instance_id,
+                    connection_id: conn_id,
+                };
+                let m2 = m.clone();
                 tokio::spawn(async move {
-                    let mgr = binance_futures_adapter::ConnectionManager::new(ws)
-                        .with_metrics(m);
-                    let (tx, mut rx) = mpsc::channel(4096);
-                    tokio::spawn(async move { while rx.recv().await.is_some() {} });
-                    mgr.run(&url, tx, sd).await;
-                })
-            }
+                    let mut publisher = connector_aeron::build_null(&[shard_id]);
+                    let mut buf = vec![0u8; 65_536];
+                    let mut seq = 0u64;
+                    while let Some(frame) = rx.recv().await {
+                        let event = match parse_futures_message(&frame.payload) {
+                            Ok(e)  => e,
+                            Err(e) => { warn!("futures JSON: {e}"); continue; }
+                        };
+                        let symbol = match futures_symbol(&event) {
+                            Some(s) => s,
+                            None    => continue,
+                        };
+                        let inst = match imap.get(symbol) {
+                            Some(i) => i,
+                            None    => { warn!(symbol, "unknown instrument"); continue; }
+                        };
+                        let msgs = match binance_futures_adapter::normalize_futures_event(
+                            &event, inst, &ctx, &mut seq, frame.recv_ts,
+                        ) {
+                            Ok(v)  => v,
+                            Err(e) => { warn!("normalize: {e}"); continue; }
+                        };
+                        for msg in &msgs {
+                            publish_one(msg, shard_id, &mut publisher, &m2, &mut buf);
+                        }
+                    }
+                });
+
+                mgr.run(&url, tx, sd).await;
+            }),
         };
+
         conn_tasks.push(task);
     }
 

@@ -54,8 +54,8 @@ pub struct FuturesBookTicker {
 pub struct FuturesDepthUpdate {
     #[serde(rename = "E")]
     pub event_time_ms: i64,
-    /// Transaction time in milliseconds.
-    #[serde(rename = "T")]
+    /// Transaction time in milliseconds.  Omitted on some exchange variants.
+    #[serde(rename = "T", default)]
     pub transaction_time_ms: i64,
     #[serde(rename = "s")]
     pub symbol: String,
@@ -66,8 +66,8 @@ pub struct FuturesDepthUpdate {
     #[serde(rename = "u")]
     pub last_update_id: u64,
     /// Final update ID of the previous depth event — enables gap detection
-    /// without a REST snapshot handshake at startup.
-    #[serde(rename = "pu")]
+    /// without a REST snapshot handshake at startup.  Absent on some snapshots.
+    #[serde(rename = "pu", default)]
     pub prev_final_update_id: u64,
     /// `[price, qty]` pairs; qty `"0"` means remove the level.
     #[serde(rename = "b")]
@@ -104,8 +104,8 @@ pub struct FuturesAggTrade {
     /// Last individual trade ID in this aggregate.
     #[serde(rename = "l")]
     pub last_trade_id: u64,
-    /// Execution time of the last fill in milliseconds.
-    #[serde(rename = "T")]
+    /// Execution time of the last fill in milliseconds.  Absent on some variants.
+    #[serde(rename = "T", default)]
     pub trade_time_ms: i64,
     /// `true` → buyer is maker → seller is the aggressor.
     #[serde(rename = "m")]
@@ -138,8 +138,8 @@ pub struct FuturesMarkPrice {
     /// Funding rate string.  Empty string `""` between settlement windows.
     #[serde(rename = "r", default)]
     pub funding_rate: String,
-    /// Next funding settlement time in milliseconds.
-    #[serde(rename = "T")]
+    /// Next funding settlement time in milliseconds.  Absent on delivery contracts.
+    #[serde(rename = "T", default)]
     pub next_funding_time_ms: i64,
 }
 
@@ -183,8 +183,8 @@ pub struct FuturesLiquidationOrder {
     /// Last filled quantity.
     #[serde(rename = "l")]
     pub last_filled_qty: String,
-    /// Trade time in milliseconds.
-    #[serde(rename = "T")]
+    /// Trade time in milliseconds.  Absent on some liquidation order variants.
+    #[serde(rename = "T", default)]
     pub trade_time_ms: i64,
 }
 
