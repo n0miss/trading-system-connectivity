@@ -101,6 +101,22 @@ impl<P: Publication> ShardedPublisher<P> {
 // Builders
 // ---------------------------------------------------------------------------
 
+/// A [`ShardedPublisher`] using boxed trait objects.
+///
+/// Allows mixing publication backends (null, Aeron, channel) at runtime
+/// without changing the type seen by the rest of the pipeline.
+pub type DynShardedPublisher = ShardedPublisher<Box<dyn Publication + Send>>;
+
+/// Builds a [`DynShardedPublisher`] backed by [`NullPublication`]s.
+///
+/// Used when no Aeron media driver is available (tests, benchmarks, dev).
+pub fn build_null_boxed(owned_shards: &[u32]) -> DynShardedPublisher {
+    ShardedPublisher::new(owned_shards.iter().map(|&id| {
+        let p: Box<dyn Publication + Send> = Box::new(NullPublication::default());
+        (id, p)
+    }))
+}
+
 /// Builds a [`ShardedPublisher`] backed by [`NullPublication`]s.
 ///
 /// Used when no Aeron media driver is available (tests, benchmarks, dev).
@@ -108,6 +124,55 @@ pub fn build_null(owned_shards: &[u32]) -> ShardedPublisher<NullPublication> {
     ShardedPublisher::new(
         owned_shards.iter().map(|&id| (id, NullPublication::default())),
     )
+}
+
+/// Connects to the Aeron media driver and builds a [`DynShardedPublisher`]
+/// with one publication per owned shard.
+///
+/// Each shard `n` publishes to stream `n + 1` (Aeron stream IDs start at 1).
+/// The channel is chosen from config: IPC takes priority over UDP.
+///
+/// Blocks until all publications are connected (up to 5 s per shard).
+/// Returns [`PublisherError::AeronConnect`] if the driver is unreachable or
+/// a publication cannot be registered within the timeout.
+#[cfg(feature = "aeron")]
+pub fn build_aeron(
+    cfg: &connector_config::AeronConfig,
+    owned_shards: &[u32],
+) -> Result<DynShardedPublisher, crate::error::PublisherError> {
+    use rusteron_client::{Aeron, AeronContext};
+    use std::ffi::CString;
+    use std::time::Duration;
+    use crate::error::PublisherError;
+    use crate::publication::AeronClientPublication;
+
+    let context = AeronContext::new()
+        .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
+
+    let dir = CString::new(cfg.media_driver_dir.as_str())
+        .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
+    context.set_dir(&dir)
+        .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
+
+    let aeron = Aeron::new(&context)
+        .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
+    aeron.start()
+        .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
+
+    let channel = channel_from_config(cfg);
+    let channel_cstr = CString::new(channel.as_str())
+        .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
+
+    let mut shards: Vec<(u32, Box<dyn Publication + Send>)> = Vec::with_capacity(owned_shards.len());
+    for &shard_id in owned_shards {
+        let stream_id = shard_stream_id(shard_id);
+        let pub_ = aeron
+            .add_publication(&channel_cstr, stream_id, Duration::from_secs(5))
+            .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
+        shards.push((shard_id, Box::new(AeronClientPublication::new(pub_, aeron.clone()))));
+    }
+
+    Ok(ShardedPublisher::new(shards))
 }
 
 /// Builds a [`ShardedPublisher`] where each shard sends to an mpsc channel.

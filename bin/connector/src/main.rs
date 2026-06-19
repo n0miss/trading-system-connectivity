@@ -62,6 +62,28 @@ fn futures_symbol(event: &FuturesEvent) -> Option<&str> {
     }
 }
 
+/// Build a [`DynShardedPublisher`] for the given shard.
+///
+/// Attempts to connect to the Aeron media driver configured in `cfg`.
+/// Falls back to a null (no-op) publisher and logs a warning if the driver
+/// is unavailable — this allows the connector to keep running for latency
+/// measurement and testing without a live Aeron deployment.
+fn build_publisher(
+    cfg:      &connector_config::AeronConfig,
+    shard_id: u32,
+) -> connector_aeron::DynShardedPublisher {
+    match connector_aeron::build_aeron(cfg, &[shard_id]) {
+        Ok(p) => {
+            tracing::info!(shard_id, channel = %connector_aeron::channel_from_config(cfg), "Aeron publisher connected");
+            p
+        }
+        Err(e) => {
+            tracing::warn!(shard_id, error = %e, "Aeron unavailable — using null publisher");
+            connector_aeron::build_null_boxed(&[shard_id])
+        }
+    }
+}
+
 /// Encode one normalized message, stamp `local_publish_ts`, and offer it.
 ///
 /// `local_publish_ts` is patched in-place at byte offset 48 of the header
@@ -70,7 +92,7 @@ fn futures_symbol(event: &FuturesEvent) -> Option<&str> {
 fn publish_one(
     msg:       &NormalizedMessage,
     shard_id:  u32,
-    publisher: &mut connector_aeron::ShardedPublisher<connector_aeron::NullPublication>,
+    publisher: &mut connector_aeron::DynShardedPublisher,
     metrics:   &connector_metrics::ConnectorMetrics,
     buf:       &mut [u8],
 ) {
@@ -220,6 +242,7 @@ async fn main() -> Result<()> {
         let imap    = inst_map.clone();
         let conn_id = i as u32;
 
+        let aeron_cfg = cfg.aeron.clone();
         let task = match venue_id {
             VenueId::BinanceSpot => tokio::spawn(async move {
                 let mgr = binance_spot_adapter::ConnectionManager::new(ws)
@@ -231,7 +254,7 @@ async fn main() -> Result<()> {
                     instance_id,
                     connection_id: conn_id,
                 };
-                let mut publisher = connector_aeron::build_null(&[shard_id]);
+                let mut publisher = build_publisher(&aeron_cfg, shard_id);
                 let mut buf = vec![0u8; 65_536];
                 let mut seq = 0u64;
 
@@ -270,7 +293,7 @@ async fn main() -> Result<()> {
                     instance_id,
                     connection_id: conn_id,
                 };
-                let mut publisher = connector_aeron::build_null(&[shard_id]);
+                let mut publisher = build_publisher(&aeron_cfg, shard_id);
                 let mut buf = vec![0u8; 65_536];
                 let mut seq = 0u64;
 

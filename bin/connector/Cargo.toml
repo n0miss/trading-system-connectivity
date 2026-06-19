@@ -12,7 +12,7 @@ connector-core       = { workspace = true }
 connector-config     = { workspace = true }
 connector-refdata    = { workspace = true }
 connector-order-book = { workspace = true }
-connector-aeron      = { workspace = true }
+connector-aeron       = { workspace = true, features = ["aeron"] }
 connector-metrics    = { workspace = true }
 binance-spot-adapter    = { workspace = true }
 binance-futures-adapter = { workspace = true }

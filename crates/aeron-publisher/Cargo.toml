@@ -3,8 +3,12 @@ name    = "connector-aeron"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+aeron = ["dep:rusteron-client"]
+
 [dependencies]
 connector-core   = { workspace = true }
 connector-config = { workspace = true }
 thiserror        = { workspace = true }
 tracing          = { workspace = true }
+rusteron-client  = { workspace = true, optional = true }

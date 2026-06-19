@@ -18,7 +18,9 @@ total_logical_shards = 16
 universe = []
 
 [aeron]
-media_driver_dir = "/dev/shm/aeron"
+# Linux production: /dev/shm/aeron  (tmpfs, lowest latency)
+# macOS dev:        /tmp/aeron       (/dev/shm does not exist on macOS)
+media_driver_dir = "/tmp/aeron"
 ipc_enabled      = true
 # udp_endpoint   = "10.0.0.2:40123"   # uncomment for cross-host consumers
 mtu              = 1408   # bytes; must be in 576..=65535

@@ -41,17 +41,21 @@ impl OfferResult {
 /// A single Aeron publication (one logical stream).
 ///
 /// Implementations are `!Sync` by design — only one writer per stream.
-/// For a real Aeron binding, implement this trait over the native
-/// `aeron_publication_t *` and call `aeron_publication_offer`.
-pub trait Publication {
+/// `Send` is required so publications can be moved into per-connection tasks.
+pub trait Publication: Send {
     /// Offer `bytes` to the stream.
     ///
     /// Non-blocking. Returns [`OfferResult`] directly without panicking so the
-    /// caller can apply its own backpressure policy (Stage 9).
+    /// caller can apply its own backpressure policy.
     fn offer(&mut self, bytes: &[u8]) -> OfferResult;
 
     /// Whether at least one subscriber is connected to this publication.
     fn is_connected(&self) -> bool;
+}
+
+impl<P: Publication + ?Sized> Publication for Box<P> {
+    fn offer(&mut self, bytes: &[u8]) -> OfferResult { (**self).offer(bytes) }
+    fn is_connected(&self) -> bool { (**self).is_connected() }
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +119,55 @@ impl Publication for ChannelPublication {
     }
 
     fn is_connected(&self) -> bool { true }
+}
+
+// ---------------------------------------------------------------------------
+// AeronClientPublication
+// ---------------------------------------------------------------------------
+
+/// A publication backed by a real Aeron media driver via `rusteron-client`.
+///
+/// Wraps a `rusteron_client::AeronPublication` and translates its `i64`
+/// offer return values into the `OfferResult` enum understood by the rest of
+/// the pipeline.  The `Aeron` handle is kept alive here so the conductor
+/// thread cannot be torn down before the publication is dropped.
+#[cfg(feature = "aeron")]
+pub struct AeronClientPublication {
+    inner: rusteron_client::AeronPublication,
+    // Keeps the Aeron conductor thread running for the lifetime of this publication.
+    _aeron: rusteron_client::Aeron,
+}
+
+// SAFETY: AeronPublication wraps an Arc over the underlying C handle.
+// Aeron's design guarantees that a single publication is written by exactly
+// one thread at a time (enforced here via `&mut self` in `offer`).
+#[cfg(feature = "aeron")]
+unsafe impl Send for AeronClientPublication {}
+
+#[cfg(feature = "aeron")]
+impl AeronClientPublication {
+    pub(crate) fn new(inner: rusteron_client::AeronPublication, aeron: rusteron_client::Aeron) -> Self {
+        Self { inner, _aeron: aeron }
+    }
+}
+
+#[cfg(feature = "aeron")]
+impl Publication for AeronClientPublication {
+    fn offer(&mut self, bytes: &[u8]) -> OfferResult {
+        let pos = self.inner.offer_once(bytes, |_: *mut u8, _: usize| 0i64);
+        match pos {
+            n if n >= 0 => OfferResult::Ok(n),
+            -2          => OfferResult::BackPressured,
+            -3          => OfferResult::AdminAction,
+            -4          => OfferResult::Closed,
+            -5          => OfferResult::MaxPositionExceeded,
+            _           => OfferResult::BackPressured, // -1 NOT_CONNECTED: treat as transient
+        }
+    }
+
+    fn is_connected(&self) -> bool {
+        self.inner.is_connected()
+    }
 }
 
 // ---------------------------------------------------------------------------

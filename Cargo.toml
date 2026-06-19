@@ -16,6 +16,7 @@ members = [
     "crates/binance-futures-adapter",
     "bin/connector",
     "bin/shadow-compare",
+    "bin/aeron-driver",
 ]
 
 [workspace.dependencies]
@@ -46,3 +47,6 @@ reqwest             = { version = "0.12", default-features = false, features = [
 axum                = "0.7"
 tokio-tungstenite   = { version = "0.24", default-features = false, features = ["rustls-tls-webpki-roots", "connect"] }
 futures-util        = "0.3"
+rusteron-client        = { version = "0.1", default-features = false, features = ["precompile-rustls", "static"] }
+rusteron-media-driver  = { version = "0.1", default-features = false, features = ["precompile-rustls", "static"] }
+ctrlc                  = "3"
