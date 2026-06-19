@@ -26,9 +26,9 @@ term_length_mib  = 64     # must be a power of two
 archive_enabled  = false
 
 [websocket]
-url                        = "wss://stream.binance.com:9443/stream"
+url                        = "wss://stream.binance.com:443"
 ping_interval_secs         = 20
-max_streams_per_connection = 1024
+max_streams_per_connection = 200
 reconnect_delay_ms         = 500
 forced_reconnect_secs      = 86400   # Binance 24 h limit
 
