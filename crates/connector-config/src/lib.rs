@@ -121,7 +121,11 @@ pub struct WebSocketConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RestConfig {
-    pub base_url: String,
+    #[serde(default = "defaults::spot_base_url")]
+    pub spot_base_url: String,
+
+    #[serde(default = "defaults::futures_base_url")]
+    pub futures_base_url: String,
 
     #[serde(default = "defaults::timeout_ms")]
     pub timeout_ms: u64,
@@ -296,6 +300,8 @@ mod defaults {
     pub fn max_streams_per_connection() -> u32  { 1024 }
     pub fn reconnect_delay_ms()   -> u64   { 500 }
     pub fn forced_reconnect_secs() -> u64  { 86_400 }
+    pub fn spot_base_url()        -> String { "https://api.binance.com".to_owned() }
+    pub fn futures_base_url()     -> String { "https://fapi.binance.com".to_owned() }
     pub fn timeout_ms()           -> u64   { 5_000 }
     pub fn max_retries()          -> u32   { 3 }
     pub fn max_buffered_events()  -> u32   { 2_048 }

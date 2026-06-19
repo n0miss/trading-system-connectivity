@@ -6,8 +6,8 @@
 [instance]
 id     = 0        # zero-based; must be < total
 total  = 1
-venue  = "binance_spot"   # binance_spot | binance_futures
-market = "spot"            # spot | usdm_futures
+venue  = "binance_futures"   # binance_spot | binance_futures
+market = "usdm_futures"            # spot | usdm_futures
 
 [sharding]
 # Fixed for a deployment generation. 16 = small, 64 = medium, 128+ = large.
@@ -33,7 +33,8 @@ reconnect_delay_ms         = 500
 forced_reconnect_secs      = 86400   # Binance 24 h limit
 
 [rest]
-base_url    = "https://api.binance.com"
+spot_base_url    = "https://api.binance.com"
+futures_base_url = "https://fapi.binance.com"
 timeout_ms  = 5000
 max_retries = 3
 

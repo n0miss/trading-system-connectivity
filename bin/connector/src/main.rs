@@ -86,8 +86,8 @@ async fn main() -> Result<()> {
 
     // ── Symbol discovery ──────────────────────────────────────────────────────
     let rest_base_url = match venue_id {
-        VenueId::BinanceSpot    => cfg.rest.base_url.as_str(),
-        VenueId::BinanceFutures => "https://fapi.binance.com",
+        VenueId::BinanceSpot    => cfg.rest.spot_base_url.as_str(),
+        VenueId::BinanceFutures => cfg.rest.futures_base_url.as_str(),
     };
     let mut refdata = RefDataService::new(
         rest_base_url,
