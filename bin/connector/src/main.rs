@@ -8,7 +8,7 @@ use protocol_json::{FuturesEvent, SpotEvent, parse_futures_message, parse_spot_m
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 use tracing::{info, warn};
 
 #[derive(Parser)]
@@ -224,8 +224,6 @@ async fn main() -> Result<()> {
             VenueId::BinanceSpot => tokio::spawn(async move {
                 let mgr = binance_spot_adapter::ConnectionManager::new(ws)
                     .with_metrics(m.clone());
-                let (tx, mut rx) =
-                    mpsc::channel::<binance_spot_adapter::RawFrame>(4096);
 
                 let ctx = binance_spot_adapter::NormalizeCtx {
                     venue_id,
@@ -233,43 +231,38 @@ async fn main() -> Result<()> {
                     instance_id,
                     connection_id: conn_id,
                 };
-                let m2 = m.clone();
-                tokio::spawn(async move {
-                    let mut publisher = connector_aeron::build_null(&[shard_id]);
-                    let mut buf = vec![0u8; 65_536];
-                    let mut seq = 0u64;
-                    while let Some(frame) = rx.recv().await {
-                        let event = match parse_spot_message(&frame.payload) {
-                            Ok(e)  => e,
-                            Err(e) => { warn!("spot JSON: {e}"); continue; }
-                        };
-                        let symbol = match spot_symbol(&event) {
-                            Some(s) => s,
-                            None    => continue,
-                        };
-                        let inst = match imap.get(symbol) {
-                            Some(i) => i,
-                            None    => { warn!(symbol, "unknown instrument"); continue; }
-                        };
-                        let msg = match binance_spot_adapter::normalize_spot_event(
-                            &event, inst, &ctx, &mut seq, frame.recv_ts,
-                        ) {
-                            Ok(Some(m)) => m,
-                            Ok(None)    => continue,
-                            Err(e)      => { warn!("normalize: {e}"); continue; }
-                        };
-                        publish_one(&msg, shard_id, &mut publisher, &m2, &mut buf);
-                    }
-                });
+                let mut publisher = connector_aeron::build_null(&[shard_id]);
+                let mut buf = vec![0u8; 65_536];
+                let mut seq = 0u64;
 
-                mgr.run(&url, tx, sd).await;
+                // Process each frame inline — no channel hop, no task wakeup.
+                mgr.run(&url, move |frame| {
+                    let event = match parse_spot_message(&frame.payload) {
+                        Ok(e)  => e,
+                        Err(e) => { warn!("spot JSON: {e}"); return; }
+                    };
+                    let symbol = match spot_symbol(&event) {
+                        Some(s) => s,
+                        None    => return,
+                    };
+                    let inst = match imap.get(symbol) {
+                        Some(i) => i,
+                        None    => { warn!(symbol, "unknown instrument"); return; }
+                    };
+                    let msg = match binance_spot_adapter::normalize_spot_event(
+                        &event, inst, &ctx, &mut seq, frame.recv_ts,
+                    ) {
+                        Ok(Some(m)) => m,
+                        Ok(None)    => return,
+                        Err(e)      => { warn!("normalize: {e}"); return; }
+                    };
+                    publish_one(&msg, shard_id, &mut publisher, &m, &mut buf);
+                }, sd).await;
             }),
 
             VenueId::BinanceFutures => tokio::spawn(async move {
                 let mgr = binance_futures_adapter::ConnectionManager::new(ws)
                     .with_metrics(m.clone());
-                let (tx, mut rx) =
-                    mpsc::channel::<binance_futures_adapter::RawFrame>(4096);
 
                 let ctx = binance_futures_adapter::NormalizeCtx {
                     venue_id,
@@ -277,37 +270,34 @@ async fn main() -> Result<()> {
                     instance_id,
                     connection_id: conn_id,
                 };
-                let m2 = m.clone();
-                tokio::spawn(async move {
-                    let mut publisher = connector_aeron::build_null(&[shard_id]);
-                    let mut buf = vec![0u8; 65_536];
-                    let mut seq = 0u64;
-                    while let Some(frame) = rx.recv().await {
-                        let event = match parse_futures_message(&frame.payload) {
-                            Ok(e)  => e,
-                            Err(e) => { warn!("futures JSON: {e}"); continue; }
-                        };
-                        let symbol = match futures_symbol(&event) {
-                            Some(s) => s,
-                            None    => continue,
-                        };
-                        let inst = match imap.get(symbol) {
-                            Some(i) => i,
-                            None    => { warn!(symbol, "unknown instrument"); continue; }
-                        };
-                        let msgs = match binance_futures_adapter::normalize_futures_event(
-                            &event, inst, &ctx, &mut seq, frame.recv_ts,
-                        ) {
-                            Ok(v)  => v,
-                            Err(e) => { warn!("normalize: {e}"); continue; }
-                        };
-                        for msg in &msgs {
-                            publish_one(msg, shard_id, &mut publisher, &m2, &mut buf);
-                        }
-                    }
-                });
+                let mut publisher = connector_aeron::build_null(&[shard_id]);
+                let mut buf = vec![0u8; 65_536];
+                let mut seq = 0u64;
 
-                mgr.run(&url, tx, sd).await;
+                // Process each frame inline — no channel hop, no task wakeup.
+                mgr.run(&url, move |frame| {
+                    let event = match parse_futures_message(&frame.payload) {
+                        Ok(e)  => e,
+                        Err(e) => { warn!("futures JSON: {e}"); return; }
+                    };
+                    let symbol = match futures_symbol(&event) {
+                        Some(s) => s,
+                        None    => return,
+                    };
+                    let inst = match imap.get(symbol) {
+                        Some(i) => i,
+                        None    => { warn!(symbol, "unknown instrument"); return; }
+                    };
+                    let msgs = match binance_futures_adapter::normalize_futures_event(
+                        &event, inst, &ctx, &mut seq, frame.recv_ts,
+                    ) {
+                        Ok(v)  => v,
+                        Err(e) => { warn!("normalize: {e}"); return; }
+                    };
+                    for msg in &msgs {
+                        publish_one(msg, shard_id, &mut publisher, &m, &mut buf);
+                    }
+                }, sd).await;
             }),
         };
 

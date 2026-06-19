@@ -60,15 +60,18 @@ impl ConnectionManager {
         self
     }
 
-    /// Connect to `url` and forward raw frames to `tx`.
+    /// Connect to `url` and invoke `on_frame` for every received data frame.
+    ///
+    /// `on_frame` is called **inline** in the WebSocket read loop — no channel,
+    /// no task wakeup, no scheduling latency between receipt and processing.
     ///
     /// Reconnects automatically on disconnect (exponential backoff) and after
     /// `config.forced_reconnect_secs` seconds (planned rotation, no backoff).
     /// Returns when the shutdown signal fires.
-    pub async fn run(
+    pub async fn run<F: FnMut(RawFrame)>(
         &self,
         url: &str,
-        tx: mpsc::Sender<RawFrame>,
+        mut on_frame: F,
         mut shutdown: watch::Receiver<bool>,
     ) {
         let mut reconnect_count = 0u32;
@@ -80,7 +83,7 @@ impl ConnectionManager {
             let base_url = url.split('?').next().unwrap_or(url);
             info!(url = base_url, reconnect_count, "connecting to Binance Futures WebSocket");
 
-            let result = connect_and_run(url, &self.config, &tx, &mut shutdown, self.metrics.as_deref()).await;
+            let result = connect_and_run(url, &self.config, &mut on_frame, &mut shutdown, self.metrics.as_deref()).await;
 
             match result {
                 Ok(DisconnectReason::Shutdown) => break,
@@ -115,10 +118,10 @@ impl ConnectionManager {
 // ---------------------------------------------------------------------------
 
 /// Establish one WebSocket session and drive it until it ends for any reason.
-async fn connect_and_run(
+async fn connect_and_run<F: FnMut(RawFrame)>(
     url:      &str,
     config:   &WebSocketConfig,
-    tx:       &mpsc::Sender<RawFrame>,
+    on_frame: &mut F,
     shutdown: &mut watch::Receiver<bool>,
     metrics:  Option<&ConnectorMetrics>,
 ) -> Result<DisconnectReason, FuturesAdapterError> {
@@ -192,20 +195,14 @@ async fn connect_and_run(
                     }
                     Some(Ok(Message::Text(text))) => {
                         if let Some(m) = metrics { m.messages_in.increment(); }
-                        let frame = RawFrame {
+                        on_frame(RawFrame {
                             recv_ts: now_nanos(),
                             payload: text.into_bytes(),
-                        };
-                        if tx.send(frame).await.is_err() {
-                            break DisconnectReason::Shutdown;
-                        }
+                        });
                     }
                     Some(Ok(Message::Binary(data))) => {
                         if let Some(m) = metrics { m.messages_in.increment(); }
-                        let frame = RawFrame { recv_ts: now_nanos(), payload: data };
-                        if tx.send(frame).await.is_err() {
-                            break DisconnectReason::Shutdown;
-                        }
+                        on_frame(RawFrame { recv_ts: now_nanos(), payload: data });
                     }
                     Some(Ok(Message::Ping(data))) => {
                         let _ = out_tx.send(Message::Pong(data)).await;
@@ -318,7 +315,7 @@ mod tests {
         let mgr = ConnectionManager::new(config);
 
         tokio::select! {
-            _ = mgr.run(&url, tx, shutdown_rx) => {}
+            _ = mgr.run(&url, move |frame| { let _ = tx.try_send(frame); }, shutdown_rx) => {}
             frame = rx.recv() => {
                 let frame = frame.expect("channel closed before first frame");
                 let json = std::str::from_utf8(&frame.payload).expect("non-UTF-8 frame");
