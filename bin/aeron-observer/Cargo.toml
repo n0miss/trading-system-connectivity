@@ -1,0 +1,14 @@
+[package]
+name    = "aeron-observer"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "aeron-observer"
+path = "src/main.rs"
+
+[dependencies]
+anyhow              = { workspace = true }
+clap                = { workspace = true }
+connector-core      = { workspace = true }
+rusteron-client     = { workspace = true }

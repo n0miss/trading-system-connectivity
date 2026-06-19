@@ -17,6 +17,7 @@ members = [
     "bin/connector",
     "bin/shadow-compare",
     "bin/aeron-driver",
+    "bin/aeron-observer",
 ]
 
 [workspace.dependencies]
