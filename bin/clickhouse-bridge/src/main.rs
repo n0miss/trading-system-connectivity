@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ffi::CString;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,8 +10,84 @@ use clickhouse::Client;
 use clickhouse::inserter::Inserter;
 use connector_core::{NormalizedMessage, HEADER_SIZE};
 use rusteron_client::{Aeron, AeronContext, Handlers};
+use serde::Deserialize;
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
+
+// ---------------------------------------------------------------------------
+// Signal handling
+//
+// Two subtle interactions make standard Ctrl+C handling impossible here:
+//
+// 1. Tokio blocks all signals in its worker threads via pthread_sigmask so
+//    that it can manage delivery itself.  Every thread spawned after the
+//    runtime starts inherits the blocked mask.  sigaction handlers (ctrlc
+//    crate, tokio::signal) and the default SIG_DFL disposition therefore
+//    never fire — the signal stays pending and nobody consumes it.
+//
+// 2. The Aeron C client calls tcsetattr() during initialisation and clears
+//    the ISIG flag, which disables signal generation from control characters.
+//    Ctrl+C no longer sends SIGINT to the process; the terminal just echoes
+//    the literal byte sequence "^C".
+//
+// Fix:
+//   a) Block SIGINT+SIGTERM in main() BEFORE building the tokio runtime so
+//      all worker threads inherit the blocked mask.
+//   b) Spawn a std::thread that polls until Aeron has finished setup, then
+//      restores ISIG via tcsetattr (so Ctrl+C sends SIGINT again) and calls
+//      sigwait(), the only POSIX mechanism that can atomically consume a
+//      blocked-pending signal.
+// ---------------------------------------------------------------------------
+
+fn install_sigint_handler() -> Arc<AtomicBool> {
+    unsafe {
+        let mut mask: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut mask);
+        libc::sigaddset(&mut mask, libc::SIGINT);
+        libc::sigaddset(&mut mask, libc::SIGTERM);
+        libc::pthread_sigmask(libc::SIG_BLOCK, &mask, std::ptr::null_mut());
+    }
+
+    let aeron_ready = Arc::new(AtomicBool::new(false));
+    let ready = aeron_ready.clone();
+
+    std::thread::Builder::new()
+        .name("sigint-watcher".into())
+        .spawn(move || {
+            while !ready.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+
+            unsafe {
+                // Restore signal dispositions in case Aeron touched them.
+                let mut sa: libc::sigaction = std::mem::zeroed();
+                sa.sa_sigaction = libc::SIG_DFL;
+                libc::sigaction(libc::SIGINT,  &sa, std::ptr::null_mut());
+                libc::sigaction(libc::SIGTERM, &sa, std::ptr::null_mut());
+
+                // Re-enable ISIG so Ctrl+C generates SIGINT again.
+                // Aeron's tcsetattr() call during start-up clears this flag.
+                let mut tty: libc::termios = std::mem::zeroed();
+                if libc::tcgetattr(libc::STDIN_FILENO, &mut tty) == 0 {
+                    tty.c_lflag |= libc::ISIG;
+                    libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &tty);
+                }
+
+                let mut wait_mask: libc::sigset_t = std::mem::zeroed();
+                libc::sigemptyset(&mut wait_mask);
+                libc::sigaddset(&mut wait_mask, libc::SIGINT);
+                libc::sigaddset(&mut wait_mask, libc::SIGTERM);
+                let mut sig = 0i32;
+                libc::sigwait(&wait_mask as *const libc::sigset_t, &mut sig as *mut libc::c_int);
+            }
+
+            eprintln!("\nshutdown signal received, stopping bridge");
+            unsafe { libc::_exit(0); }
+        })
+        .expect("failed to spawn sigint-watcher thread");
+
+    aeron_ready
+}
 
 mod rows;
 use rows::*;
@@ -277,11 +354,60 @@ impl Inserters {
 }
 
 // ---------------------------------------------------------------------------
-// Main
+// Startup table check
 // ---------------------------------------------------------------------------
 
-#[tokio::main]
-async fn main() -> Result<()> {
+const REQUIRED_TABLES: &[&str] = &[
+    "trades",
+    "best_bid_offers",
+    "mark_prices",
+    "funding_rates",
+    "liquidations",
+    "open_interest",
+    "book_deltas",
+];
+
+#[derive(clickhouse::Row, Deserialize)]
+struct TableRow {
+    name: String,
+}
+
+async fn check_tables(client: &Client, database: &str) -> Result<()> {
+    let rows: Vec<TableRow> = client
+        .query("SELECT name FROM system.tables WHERE database = ? AND name IN ('trades','best_bid_offers','mark_prices','funding_rates','liquidations','open_interest','book_deltas')")
+        .bind(database)
+        .fetch_all::<TableRow>()
+        .await
+        .map_err(|e| anyhow::anyhow!("ClickHouse connection failed: {e}\nIs ClickHouse running at the configured URL?"))?;
+
+    let existing: HashSet<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+    let missing: Vec<&&str> = REQUIRED_TABLES.iter().filter(|t| !existing.contains(**t)).collect();
+
+    if !missing.is_empty() {
+        let list = missing.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
+        anyhow::bail!(
+            "Missing tables in database '{database}': {list}\n\
+             Create them with:\n\
+             \n  cargo run -p clickhouse-bridge -- --print-schema \\\n  | clickhouse client --database {database} --multiquery\n"
+        );
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+fn main() -> Result<()> {
+    let aeron_ready = install_sigint_handler();
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(run(aeron_ready))
+}
+
+async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -318,6 +444,9 @@ async fn main() -> Result<()> {
         .with_user(&args.username)
         .with_password(&args.password);
 
+    check_tables(&client, &args.database).await?;
+    info!(database = %args.database, "all required tables present");
+
     let mut inserters = Inserters::new(
         &client,
         args.batch_rows,
@@ -327,9 +456,9 @@ async fn main() -> Result<()> {
     // The Aeron poll thread sends decoded messages; the async task consumes
     // them and writes to ClickHouse.  Unbounded so the poll thread never
     // blocks — if ClickHouse is slow, memory grows until the next commit.
-    let (tx, mut rx) = mpsc::unbounded_channel::<NormalizedMessage>();
-    let shutdown_flag  = Arc::new(AtomicBool::new(false));
-    let poll_shutdown  = shutdown_flag.clone();
+    let (tx, mut rx)  = mpsc::unbounded_channel::<NormalizedMessage>();
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    let poll_shutdown = shutdown_flag.clone();
 
     let dir     = args.dir.clone();
     let channel = args.channel.clone();
@@ -358,6 +487,11 @@ async fn main() -> Result<()> {
         }
 
         info!(streams = subs.len(), "Aeron subscriptions established");
+        // Tell the sigint-watcher thread that Aeron has finished all setup,
+        // including any sigaction() calls.  The watcher will now restore
+        // SIGINT to SIG_DFL (overriding any SIG_IGN set by Aeron) and call
+        // sigwait() to catch the next Ctrl+C.
+        aeron_ready.store(true, Ordering::Release);
 
         loop {
             if poll_shutdown.load(Ordering::Relaxed) {
@@ -372,7 +506,9 @@ async fn main() -> Result<()> {
                     }
                     match NormalizedMessage::from_bytes(bytes) {
                         Ok(msg) => { tx.send(msg).ok(); }
-                        Err(e)  => { warn!(error = %e, "decode error"); }
+                        // Stale/garbage ring-buffer frames on inactive streams
+                        // are expected — log at debug to avoid spam.
+                        Err(e)  => { debug!(error = %e, "decode error"); }
                     }
                 }, 256).unwrap_or(0);
             }
@@ -389,50 +525,40 @@ async fn main() -> Result<()> {
     let mut flush_ticker = tokio::time::interval(Duration::from_secs(args.batch_secs));
     flush_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    let write_timeout  = Duration::from_secs(3);
+    let commit_timeout = Duration::from_secs(3);
     let mut msgs_written: u64 = 0;
 
     loop {
         tokio::select! {
-            // biased: shutdown and flush are checked before messages so that a
-            // flood of incoming frames cannot starve the Ctrl+C branch.
-            biased;
-
-            _ = tokio::signal::ctrl_c() => {
-                info!("shutdown signal received");
-                break;
-            }
             _ = flush_ticker.tick() => {
-                inserters.commit().await;
+                if tokio::time::timeout(commit_timeout, inserters.commit()).await.is_err() {
+                    warn!("ClickHouse commit timed out");
+                }
             }
             msg = rx.recv() => {
-                match msg {
-                    Some(msg) => {
-                        inserters.write(&msg).await;
-                        msgs_written += 1;
-                        if msgs_written % 10_000 == 0 {
-                            inserters.commit().await;
-                        }
-                    }
-                    None => {
-                        info!("message channel closed");
-                        break;
+                let msg = match msg {
+                    Some(m) => m,
+                    None    => { info!("message channel closed"); break; }
+                };
+                if tokio::time::timeout(write_timeout, inserters.write(&msg)).await.is_err() {
+                    warn!("ClickHouse write timed out");
+                }
+                msgs_written += 1;
+                if msgs_written % 10_000 == 0 {
+                    if tokio::time::timeout(commit_timeout, inserters.commit()).await.is_err() {
+                        warn!("ClickHouse commit timed out");
                     }
                 }
             }
         }
     }
 
-    // Signal the Aeron poll thread to stop.
+    // Only reached if the message channel closes (poll thread exited).
     shutdown_flag.store(true, Ordering::Relaxed);
-
-    // Flush remaining buffered rows to ClickHouse; give it 5 s then give up.
-    // process::exit(0) is used instead of returning so we don't wait for the
-    // spawn_blocking thread (which may still be mid-poll) to be joined by the
-    // tokio runtime drop.
     let flush = inserters.end();
     if tokio::time::timeout(Duration::from_secs(5), flush).await.is_err() {
         warn!("ClickHouse final flush timed out after 5 s");
     }
-
     std::process::exit(0);
 }

@@ -488,6 +488,7 @@ dependencies = [
  "clap",
  "clickhouse",
  "connector-core",
+ "libc",
  "rusteron-client",
  "serde",
  "tokio",
