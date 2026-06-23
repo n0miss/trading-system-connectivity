@@ -338,6 +338,7 @@ mod tests {
 
         let config = WebSocketConfig {
             url: "wss://stream.binance.com:443".to_string(),
+            futures_url: "wss://fstream.binance.com:443".to_string(),
             api_key: None,
             ping_interval_secs: 20,
             max_streams_per_connection: 1024,

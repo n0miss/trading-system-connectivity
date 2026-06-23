@@ -576,9 +576,11 @@ async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
                     }
                     match NormalizedMessage::from_bytes(bytes) {
                         Ok(msg) => { tx.send(msg).ok(); }
-                        // Stale/garbage ring-buffer frames on inactive streams
-                        // are expected — log at debug to avoid spam.
-                        Err(e)  => { debug!(error = %e, "decode error"); }
+                        Err(e)  => {
+                            // Stale/garbage ring-buffer bytes on first poll are
+                            // expected; log at debug to avoid spam.
+                            debug!(error = %e, len = bytes.len(), "aeron decode error");
+                        }
                     }
                 }, 256).unwrap_or(0);
             }
@@ -599,9 +601,36 @@ async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
     let commit_timeout = Duration::from_secs(3);
     let mut msgs_written: u64 = 0;
 
+    // Per-type receive counters — logged every flush tick so the user can see
+    // exactly which message types are arriving from Aeron.
+    let mut cnt_instrument:    u64 = 0;
+    let mut cnt_trade:         u64 = 0;
+    let mut cnt_bbo:           u64 = 0;
+    let mut cnt_mark_price:    u64 = 0;
+    let mut cnt_funding:       u64 = 0;
+    let mut cnt_liquidation:   u64 = 0;
+    let mut cnt_open_interest: u64 = 0;
+    let mut cnt_book_delta:    u64 = 0;
+    let mut cnt_other:         u64 = 0;
+    let mut cnt_decode_err:    u64 = 0;
+
     loop {
         tokio::select! {
             _ = flush_ticker.tick() => {
+                info!(
+                    instrument    = cnt_instrument,
+                    trade         = cnt_trade,
+                    bbo           = cnt_bbo,
+                    mark_price    = cnt_mark_price,
+                    funding       = cnt_funding,
+                    liquidation   = cnt_liquidation,
+                    open_interest = cnt_open_interest,
+                    book_delta    = cnt_book_delta,
+                    other         = cnt_other,
+                    decode_err    = cnt_decode_err,
+                    total         = msgs_written,
+                    "bridge recv counts"
+                );
                 if tokio::time::timeout(commit_timeout, inserters.commit()).await.is_err() {
                     warn!("ClickHouse commit timed out");
                 }
@@ -611,6 +640,17 @@ async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
                     Some(m) => m,
                     None    => { info!("message channel closed"); break; }
                 };
+                match &msg {
+                    NormalizedMessage::InstrumentDefinition(_) => cnt_instrument    += 1,
+                    NormalizedMessage::Trade(_)                => cnt_trade         += 1,
+                    NormalizedMessage::BestBidOffer(_)         => cnt_bbo           += 1,
+                    NormalizedMessage::MarkPrice(_)            => cnt_mark_price    += 1,
+                    NormalizedMessage::FundingRate(_)          => cnt_funding       += 1,
+                    NormalizedMessage::Liquidation(_)          => cnt_liquidation   += 1,
+                    NormalizedMessage::OpenInterest(_)         => cnt_open_interest += 1,
+                    NormalizedMessage::BookDelta(_)            => cnt_book_delta    += 1,
+                    _                                          => cnt_other         += 1,
+                }
                 if tokio::time::timeout(write_timeout, inserters.write(&msg)).await.is_err() {
                     warn!("ClickHouse write timed out");
                 }

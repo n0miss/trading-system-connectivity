@@ -105,6 +105,9 @@ pub struct AeronConfig {
 pub struct WebSocketConfig {
     pub url: String,
 
+    #[serde(default = "defaults::futures_ws_url")]
+    pub futures_url: String,
+
     /// API key sent as `X-MBX-APIKEY` header at connection time.
     /// Required for authenticated endpoints such as the Binance SBE stream.
     #[serde(default)]
@@ -313,6 +316,7 @@ mod defaults {
     pub fn forced_reconnect_secs() -> u64  { 86_400 }
     pub fn spot_base_url()        -> String { "https://api.binance.com".to_owned() }
     pub fn futures_base_url()     -> String { "https://fapi.binance.com".to_owned() }
+    pub fn futures_ws_url()       -> String { "wss://fstream.binance.com:443".to_owned() }
     pub fn timeout_ms()           -> u64   { 5_000 }
     pub fn max_retries()          -> u32   { 3 }
     pub fn open_interest_poll_secs() -> u64 { 60 }

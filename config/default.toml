@@ -30,6 +30,7 @@ connect_retry_delay_ms = 1000 # ms between infinite retry attempts
 
 [websocket]
 url                        = "wss://stream.binance.com:443"
+futures_url                = "wss://fstream.binance.com:443"
 ping_interval_secs         = 20
 max_streams_per_connection = 200
 reconnect_delay_ms         = 500

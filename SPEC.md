@@ -1,3 +1,7 @@
+Rust project, low latency, low GC (zero-allocation patterns), high performance.
+aims to be deployed on k8s. 
+scalability is very important, and easy deploymenet / upgrade of format/data, retro compatilibity.
+after each step, validate with testing and if test are successfull then commit the changes without asking for confirmation
 
 
 **Stage 1 — Scaffolding & core types**

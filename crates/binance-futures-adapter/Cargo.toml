@@ -3,6 +3,9 @@ name    = "binance-futures-adapter"
 version = "0.1.0"
 edition = "2021"
 
+[dev-dependencies]
+tracing-subscriber = { workspace = true }
+
 [dependencies]
 connector-core       = { workspace = true }
 connector-config     = { workspace = true }

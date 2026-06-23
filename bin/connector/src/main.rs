@@ -232,9 +232,49 @@ async fn main() -> Result<()> {
                 binance_futures_adapter::FuturesStream::Depth { update_speed_ms: 100 }.stream_name(sym),
                 binance_futures_adapter::FuturesStream::AggTrade.stream_name(sym),
                 binance_futures_adapter::FuturesStream::MarkPrice { update_interval_secs: 3 }.stream_name(sym),
+                binance_futures_adapter::FuturesStream::ForceOrder.stream_name(sym),
             ])
             .collect(),
     };
+
+    // Publish instrument definitions at startup so downstream consumers
+    // (clickhouse-bridge, strategy engines) have price/qty scales before
+    // any market-data messages arrive.
+    {
+        let recv_ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as i64;
+        let mut startup_pub = build_publisher(&cfg.aeron, shard_id, shutdown_rx.clone()).await;
+        let mut buf = vec![0u8; 65_536];
+        let mut count = 0u32;
+        for sym in &universe {
+            if let Some(inst) = inst_map.get(sym) {
+                let mut def = inst.clone();
+                def.header.local_recv_ts = recv_ts;
+                let nm = NormalizedMessage::InstrumentDefinition(def);
+                publish_one(&nm, shard_id, &mut startup_pub, &cfg.aeron, &metrics, &mut buf);
+                count += 1;
+            }
+        }
+        info!(count, "instrument definitions published at startup");
+    }
+
+    // Log subscription breakdown so we can verify all stream types are present.
+    {
+        let n_agg   = streams.iter().filter(|s| s.contains("@aggTrade")).count();
+        let n_mark  = streams.iter().filter(|s| s.contains("@markPrice")).count();
+        let n_force = streams.iter().filter(|s| s.contains("@forceOrder")).count();
+        let sample: Vec<_> = streams.iter().take(5).collect();
+        info!(
+            total      = streams.len(),
+            agg_trade  = n_agg,
+            mark_price = n_mark,
+            force_order = n_force,
+            ?sample,
+            "WebSocket subscription list"
+        );
+    }
 
     let mut conn_tasks = Vec::new();
     for (i, chunk) in streams.chunks(max_streams).enumerate() {
@@ -242,9 +282,11 @@ async fn main() -> Result<()> {
             VenueId::BinanceSpot =>
                 binance_spot_adapter::build_url(&cfg.websocket.url, &chunk.to_vec()),
             VenueId::BinanceFutures =>
-                binance_futures_adapter::build_url(&cfg.websocket.url, &chunk.to_vec()),
+                binance_futures_adapter::build_url(&cfg.websocket.futures_url, &chunk.to_vec()),
         };
-        info!(connection = i, streams = chunk.len(), "starting WebSocket connection");
+        // Log just the base URL (no query string) so we can verify spot vs futures endpoint.
+        let base_url = url.split('?').next().unwrap_or(&url);
+        info!(connection = i, streams = chunk.len(), url = %base_url, "starting WebSocket connection");
 
         let sd      = shutdown_rx.clone();
         let m       = metrics.clone();
@@ -307,19 +349,72 @@ async fn main() -> Result<()> {
                 let mut buf = vec![0u8; 65_536];
                 let mut seq = 0u64;
 
+                // Per-type frame counters — logged every LOG_INTERVAL frames.
+                const LOG_INTERVAL: u64 = 5_000;
+                let mut n_frames:     u64 = 0;
+                let mut n_bbo:        u64 = 0;
+                let mut n_depth:      u64 = 0;
+                let mut n_trade:      u64 = 0;
+                let mut n_mark:       u64 = 0;
+                let mut n_liq:        u64 = 0;
+                let mut n_unknown:    u64 = 0;
+                let mut n_parse_err:  u64 = 0;
+                let mut n_no_inst:    u64 = 0;
+
                 // Process each frame inline — no channel hop, no task wakeup.
                 mgr.run(&url, move |frame| {
+                    n_frames += 1;
+
                     let event = match parse_futures_message(&frame.payload) {
                         Ok(e)  => e,
-                        Err(e) => { warn!("futures JSON: {e}"); return; }
+                        Err(e) => {
+                            n_parse_err += 1;
+                            warn!(conn = conn_id, error = %e, raw = %String::from_utf8_lossy(&frame.payload[..frame.payload.len().min(120)]), "futures JSON parse error");
+                            return;
+                        }
                     };
+
+                    match &event {
+                        protocol_json::FuturesEvent::BookTicker(_)  => n_bbo   += 1,
+                        protocol_json::FuturesEvent::DepthUpdate(_) => n_depth += 1,
+                        protocol_json::FuturesEvent::AggTrade(_)    => n_trade += 1,
+                        protocol_json::FuturesEvent::MarkPrice(_)   => n_mark  += 1,
+                        protocol_json::FuturesEvent::ForceOrder(_)  => n_liq   += 1,
+                        protocol_json::FuturesEvent::Unknown(s)     => {
+                            n_unknown += 1;
+                            tracing::debug!(conn = conn_id, stream = %s, "unknown futures stream");
+                        }
+                    }
+
+                    if n_frames % LOG_INTERVAL == 0 {
+                        info!(
+                            conn    = conn_id,
+                            frames  = n_frames,
+                            bbo     = n_bbo,
+                            depth   = n_depth,
+                            trade   = n_trade,
+                            mark    = n_mark,
+                            liq     = n_liq,
+                            unknown = n_unknown,
+                            parse_err = n_parse_err,
+                            no_inst = n_no_inst,
+                            "futures frame stats"
+                        );
+                    }
+
                     let symbol = match futures_symbol(&event) {
                         Some(s) => s,
                         None    => return,
                     };
                     let inst = match imap.get(symbol) {
                         Some(i) => i,
-                        None    => { warn!(symbol, "unknown instrument"); return; }
+                        None    => {
+                            n_no_inst += 1;
+                            if n_no_inst <= 5 {
+                                warn!(conn = conn_id, symbol, "unknown instrument (first 5 only)");
+                            }
+                            return;
+                        }
                     };
                     let msgs = match binance_futures_adapter::normalize_futures_event(
                         &event, inst, &ctx, &mut seq, frame.recv_ts,

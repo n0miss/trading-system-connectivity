@@ -307,6 +307,7 @@ mod tests {
 
         let config = WebSocketConfig {
             url: FUTURES_WS_BASE.to_string(),
+            futures_url: FUTURES_WS_BASE.to_string(),
             api_key: None,
             ping_interval_secs: 20,
             max_streams_per_connection: 1024,
@@ -332,5 +333,81 @@ mod tests {
                 let _ = shutdown_tx.send(true);
             }
         }
+    }
+
+    /// Integration test: verify aggTrade and markPrice events arrive within 15 s.
+    ///
+    /// Uses the Binance FUTURES TESTNET (`stream.binancefuture.com`) because
+    /// the production `fstream.binance.com` endpoint silently blocks aggTrade
+    /// and markPrice streams from US IP addresses.  The testnet has no
+    /// geo-IP restrictions and carries live-like test data.
+    #[tokio::test]
+    #[ignore]
+    async fn integration_agg_trade_and_mark_price_received() {
+        use crate::stream::{FuturesStream, build_url};
+        use connector_config::WebSocketConfig;
+        use protocol_json::parse_futures_message;
+        use std::sync::{Arc, Mutex};
+
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+
+        const TESTNET_BASE: &str = "wss://stream.binancefuture.com";
+        let config = WebSocketConfig {
+            url:                        TESTNET_BASE.to_string(),
+            futures_url:                TESTNET_BASE.to_string(),
+            api_key:                    None,
+            ping_interval_secs:         20,
+            max_streams_per_connection: 1024,
+            reconnect_delay_ms:         500,
+            forced_reconnect_secs:      86_400,
+        };
+
+        let streams = vec![
+            FuturesStream::AggTrade.stream_name("BTCUSDT"),
+            FuturesStream::MarkPrice { update_interval_secs: 1 }.stream_name("BTCUSDT"),
+            FuturesStream::BookTicker.stream_name("BTCUSDT"),
+        ];
+        let url = build_url(TESTNET_BASE, &streams);
+        println!("connecting to: {url}");
+
+        let seen_bbo   = Arc::new(Mutex::new(false));
+        let seen_trade = Arc::new(Mutex::new(false));
+        let seen_mark  = Arc::new(Mutex::new(false));
+
+        let s_bbo   = seen_bbo.clone();
+        let s_trade = seen_trade.clone();
+        let s_mark  = seen_mark.clone();
+
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let mgr = ConnectionManager::new(config);
+
+        tokio::select! {
+            _ = mgr.run(&url, move |frame| {
+                match parse_futures_message(&frame.payload) {
+                    Ok(protocol_json::FuturesEvent::BookTicker(_))  => { *s_bbo.lock().unwrap()   = true; }
+                    Ok(protocol_json::FuturesEvent::AggTrade(t))    => {
+                        println!("aggTrade: sym={} price={} qty={}", t.symbol, t.price, t.qty);
+                        *s_trade.lock().unwrap() = true;
+                    }
+                    Ok(protocol_json::FuturesEvent::MarkPrice(m))   => {
+                        println!("markPrice: sym={} mark={}", m.symbol, m.mark_price);
+                        *s_mark.lock().unwrap()  = true;
+                    }
+                    Ok(_)    => {}
+                    Err(e)   => println!("parse error: {e}"),
+                }
+            }, shutdown_rx) => {}
+            _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
+                let _ = shutdown_tx.send(true);
+            }
+        }
+
+        let got_bbo   = *seen_bbo.lock().unwrap();
+        let got_trade = *seen_trade.lock().unwrap();
+        let got_mark  = *seen_mark.lock().unwrap();
+        println!("bbo={got_bbo} trade={got_trade} mark={got_mark}");
+        assert!(got_bbo,   "no bookTicker events received in 15 s");
+        assert!(got_trade, "no aggTrade events received in 15 s — testnet may be unavailable");
+        assert!(got_mark,  "no markPrice events received in 15 s — testnet may be unavailable");
     }
 }
