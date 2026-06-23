@@ -208,6 +208,31 @@ CREATE TABLE IF NOT EXISTS book_deltas (
     ask_qtys           Array(Int64)
 ) ENGINE = MergeTree()
 ORDER BY (symbol, exchange_event_ts);
+
+-- Reference data.  ReplacingMergeTree deduplicates on (venue_id, market_type,
+-- instrument_id) keeping the row with the highest local_recv_ts, so
+-- re-published definitions (e.g. is_trading flip) update in place.
+-- Join with any market-data table to convert scaled integers to real prices:
+--   SELECT t.price / pow(10, i.price_scale) AS price
+--   FROM trades t JOIN instruments i USING (instrument_id)
+CREATE TABLE IF NOT EXISTS instruments (
+    local_recv_ts   Int64,
+    venue_id        UInt8,
+    market_type     UInt8,
+    instrument_id   UInt32,
+    symbol          String,
+    base_asset      String,
+    quote_asset     String,
+    price_scale     UInt32,
+    qty_scale       UInt32,
+    tick_size       Int64,
+    step_size       Int64,
+    min_qty         Int64,
+    min_notional    Int64,
+    contract_size   Int64,
+    is_trading      UInt8
+) ENGINE = ReplacingMergeTree(local_recv_ts)
+ORDER BY (venue_id, market_type, instrument_id);
 "#;
 
 // ---------------------------------------------------------------------------
@@ -273,6 +298,7 @@ struct Inserters {
     liquidation:   Inserter<LiquidationRow>,
     open_interest: Inserter<OpenInterestRow>,
     book_delta:    Inserter<BookDeltaRow>,
+    instruments:   Inserter<InstrumentRow>,
 }
 
 impl Inserters {
@@ -299,18 +325,24 @@ impl Inserters {
             book_delta: client.inserter("book_deltas")
                 .with_max_rows(batch_rows)
                 .with_period(Some(batch_period)),
+            // Instrument definitions arrive rarely (startup + on change) so
+            // a small batch limit is fine; the period flush handles the rest.
+            instruments: client.inserter("instruments")
+                .with_max_rows(1_000)
+                .with_period(Some(batch_period)),
         }
     }
 
     async fn write(&mut self, msg: &NormalizedMessage) {
         let result: clickhouse::error::Result<()> = match msg {
-            NormalizedMessage::Trade(m)        => self.trades.write(&TradeRow::from(m)).await,
-            NormalizedMessage::BestBidOffer(m) => self.bbo.write(&BboRow::from(m)).await,
-            NormalizedMessage::MarkPrice(m)    => self.mark_price.write(&MarkPriceRow::from(m)).await,
-            NormalizedMessage::FundingRate(m)  => self.funding.write(&FundingRateRow::from(m)).await,
-            NormalizedMessage::Liquidation(m)  => self.liquidation.write(&LiquidationRow::from(m)).await,
-            NormalizedMessage::OpenInterest(m) => self.open_interest.write(&OpenInterestRow::from(m)).await,
-            NormalizedMessage::BookDelta(m)    => self.book_delta.write(&BookDeltaRow::from(m)).await,
+            NormalizedMessage::Trade(m)               => self.trades.write(&TradeRow::from(m)).await,
+            NormalizedMessage::BestBidOffer(m)        => self.bbo.write(&BboRow::from(m)).await,
+            NormalizedMessage::MarkPrice(m)           => self.mark_price.write(&MarkPriceRow::from(m)).await,
+            NormalizedMessage::FundingRate(m)         => self.funding.write(&FundingRateRow::from(m)).await,
+            NormalizedMessage::Liquidation(m)         => self.liquidation.write(&LiquidationRow::from(m)).await,
+            NormalizedMessage::OpenInterest(m)        => self.open_interest.write(&OpenInterestRow::from(m)).await,
+            NormalizedMessage::BookDelta(m)           => self.book_delta.write(&BookDeltaRow::from(m)).await,
+            NormalizedMessage::InstrumentDefinition(m) => self.instruments.write(&InstrumentRow::from(m)).await,
             _ => return,
         };
         if let Err(e) = result {
@@ -333,6 +365,7 @@ impl Inserters {
         try_commit!(self.liquidation,   "liquidations");
         try_commit!(self.open_interest, "open_interest");
         try_commit!(self.book_delta,    "book_deltas");
+        try_commit!(self.instruments,   "instruments");
     }
 
     async fn end(self) {
@@ -350,6 +383,7 @@ impl Inserters {
         try_end!(self.liquidation,   "liquidations");
         try_end!(self.open_interest, "open_interest");
         try_end!(self.book_delta,    "book_deltas");
+        try_end!(self.instruments,   "instruments");
     }
 }
 
@@ -365,6 +399,7 @@ const REQUIRED_TABLES: &[&str] = &[
     "liquidations",
     "open_interest",
     "book_deltas",
+    "instruments",
 ];
 
 #[derive(clickhouse::Row, Deserialize)]
@@ -374,7 +409,7 @@ struct TableRow {
 
 async fn check_tables(client: &Client, database: &str) -> Result<()> {
     let rows: Vec<TableRow> = client
-        .query("SELECT name FROM system.tables WHERE database = ? AND name IN ('trades','best_bid_offers','mark_prices','funding_rates','liquidations','open_interest','book_deltas')")
+        .query("SELECT name FROM system.tables WHERE database = ? AND name IN ('trades','best_bid_offers','mark_prices','funding_rates','liquidations','open_interest','book_deltas','instruments')")
         .bind(database)
         .fetch_all::<TableRow>()
         .await

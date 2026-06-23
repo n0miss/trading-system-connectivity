@@ -1,6 +1,7 @@
 use clickhouse::Row;
 use connector_core::{
-    BestBidOffer, BookDelta, FundingRate, Liquidation, MarkPrice, OpenInterest, Trade,
+    BestBidOffer, BookDelta, FundingRate, InstrumentDefinition, Liquidation, MarkPrice,
+    OpenInterest, Trade,
 };
 use serde::Serialize;
 
@@ -219,6 +220,51 @@ impl From<&OpenInterest> for OpenInterestRow {
             symbol:            m.symbol.clone(),
             sequence_number:   m.header.sequence_number,
             open_interest:     m.open_interest,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Instrument reference data
+// ---------------------------------------------------------------------------
+
+#[derive(Row, Serialize)]
+pub struct InstrumentRow {
+    pub local_recv_ts:  i64,
+    pub venue_id:       u8,
+    pub market_type:    u8,
+    pub instrument_id:  u32,
+    pub symbol:         String,
+    pub base_asset:     String,
+    pub quote_asset:    String,
+    pub price_scale:    u32,
+    pub qty_scale:      u32,
+    pub tick_size:      i64,
+    pub step_size:      i64,
+    pub min_qty:        i64,
+    pub min_notional:   i64,
+    pub contract_size:  i64,
+    pub is_trading:     u8,
+}
+
+impl From<&InstrumentDefinition> for InstrumentRow {
+    fn from(m: &InstrumentDefinition) -> Self {
+        Self {
+            local_recv_ts:  m.header.local_recv_ts,
+            venue_id:       m.header.venue_id as u8,
+            market_type:    m.header.market_type as u8,
+            instrument_id:  m.header.instrument_id,
+            symbol:         m.symbol.clone(),
+            base_asset:     m.base_asset.clone(),
+            quote_asset:    m.quote_asset.clone(),
+            price_scale:    m.price_scale,
+            qty_scale:      m.qty_scale,
+            tick_size:      m.tick_size,
+            step_size:      m.step_size,
+            min_qty:        m.min_qty,
+            min_notional:   m.min_notional,
+            contract_size:  m.contract_size,
+            is_trading:     m.is_trading as u8,
         }
     }
 }
