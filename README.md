@@ -6,9 +6,10 @@ Currently supported venues: **Binance Spot** and **Binance USD-M Futures**.
 
 ---
 
-## IPC latency
+## latency
 
-From reception to publication latency (exchange event timestamp → observer receipt) measured on macOS over a live Binance Futures feed:
+To follow: latency metric on aws close to Binance (same availability zone)
+From reception to publication latency (exchange event timestamp → observer receipt) measured on macOS macbook air m2 over a live Binance Futures feed:
 
 | Percentile |       Latency |
 | ---------: | ------------: |
