@@ -23,7 +23,7 @@ use serde::Serialize;
 // that column so the mantissa maps directly with no conversion.
 // ---------------------------------------------------------------------------
 
-fn to_d8(mantissa: i64, scale: u32) -> i64 {
+fn to_d8(mantissa: i64, scale: u8) -> i64 {
     match 8i32 - scale as i32 {
         0    => mantissa,
         n if n > 0 => mantissa * 10i64.pow(n as u32),
@@ -53,8 +53,8 @@ pub struct TradeRow {
     pub aggressor_side:    u8,
 }
 
-impl TradeRow {
-    pub fn new(m: &Trade, price_scale: u32, qty_scale: u32) -> Self {
+impl From<&Trade> for TradeRow {
+    fn from(m: &Trade) -> Self {
         Self {
             exchange_event_ts: m.header.exchange_event_ts,
             local_recv_ts:     m.header.local_recv_ts,
@@ -65,8 +65,8 @@ impl TradeRow {
             symbol:            m.symbol.clone(),
             sequence_number:   m.header.sequence_number,
             trade_id:          m.trade_id,
-            price:             to_d8(m.price, price_scale),
-            qty:               to_d8(m.qty,   qty_scale),
+            price:             to_d8(m.price, m.price_scale),
+            qty:               to_d8(m.qty,   m.qty_scale),
             trade_ts:          m.trade_ts,
             is_buyer_maker:    m.is_buyer_maker as u8,
             aggressor_side:    m.aggressor_side as u8,
@@ -95,8 +95,8 @@ pub struct BboRow {
     pub update_id:         u64,
 }
 
-impl BboRow {
-    pub fn new(m: &BestBidOffer, price_scale: u32, qty_scale: u32) -> Self {
+impl From<&BestBidOffer> for BboRow {
+    fn from(m: &BestBidOffer) -> Self {
         Self {
             exchange_event_ts: m.header.exchange_event_ts,
             local_recv_ts:     m.header.local_recv_ts,
@@ -106,10 +106,10 @@ impl BboRow {
             instrument_id:     m.header.instrument_id,
             symbol:            m.symbol.clone(),
             sequence_number:   m.header.sequence_number,
-            bid_price:         to_d8(m.bid_price, price_scale),
-            bid_qty:           to_d8(m.bid_qty,   qty_scale),
-            ask_price:         to_d8(m.ask_price, price_scale),
-            ask_qty:           to_d8(m.ask_qty,   qty_scale),
+            bid_price:         to_d8(m.bid_price, m.price_scale),
+            bid_qty:           to_d8(m.bid_qty,   m.qty_scale),
+            ask_price:         to_d8(m.ask_price, m.price_scale),
+            ask_qty:           to_d8(m.ask_qty,   m.qty_scale),
             update_id:         m.update_id,
         }
     }
@@ -133,8 +133,8 @@ pub struct MarkPriceRow {
     pub index_price:       i64,   // Decimal(18, 8)
 }
 
-impl MarkPriceRow {
-    pub fn new(m: &MarkPrice, price_scale: u32) -> Self {
+impl From<&MarkPrice> for MarkPriceRow {
+    fn from(m: &MarkPrice) -> Self {
         Self {
             exchange_event_ts: m.header.exchange_event_ts,
             local_recv_ts:     m.header.local_recv_ts,
@@ -144,8 +144,8 @@ impl MarkPriceRow {
             instrument_id:     m.header.instrument_id,
             symbol:            m.symbol.clone(),
             sequence_number:   m.header.sequence_number,
-            mark_price:        to_d8(m.mark_price,  price_scale),
-            index_price:       to_d8(m.index_price, price_scale),
+            mark_price:        to_d8(m.mark_price,  m.price_scale),
+            index_price:       to_d8(m.index_price, m.price_scale),
         }
     }
 }
@@ -210,8 +210,8 @@ pub struct LiquidationRow {
     pub last_filled_qty:   i64,   // Decimal(18, 8)
 }
 
-impl LiquidationRow {
-    pub fn new(m: &Liquidation, price_scale: u32, qty_scale: u32) -> Self {
+impl From<&Liquidation> for LiquidationRow {
+    fn from(m: &Liquidation) -> Self {
         Self {
             exchange_event_ts: m.header.exchange_event_ts,
             local_recv_ts:     m.header.local_recv_ts,
@@ -222,10 +222,10 @@ impl LiquidationRow {
             symbol:            m.symbol.clone(),
             sequence_number:   m.header.sequence_number,
             side:              m.side as u8,
-            price:             to_d8(m.price,           price_scale),
-            qty:               to_d8(m.qty,             qty_scale),
-            avg_price:         to_d8(m.avg_price,       price_scale),
-            last_filled_qty:   to_d8(m.last_filled_qty, qty_scale),
+            price:             to_d8(m.price,           m.price_scale),
+            qty:               to_d8(m.qty,             m.qty_scale),
+            avg_price:         to_d8(m.avg_price,       m.price_scale),
+            last_filled_qty:   to_d8(m.last_filled_qty, m.qty_scale),
         }
     }
 }
@@ -247,8 +247,8 @@ pub struct OpenInterestRow {
     pub open_interest:     i64,   // Decimal(18, 8)
 }
 
-impl OpenInterestRow {
-    pub fn new(m: &OpenInterest, qty_scale: u32) -> Self {
+impl From<&OpenInterest> for OpenInterestRow {
+    fn from(m: &OpenInterest) -> Self {
         Self {
             exchange_event_ts: m.header.exchange_event_ts,
             local_recv_ts:     m.header.local_recv_ts,
@@ -258,7 +258,7 @@ impl OpenInterestRow {
             instrument_id:     m.header.instrument_id,
             symbol:            m.symbol.clone(),
             sequence_number:   m.header.sequence_number,
-            open_interest:     to_d8(m.open_interest, qty_scale),
+            open_interest:     to_d8(m.open_interest, m.qty_scale),
         }
     }
 }
@@ -288,8 +288,10 @@ pub struct BookDeltaRow {
     pub ask_qtys:          Vec<i64>,   // Array(Decimal(18, 8))
 }
 
-impl BookDeltaRow {
-    pub fn new(m: &BookDelta, price_scale: u32, qty_scale: u32) -> Self {
+impl From<&BookDelta> for BookDeltaRow {
+    fn from(m: &BookDelta) -> Self {
+        let p = m.price_scale;
+        let q = m.qty_scale;
         Self {
             exchange_event_ts: m.header.exchange_event_ts,
             local_recv_ts:     m.header.local_recv_ts,
@@ -302,10 +304,10 @@ impl BookDeltaRow {
             first_update_id:   m.first_update_id,
             final_update_id:   m.final_update_id,
             prev_update_id:    m.prev_update_id,
-            bid_prices:        m.bids.iter().map(|l| to_d8(l.price, price_scale)).collect(),
-            bid_qtys:          m.bids.iter().map(|l| to_d8(l.qty,   qty_scale)).collect(),
-            ask_prices:        m.asks.iter().map(|l| to_d8(l.price, price_scale)).collect(),
-            ask_qtys:          m.asks.iter().map(|l| to_d8(l.qty,   qty_scale)).collect(),
+            bid_prices:        m.bids.iter().map(|l| to_d8(l.price, p)).collect(),
+            bid_qtys:          m.bids.iter().map(|l| to_d8(l.qty,   q)).collect(),
+            ask_prices:        m.asks.iter().map(|l| to_d8(l.price, p)).collect(),
+            ask_qtys:          m.asks.iter().map(|l| to_d8(l.qty,   q)).collect(),
         }
     }
 }
@@ -335,8 +337,8 @@ pub struct InstrumentRow {
 
 impl From<&InstrumentDefinition> for InstrumentRow {
     fn from(m: &InstrumentDefinition) -> Self {
-        let ps = m.price_scale;
-        let qs = m.qty_scale;
+        let ps = m.price_scale as u8;
+        let qs = m.qty_scale   as u8;
         Self {
             local_recv_ts:  m.header.local_recv_ts,
             venue_id:       m.header.venue_id as u8,
@@ -345,8 +347,8 @@ impl From<&InstrumentDefinition> for InstrumentRow {
             symbol:         m.symbol.clone(),
             base_asset:     m.base_asset.clone(),
             quote_asset:    m.quote_asset.clone(),
-            price_scale:    ps,
-            qty_scale:      qs,
+            price_scale:    m.price_scale,
+            qty_scale:      m.qty_scale,
             tick_size:      to_d8(m.tick_size,     ps),
             step_size:      to_d8(m.step_size,     qs),
             min_qty:        to_d8(m.min_qty,       qs),

@@ -439,9 +439,11 @@ fn make_ask_levels(prng: &mut Prng, count: usize) -> Vec<PriceLevel> {
 
 fn make_snapshot(symbol: &str, uid: u64, bids: Vec<PriceLevel>, asks: Vec<PriceLevel>) -> BookSnapshot {
     BookSnapshot {
-        header:    make_header(MessageType::BookSnapshot),
-        symbol:    symbol.into(),
-        update_id: uid,
+        header:      make_header(MessageType::BookSnapshot),
+        symbol:      symbol.into(),
+        price_scale: 2,
+        qty_scale:   3,
+        update_id:   uid,
         bids,
         asks,
     }
@@ -451,6 +453,8 @@ fn make_delta(symbol: &str, uid: u64, bids: Vec<PriceLevel>, asks: Vec<PriceLeve
     BookDelta {
         header:          make_header(MessageType::BookDelta),
         symbol:          symbol.into(),
+        price_scale:     2,
+        qty_scale:       3,
         first_update_id: uid,
         final_update_id: uid,
         prev_update_id:  UPDATE_ID_NONE,

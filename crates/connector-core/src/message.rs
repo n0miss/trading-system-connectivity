@@ -150,11 +150,13 @@ impl TradingStatus {
 /// Full depth snapshot used during book initialisation and recovery.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BookSnapshot {
-    pub header:    MessageHeader,
-    pub symbol:    String,
-    pub update_id: u64,
-    pub bids:      Vec<PriceLevel>,
-    pub asks:      Vec<PriceLevel>,
+    pub header:      MessageHeader,
+    pub symbol:      String,
+    pub price_scale: u8,
+    pub qty_scale:   u8,
+    pub update_id:   u64,
+    pub bids:        Vec<PriceLevel>,
+    pub asks:        Vec<PriceLevel>,
 }
 
 impl BookSnapshot {
@@ -162,6 +164,8 @@ impl BookSnapshot {
         self.header.encode_into(buf)?;
         let mut enc = Encoder::new(&mut buf[HEADER_SIZE..]);
         enc.put_str(&self.symbol)?;
+        enc.put_u8(self.price_scale)?;
+        enc.put_u8(self.qty_scale)?;
         enc.put_u64(self.update_id)?;
         put_levels(&mut enc, &self.bids)?;
         put_levels(&mut enc, &self.asks)?;
@@ -174,10 +178,12 @@ impl BookSnapshot {
         let mut dec = Decoder::new(&buf[HEADER_SIZE..]);
         Ok(Self {
             header,
-            symbol:    dec.get_str()?,
-            update_id: dec.get_u64()?,
-            bids:      get_levels(&mut dec)?,
-            asks:      get_levels(&mut dec)?,
+            symbol:      dec.get_str()?,
+            price_scale: dec.get_u8()?,
+            qty_scale:   dec.get_u8()?,
+            update_id:   dec.get_u64()?,
+            bids:        get_levels(&mut dec)?,
+            asks:        get_levels(&mut dec)?,
         })
     }
 }
@@ -189,6 +195,8 @@ impl BookSnapshot {
 pub struct BookDelta {
     pub header:           MessageHeader,
     pub symbol:           String,
+    pub price_scale:      u8,
+    pub qty_scale:        u8,
     pub first_update_id:  u64,
     pub final_update_id:  u64,
     /// Previous final update id for sequence continuity; UPDATE_ID_NONE if unavailable.
@@ -202,6 +210,8 @@ impl BookDelta {
         self.header.encode_into(buf)?;
         let mut enc = Encoder::new(&mut buf[HEADER_SIZE..]);
         enc.put_str(&self.symbol)?;
+        enc.put_u8(self.price_scale)?;
+        enc.put_u8(self.qty_scale)?;
         enc.put_u64(self.first_update_id)?;
         enc.put_u64(self.final_update_id)?;
         enc.put_u64(self.prev_update_id)?;
@@ -217,6 +227,8 @@ impl BookDelta {
         Ok(Self {
             header,
             symbol:           dec.get_str()?,
+            price_scale:      dec.get_u8()?,
+            qty_scale:        dec.get_u8()?,
             first_update_id:  dec.get_u64()?,
             final_update_id:  dec.get_u64()?,
             prev_update_id:   dec.get_u64()?,
@@ -230,14 +242,16 @@ impl BookDelta {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BestBidOffer {
-    pub header:    MessageHeader,
-    pub symbol:    String,
-    pub bid_price: i64,
-    pub bid_qty:   i64,
-    pub ask_price: i64,
-    pub ask_qty:   i64,
+    pub header:      MessageHeader,
+    pub symbol:      String,
+    pub price_scale: u8,
+    pub qty_scale:   u8,
+    pub bid_price:   i64,
+    pub bid_qty:     i64,
+    pub ask_price:   i64,
+    pub ask_qty:     i64,
     /// Exchange update id; UPDATE_ID_NONE if the exchange does not provide one.
-    pub update_id: u64,
+    pub update_id:   u64,
 }
 
 impl BestBidOffer {
@@ -245,6 +259,8 @@ impl BestBidOffer {
         self.header.encode_into(buf)?;
         let mut enc = Encoder::new(&mut buf[HEADER_SIZE..]);
         enc.put_str(&self.symbol)?;
+        enc.put_u8(self.price_scale)?;
+        enc.put_u8(self.qty_scale)?;
         enc.put_i64(self.bid_price)?;
         enc.put_i64(self.bid_qty)?;
         enc.put_i64(self.ask_price)?;
@@ -259,12 +275,14 @@ impl BestBidOffer {
         let mut dec = Decoder::new(&buf[HEADER_SIZE..]);
         Ok(Self {
             header,
-            symbol:    dec.get_str()?,
-            bid_price: dec.get_i64()?,
-            bid_qty:   dec.get_i64()?,
-            ask_price: dec.get_i64()?,
-            ask_qty:   dec.get_i64()?,
-            update_id: dec.get_u64()?,
+            symbol:      dec.get_str()?,
+            price_scale: dec.get_u8()?,
+            qty_scale:   dec.get_u8()?,
+            bid_price:   dec.get_i64()?,
+            bid_qty:     dec.get_i64()?,
+            ask_price:   dec.get_i64()?,
+            ask_qty:     dec.get_i64()?,
+            update_id:   dec.get_u64()?,
         })
     }
 }
@@ -275,6 +293,8 @@ impl BestBidOffer {
 pub struct Trade {
     pub header:         MessageHeader,
     pub symbol:         String,
+    pub price_scale:    u8,
+    pub qty_scale:      u8,
     pub trade_id:       u64,
     pub price:          i64,
     pub qty:            i64,
@@ -288,6 +308,8 @@ impl Trade {
         self.header.encode_into(buf)?;
         let mut enc = Encoder::new(&mut buf[HEADER_SIZE..]);
         enc.put_str(&self.symbol)?;
+        enc.put_u8(self.price_scale)?;
+        enc.put_u8(self.qty_scale)?;
         enc.put_u64(self.trade_id)?;
         enc.put_i64(self.price)?;
         enc.put_i64(self.qty)?;
@@ -304,6 +326,8 @@ impl Trade {
         Ok(Self {
             header,
             symbol:         dec.get_str()?,
+            price_scale:    dec.get_u8()?,
+            qty_scale:      dec.get_u8()?,
             trade_id:       dec.get_u64()?,
             price:          dec.get_i64()?,
             qty:            dec.get_i64()?,
@@ -321,6 +345,7 @@ impl Trade {
 pub struct MarkPrice {
     pub header:      MessageHeader,
     pub symbol:      String,
+    pub price_scale: u8,
     pub mark_price:  i64,
     pub index_price: i64,
 }
@@ -330,6 +355,7 @@ impl MarkPrice {
         self.header.encode_into(buf)?;
         let mut enc = Encoder::new(&mut buf[HEADER_SIZE..]);
         enc.put_str(&self.symbol)?;
+        enc.put_u8(self.price_scale)?;
         enc.put_i64(self.mark_price)?;
         enc.put_i64(self.index_price)?;
         Ok(HEADER_SIZE + enc.finish())
@@ -342,6 +368,7 @@ impl MarkPrice {
         Ok(Self {
             header,
             symbol:      dec.get_str()?,
+            price_scale: dec.get_u8()?,
             mark_price:  dec.get_i64()?,
             index_price: dec.get_i64()?,
         })
@@ -350,13 +377,15 @@ impl MarkPrice {
 
 // ---------------------------------------------------------------------------
 
-/// Funding rate for a futures symbol. Scaled as rate * 10^9 (nanosecond-like resolution).
+/// Funding rate for a futures symbol.
+/// `funding_rate` is scaled as `rate * 10^funding_rate_scale`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FundingRate {
-    pub header:            MessageHeader,
-    pub symbol:            String,
-    pub funding_rate:      i64,
-    pub next_funding_time: i64,
+    pub header:              MessageHeader,
+    pub symbol:              String,
+    pub funding_rate_scale:  u8,
+    pub funding_rate:        i64,
+    pub next_funding_time:   i64,
 }
 
 impl FundingRate {
@@ -364,6 +393,7 @@ impl FundingRate {
         self.header.encode_into(buf)?;
         let mut enc = Encoder::new(&mut buf[HEADER_SIZE..]);
         enc.put_str(&self.symbol)?;
+        enc.put_u8(self.funding_rate_scale)?;
         enc.put_i64(self.funding_rate)?;
         enc.put_i64(self.next_funding_time)?;
         Ok(HEADER_SIZE + enc.finish())
@@ -375,9 +405,10 @@ impl FundingRate {
         let mut dec = Decoder::new(&buf[HEADER_SIZE..]);
         Ok(Self {
             header,
-            symbol:            dec.get_str()?,
-            funding_rate:      dec.get_i64()?,
-            next_funding_time: dec.get_i64()?,
+            symbol:             dec.get_str()?,
+            funding_rate_scale: dec.get_u8()?,
+            funding_rate:       dec.get_i64()?,
+            next_funding_time:  dec.get_i64()?,
         })
     }
 }
@@ -388,6 +419,8 @@ impl FundingRate {
 pub struct Liquidation {
     pub header:          MessageHeader,
     pub symbol:          String,
+    pub price_scale:     u8,
+    pub qty_scale:       u8,
     pub side:            AggressorSide,
     pub price:           i64,
     pub qty:             i64,
@@ -400,6 +433,8 @@ impl Liquidation {
         self.header.encode_into(buf)?;
         let mut enc = Encoder::new(&mut buf[HEADER_SIZE..]);
         enc.put_str(&self.symbol)?;
+        enc.put_u8(self.price_scale)?;
+        enc.put_u8(self.qty_scale)?;
         enc.put_u8(self.side as u8)?;
         enc.put_i64(self.price)?;
         enc.put_i64(self.qty)?;
@@ -415,6 +450,8 @@ impl Liquidation {
         Ok(Self {
             header,
             symbol:          dec.get_str()?,
+            price_scale:     dec.get_u8()?,
+            qty_scale:       dec.get_u8()?,
             side:            AggressorSide::try_from(dec.get_u8()?)?,
             price:           dec.get_i64()?,
             qty:             dec.get_i64()?,
@@ -430,6 +467,7 @@ impl Liquidation {
 pub struct OpenInterest {
     pub header:        MessageHeader,
     pub symbol:        String,
+    pub qty_scale:     u8,
     pub open_interest: i64,
 }
 
@@ -438,6 +476,7 @@ impl OpenInterest {
         self.header.encode_into(buf)?;
         let mut enc = Encoder::new(&mut buf[HEADER_SIZE..]);
         enc.put_str(&self.symbol)?;
+        enc.put_u8(self.qty_scale)?;
         enc.put_i64(self.open_interest)?;
         Ok(HEADER_SIZE + enc.finish())
     }
@@ -446,7 +485,12 @@ impl OpenInterest {
         let header = MessageHeader::decode(buf)?;
         check_message_type!(header, MessageType::OpenInterest);
         let mut dec = Decoder::new(&buf[HEADER_SIZE..]);
-        Ok(Self { header, symbol: dec.get_str()?, open_interest: dec.get_i64()? })
+        Ok(Self {
+            header,
+            symbol:        dec.get_str()?,
+            qty_scale:     dec.get_u8()?,
+            open_interest: dec.get_i64()?,
+        })
     }
 }
 

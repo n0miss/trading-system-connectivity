@@ -214,6 +214,8 @@ mod tests {
         BookDelta {
             header:          hdr(MessageType::BookDelta),
             symbol:          "BTCUSDT".to_string(),
+            price_scale:     2,
+            qty_scale:       3,
             first_update_id: last_id,
             final_update_id: last_id,
             prev_update_id:  UPDATE_ID_NONE,
@@ -224,8 +226,10 @@ mod tests {
 
     fn snapshot(bids: Vec<PriceLevel>, asks: Vec<PriceLevel>, update_id: u64) -> BookSnapshot {
         BookSnapshot {
-            header:    hdr(MessageType::BookSnapshot),
-            symbol:    "BTCUSDT".to_string(),
+            header:      hdr(MessageType::BookSnapshot),
+            symbol:      "BTCUSDT".to_string(),
+            price_scale: 2,
+            qty_scale:   3,
             update_id,
             bids,
             asks,

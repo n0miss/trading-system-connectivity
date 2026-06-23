@@ -62,6 +62,8 @@ fn normalize_trade(
             us_to_ns(ev.event_time), recv_ts,
         ),
         symbol:         inst.symbol.clone(),
+        price_scale:    inst.price_scale as u8,
+        qty_scale:      inst.qty_scale   as u8,
         trade_id:       ev.trade_id as u64,
         price:          ev.price.to_scaled(inst.price_scale),
         qty:            ev.quantity.to_scaled(inst.qty_scale),
@@ -83,15 +85,17 @@ fn normalize_bbo(
             MessageType::BestBidOffer, inst, ctx, seq,
             us_to_ns(ev.event_time), recv_ts,
         ),
-        symbol:    inst.symbol.clone(),
-        bid_price: ev.best_bid_price.to_scaled(inst.price_scale),
-        bid_qty:   ev.best_bid_qty.to_scaled(inst.qty_scale),
-        ask_price: ev.best_ask_price.to_scaled(inst.price_scale),
-        ask_qty:   ev.best_ask_qty.to_scaled(inst.qty_scale),
+        symbol:      inst.symbol.clone(),
+        price_scale: inst.price_scale as u8,
+        qty_scale:   inst.qty_scale   as u8,
+        bid_price:   ev.best_bid_price.to_scaled(inst.price_scale),
+        bid_qty:     ev.best_bid_qty.to_scaled(inst.qty_scale),
+        ask_price:   ev.best_ask_price.to_scaled(inst.price_scale),
+        ask_qty:     ev.best_ask_qty.to_scaled(inst.qty_scale),
         // SBE BBO carries timestamps (event_time, transact_time) instead of
         // an update_id; use the sentinel so downstream code that relies on
         // update_id ordering knows this field is absent.
-        update_id: UPDATE_ID_NONE,
+        update_id:   UPDATE_ID_NONE,
     })
 }
 
@@ -119,6 +123,8 @@ fn normalize_depth_diff(
             us_to_ns(ev.event_time), recv_ts,
         ),
         symbol:          inst.symbol.clone(),
+        price_scale:     p as u8,
+        qty_scale:       q as u8,
         first_update_id: ev.first_update_id as u64,
         final_update_id: ev.final_update_id as u64,
         // SBE DepthDiff carries prevFinalUpdateId; expose it so the Futures-

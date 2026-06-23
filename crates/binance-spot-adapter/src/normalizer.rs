@@ -82,13 +82,15 @@ fn normalize_book_ticker(
     let q = inst.qty_scale;
     Ok(BestBidOffer {
         // bookTicker carries no exchange timestamp.
-        header:    make_header(MessageType::BestBidOffer, inst, ctx, seq, TS_NONE, recv_ts),
-        symbol:    inst.symbol.clone(),
-        bid_price: parse_scaled(&bt.bid_price, p)?,
-        bid_qty:   parse_scaled(&bt.bid_qty,   q)?,
-        ask_price: parse_scaled(&bt.ask_price, p)?,
-        ask_qty:   parse_scaled(&bt.ask_qty,   q)?,
-        update_id: bt.update_id,
+        header:      make_header(MessageType::BestBidOffer, inst, ctx, seq, TS_NONE, recv_ts),
+        symbol:      inst.symbol.clone(),
+        price_scale: p as u8,
+        qty_scale:   q as u8,
+        bid_price:   parse_scaled(&bt.bid_price, p)?,
+        bid_qty:     parse_scaled(&bt.bid_qty,   q)?,
+        ask_price:   parse_scaled(&bt.ask_price, p)?,
+        ask_qty:     parse_scaled(&bt.ask_qty,   q)?,
+        update_id:   bt.update_id,
     })
 }
 
@@ -122,6 +124,8 @@ fn normalize_depth_update(
             ms_to_ns(du.event_time_ms), recv_ts,
         ),
         symbol:          inst.symbol.clone(),
+        price_scale:     p as u8,
+        qty_scale:       q as u8,
         first_update_id: du.first_update_id,
         final_update_id: du.last_update_id,
         // Stage 3 fills this in during sequence validation.
@@ -152,6 +156,8 @@ fn normalize_trade(
             ms_to_ns(tr.event_time_ms), recv_ts,
         ),
         symbol:         inst.symbol.clone(),
+        price_scale:    inst.price_scale as u8,
+        qty_scale:      inst.qty_scale   as u8,
         trade_id:       tr.trade_id,
         price:          parse_scaled(&tr.price, inst.price_scale)?,
         qty:            parse_scaled(&tr.qty,   inst.qty_scale)?,

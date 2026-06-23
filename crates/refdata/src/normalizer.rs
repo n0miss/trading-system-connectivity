@@ -289,6 +289,7 @@ pub fn normalize_open_interest(
             local_publish_ts:  ts,
         },
         symbol:        inst.symbol.clone(),
+        qty_scale:     inst.qty_scale as u8,
         open_interest,
     })
 }
@@ -335,8 +336,10 @@ pub fn parse_depth_snapshot(
 
     Ok(BookSnapshot {
         header,
-        symbol:    inst.symbol.clone(),
-        update_id: resp.last_update_id,
+        symbol:      inst.symbol.clone(),
+        price_scale: inst.price_scale as u8,
+        qty_scale:   inst.qty_scale   as u8,
+        update_id:   resp.last_update_id,
         bids,
         asks,
     })

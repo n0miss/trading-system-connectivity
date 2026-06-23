@@ -217,6 +217,8 @@ mod tests {
         let delta = BookDelta {
             header:          test_header(1),
             symbol:          "ETHUSDT".into(),
+            price_scale:     2,
+            qty_scale:       3,
             first_update_id: 100,
             final_update_id: 100,
             prev_update_id:  UPDATE_ID_NONE,
@@ -306,6 +308,8 @@ mod tests {
         let d = BookDelta {
             header:          test_header(1),
             symbol:          "BTCUSDT".into(),
+            price_scale:     2,
+            qty_scale:       3,
             first_update_id: 1,
             final_update_id: 1,
             prev_update_id:  UPDATE_ID_NONE,

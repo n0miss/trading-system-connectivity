@@ -286,13 +286,15 @@ mod tests {
 
     fn encode_bbo(symbol: &str, bid: i64, ask: i64) -> Vec<u8> {
         let msg = BestBidOffer {
-            header:    bbo_header(),
-            symbol:    symbol.to_string(),
-            bid_price: bid,
-            bid_qty:   1_000_000,
-            ask_price: ask,
-            ask_qty:   1_000_000,
-            update_id: 0,
+            header:      bbo_header(),
+            symbol:      symbol.to_string(),
+            price_scale: 2,
+            qty_scale:   3,
+            bid_price:   bid,
+            bid_qty:     1_000_000,
+            ask_price:   ask,
+            ask_qty:     1_000_000,
+            update_id:   0,
         };
         let mut buf = vec![0u8; 512];
         let len = msg.encode_into(&mut buf).unwrap();

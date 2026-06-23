@@ -105,13 +105,15 @@ fn normalize_book_ticker(
     let q = inst.qty_scale;
     Ok(BestBidOffer {
         // Futures bookTicker carries no exchange timestamp.
-        header:    make_header(MessageType::BestBidOffer, inst, ctx, seq, TS_NONE, recv_ts),
-        symbol:    inst.symbol.clone(),
-        bid_price: parse_scaled(&bt.bid_price, p)?,
-        bid_qty:   parse_scaled(&bt.bid_qty,   q)?,
-        ask_price: parse_scaled(&bt.ask_price, p)?,
-        ask_qty:   parse_scaled(&bt.ask_qty,   q)?,
-        update_id: bt.update_id,
+        header:      make_header(MessageType::BestBidOffer, inst, ctx, seq, TS_NONE, recv_ts),
+        symbol:      inst.symbol.clone(),
+        price_scale: p as u8,
+        qty_scale:   q as u8,
+        bid_price:   parse_scaled(&bt.bid_price, p)?,
+        bid_qty:     parse_scaled(&bt.bid_qty,   q)?,
+        ask_price:   parse_scaled(&bt.ask_price, p)?,
+        ask_qty:     parse_scaled(&bt.ask_qty,   q)?,
+        update_id:   bt.update_id,
     })
 }
 
@@ -145,6 +147,8 @@ fn normalize_depth_update(
             ms_to_ns(du.event_time_ms), recv_ts,
         ),
         symbol:          inst.symbol.clone(),
+        price_scale:     p as u8,
+        qty_scale:       q as u8,
         first_update_id: du.first_update_id,
         final_update_id: du.last_update_id,
         // Futures depth events carry pu (prev_final_update_id) directly —
@@ -175,6 +179,8 @@ fn normalize_agg_trade(
             ms_to_ns(at.event_time_ms), recv_ts,
         ),
         symbol:         inst.symbol.clone(),
+        price_scale:    inst.price_scale as u8,
+        qty_scale:      inst.qty_scale   as u8,
         trade_id:       at.agg_trade_id,
         price:          parse_scaled(&at.price, inst.price_scale)?,
         qty:            parse_scaled(&at.qty,   inst.qty_scale)?,
@@ -208,6 +214,7 @@ fn normalize_mark_price(
             ms_to_ns(mp.event_time_ms), recv_ts,
         ),
         symbol:      inst.symbol.clone(),
+        price_scale: p as u8,
         mark_price:  parse_scaled(&mp.mark_price, p)?,
         index_price,
     };
@@ -222,10 +229,11 @@ fn normalize_mark_price(
                 MessageType::FundingRate, inst, ctx, take_seq(seq),
                 ms_to_ns(mp.event_time_ms), recv_ts,
             ),
-            symbol:            inst.symbol.clone(),
+            symbol:             inst.symbol.clone(),
+            funding_rate_scale: 9,
             // FundingRate is stored as rate × 10^9.
-            funding_rate:      parse_scaled(&mp.funding_rate, 9)?,
-            next_funding_time: ms_to_ns(mp.next_funding_time_ms),
+            funding_rate:       parse_scaled(&mp.funding_rate, 9)?,
+            next_funding_time:  ms_to_ns(mp.next_funding_time_ms),
         };
         out.push(NormalizedMessage::FundingRate(rate));
     }
@@ -254,6 +262,8 @@ fn normalize_force_order(
             ms_to_ns(fo.event_time_ms), recv_ts,
         ),
         symbol:          inst.symbol.clone(),
+        price_scale:     p as u8,
+        qty_scale:       q as u8,
         side,
         price:           parse_scaled(&ord.price,           p)?,
         qty:             parse_scaled(&ord.qty,             q)?,

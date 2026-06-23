@@ -117,13 +117,15 @@ fn run_demo(cfg: CompareConfig) {
             let mut h = header;
             h.sequence_number = seq;
             let msg = BestBidOffer {
-                header:    h,
-                symbol:    symbol.to_string(),
-                bid_price: bid,
-                bid_qty:   1_000_000,
-                ask_price: ask,
-                ask_qty:   500_000,
-                update_id: seq,
+                header:      h,
+                symbol:      symbol.to_string(),
+                price_scale: 2,
+                qty_scale:   3,
+                bid_price:   bid,
+                bid_qty:     1_000_000,
+                ask_price:   ask,
+                ask_qty:     500_000,
+                update_id:   seq,
             };
             let mut buf = vec![0u8; 512];
             let len = msg.encode_into(&mut buf).unwrap();

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::ffi::CString;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -337,35 +337,17 @@ impl Inserters {
         }
     }
 
-    async fn write(&mut self, msg: &NormalizedMessage, scales: &HashMap<u32, (u32, u32)>) {
+    async fn write(&mut self, msg: &NormalizedMessage) {
         let result: clickhouse::error::Result<()> = match msg {
-            NormalizedMessage::InstrumentDefinition(m) => {
-                // InstrumentDefinition carries its own scale — no lookup needed.
-                self.instruments.write(&InstrumentRow::from(m)).await
-            }
-            NormalizedMessage::FundingRate(m) => {
-                // funding_rate uses hardcoded scale=9 in the normalizer.
-                self.funding.write(&FundingRateRow::from(m)).await
-            }
-            other => {
-                let id = other.header().instrument_id;
-                let (ps, qs) = match scales.get(&id) {
-                    Some(&s) => s,
-                    None => {
-                        warn!(instrument_id = id, "no scale info yet, dropping message");
-                        return;
-                    }
-                };
-                match other {
-                    NormalizedMessage::Trade(m)        => self.trades.write(&TradeRow::new(m, ps, qs)).await,
-                    NormalizedMessage::BestBidOffer(m) => self.bbo.write(&BboRow::new(m, ps, qs)).await,
-                    NormalizedMessage::MarkPrice(m)    => self.mark_price.write(&MarkPriceRow::new(m, ps)).await,
-                    NormalizedMessage::Liquidation(m)  => self.liquidation.write(&LiquidationRow::new(m, ps, qs)).await,
-                    NormalizedMessage::OpenInterest(m) => self.open_interest.write(&OpenInterestRow::new(m, qs)).await,
-                    NormalizedMessage::BookDelta(m)    => self.book_delta.write(&BookDeltaRow::new(m, ps, qs)).await,
-                    _ => return,
-                }
-            }
+            NormalizedMessage::InstrumentDefinition(m) => self.instruments.write(&InstrumentRow::from(m)).await,
+            NormalizedMessage::Trade(m)        => self.trades.write(&TradeRow::from(m)).await,
+            NormalizedMessage::BestBidOffer(m) => self.bbo.write(&BboRow::from(m)).await,
+            NormalizedMessage::MarkPrice(m)    => self.mark_price.write(&MarkPriceRow::from(m)).await,
+            NormalizedMessage::FundingRate(m)  => self.funding.write(&FundingRateRow::from(m)).await,
+            NormalizedMessage::Liquidation(m)  => self.liquidation.write(&LiquidationRow::from(m)).await,
+            NormalizedMessage::OpenInterest(m) => self.open_interest.write(&OpenInterestRow::from(m)).await,
+            NormalizedMessage::BookDelta(m)    => self.book_delta.write(&BookDeltaRow::from(m)).await,
+            _ => return,
         };
         if let Err(e) = result {
             warn!(error = %e, "inserter write error");
@@ -429,39 +411,6 @@ struct TableRow {
     name: String,
 }
 
-/// Pre-populate the scale map from the instruments table so that market data
-/// messages arriving before (or without) a live InstrumentDefinition message
-/// on Aeron are not dropped.
-///
-/// The connector publishes InstrumentDefinition once at startup.  If the bridge
-/// starts after the connector those messages are gone from the ring buffer.
-/// Loading from ClickHouse makes restarts seamless after the first run.
-async fn load_scales(client: &Client) -> HashMap<u32, (u32, u32)> {
-    #[derive(clickhouse::Row, Deserialize)]
-    struct ScaleRow {
-        instrument_id: u32,
-        price_scale:   u32,
-        qty_scale:     u32,
-    }
-    match client
-        .query("SELECT instrument_id, price_scale, qty_scale FROM instruments FINAL")
-        .fetch_all::<ScaleRow>()
-        .await
-    {
-        Ok(rows) => {
-            let map: HashMap<u32, (u32, u32)> = rows
-                .into_iter()
-                .map(|r| (r.instrument_id, (r.price_scale, r.qty_scale)))
-                .collect();
-            info!(instruments = map.len(), "pre-loaded instrument scales from ClickHouse");
-            map
-        }
-        Err(e) => {
-            warn!(error = %e, "could not pre-load scales; messages will be dropped until InstrumentDefinition messages arrive on Aeron");
-            HashMap::new()
-        }
-    }
-}
 
 async fn check_tables(client: &Client, database: &str) -> Result<()> {
     let rows: Vec<TableRow> = client
@@ -537,8 +486,6 @@ async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
 
     check_tables(&client, &args.database).await?;
     info!(database = %args.database, "all required tables present");
-
-    let initial_scales = load_scales(&client).await;
 
     let mut inserters = Inserters::new(
         &client,
@@ -621,9 +568,6 @@ async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
     let write_timeout  = Duration::from_secs(3);
     let commit_timeout = Duration::from_secs(3);
     let mut msgs_written: u64 = 0;
-    // instrument_id → (price_scale, qty_scale).  Seeded from the instruments
-    // ClickHouse table at startup; kept live by InstrumentDefinition messages.
-    let mut scale_map = initial_scales;
 
     loop {
         tokio::select! {
@@ -637,12 +581,7 @@ async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
                     Some(m) => m,
                     None    => { info!("message channel closed"); break; }
                 };
-                // Update the scale map from InstrumentDefinition messages so
-                // that subsequent price/qty conversions use the correct scale.
-                if let NormalizedMessage::InstrumentDefinition(ref m) = msg {
-                    scale_map.insert(m.header.instrument_id, (m.price_scale, m.qty_scale));
-                }
-                if tokio::time::timeout(write_timeout, inserters.write(&msg, &scale_map)).await.is_err() {
+                if tokio::time::timeout(write_timeout, inserters.write(&msg)).await.is_err() {
                     warn!("ClickHouse write timed out");
                 }
                 msgs_written += 1;

@@ -219,6 +219,8 @@ mod tests {
                 local_publish_ts:  TS_NONE,
             },
             symbol:          "BTCUSDT".to_string(),
+            price_scale:     2,
+            qty_scale:       3,
             first_update_id: first,
             final_update_id: final_,
             prev_update_id:  UPDATE_ID_NONE,
