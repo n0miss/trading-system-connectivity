@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -96,6 +96,13 @@ use rows::*;
 // DDL
 // ---------------------------------------------------------------------------
 
+// Price and quantity columns use Decimal(18, 8) — stored on the wire as Int64
+// with an implicit scale of 8.  The bridge rescales every mantissa from its
+// instrument-specific scale to the fixed 8-decimal representation before
+// inserting (see rows::to_d8).
+//
+// funding_rate uses Decimal(18, 9) because the normalizer hardcodes scale=9
+// for that field, so the mantissa maps directly with no conversion.
 const CREATE_TABLES: &str = r#"
 CREATE TABLE IF NOT EXISTS trades (
     exchange_event_ts  Int64,
@@ -107,8 +114,8 @@ CREATE TABLE IF NOT EXISTS trades (
     symbol             String,
     sequence_number    UInt64,
     trade_id           UInt64,
-    price              Int64,
-    qty                Int64,
+    price              Decimal(18, 8),
+    qty                Decimal(18, 8),
     trade_ts           Int64,
     is_buyer_maker     UInt8,
     aggressor_side     UInt8
@@ -124,10 +131,10 @@ CREATE TABLE IF NOT EXISTS best_bid_offers (
     instrument_id      UInt32,
     symbol             String,
     sequence_number    UInt64,
-    bid_price          Int64,
-    bid_qty            Int64,
-    ask_price          Int64,
-    ask_qty            Int64,
+    bid_price          Decimal(18, 8),
+    bid_qty            Decimal(18, 8),
+    ask_price          Decimal(18, 8),
+    ask_qty            Decimal(18, 8),
     update_id          UInt64
 ) ENGINE = MergeTree()
 ORDER BY (symbol, exchange_event_ts);
@@ -141,8 +148,8 @@ CREATE TABLE IF NOT EXISTS mark_prices (
     instrument_id      UInt32,
     symbol             String,
     sequence_number    UInt64,
-    mark_price         Int64,
-    index_price        Int64
+    mark_price         Decimal(18, 8),
+    index_price        Decimal(18, 8)
 ) ENGINE = MergeTree()
 ORDER BY (symbol, exchange_event_ts);
 
@@ -155,7 +162,7 @@ CREATE TABLE IF NOT EXISTS funding_rates (
     instrument_id      UInt32,
     symbol             String,
     sequence_number    UInt64,
-    funding_rate       Int64,
+    funding_rate       Decimal(18, 9),
     next_funding_time  Int64
 ) ENGINE = MergeTree()
 ORDER BY (symbol, exchange_event_ts);
@@ -170,10 +177,10 @@ CREATE TABLE IF NOT EXISTS liquidations (
     symbol             String,
     sequence_number    UInt64,
     side               UInt8,
-    price              Int64,
-    qty                Int64,
-    avg_price          Int64,
-    last_filled_qty    Int64
+    price              Decimal(18, 8),
+    qty                Decimal(18, 8),
+    avg_price          Decimal(18, 8),
+    last_filled_qty    Decimal(18, 8)
 ) ENGINE = MergeTree()
 ORDER BY (symbol, exchange_event_ts);
 
@@ -186,7 +193,7 @@ CREATE TABLE IF NOT EXISTS open_interest (
     instrument_id      UInt32,
     symbol             String,
     sequence_number    UInt64,
-    open_interest      Int64
+    open_interest      Decimal(18, 8)
 ) ENGINE = MergeTree()
 ORDER BY (symbol, exchange_event_ts);
 
@@ -202,19 +209,16 @@ CREATE TABLE IF NOT EXISTS book_deltas (
     first_update_id    UInt64,
     final_update_id    UInt64,
     prev_update_id     UInt64,
-    bid_prices         Array(Int64),
-    bid_qtys           Array(Int64),
-    ask_prices         Array(Int64),
-    ask_qtys           Array(Int64)
+    bid_prices         Array(Decimal(18, 8)),
+    bid_qtys           Array(Decimal(18, 8)),
+    ask_prices         Array(Decimal(18, 8)),
+    ask_qtys           Array(Decimal(18, 8))
 ) ENGINE = MergeTree()
 ORDER BY (symbol, exchange_event_ts);
 
--- Reference data.  ReplacingMergeTree deduplicates on (venue_id, market_type,
--- instrument_id) keeping the row with the highest local_recv_ts, so
--- re-published definitions (e.g. is_trading flip) update in place.
--- Join with any market-data table to convert scaled integers to real prices:
---   SELECT t.price / pow(10, i.price_scale) AS price
---   FROM trades t JOIN instruments i USING (instrument_id)
+-- Instrument reference data.  ReplacingMergeTree keeps the most recent
+-- definition per instrument so re-published updates (e.g. is_trading flip)
+-- replace old entries rather than accumulate.
 CREATE TABLE IF NOT EXISTS instruments (
     local_recv_ts   Int64,
     venue_id        UInt8,
@@ -225,11 +229,11 @@ CREATE TABLE IF NOT EXISTS instruments (
     quote_asset     String,
     price_scale     UInt32,
     qty_scale       UInt32,
-    tick_size       Int64,
-    step_size       Int64,
-    min_qty         Int64,
-    min_notional    Int64,
-    contract_size   Int64,
+    tick_size       Decimal(18, 8),
+    step_size       Decimal(18, 8),
+    min_qty         Decimal(18, 8),
+    min_notional    Decimal(18, 8),
+    contract_size   Decimal(18, 8),
     is_trading      UInt8
 ) ENGINE = ReplacingMergeTree(local_recv_ts)
 ORDER BY (venue_id, market_type, instrument_id);
@@ -333,17 +337,35 @@ impl Inserters {
         }
     }
 
-    async fn write(&mut self, msg: &NormalizedMessage) {
+    async fn write(&mut self, msg: &NormalizedMessage, scales: &HashMap<u32, (u32, u32)>) {
         let result: clickhouse::error::Result<()> = match msg {
-            NormalizedMessage::Trade(m)               => self.trades.write(&TradeRow::from(m)).await,
-            NormalizedMessage::BestBidOffer(m)        => self.bbo.write(&BboRow::from(m)).await,
-            NormalizedMessage::MarkPrice(m)           => self.mark_price.write(&MarkPriceRow::from(m)).await,
-            NormalizedMessage::FundingRate(m)         => self.funding.write(&FundingRateRow::from(m)).await,
-            NormalizedMessage::Liquidation(m)         => self.liquidation.write(&LiquidationRow::from(m)).await,
-            NormalizedMessage::OpenInterest(m)        => self.open_interest.write(&OpenInterestRow::from(m)).await,
-            NormalizedMessage::BookDelta(m)           => self.book_delta.write(&BookDeltaRow::from(m)).await,
-            NormalizedMessage::InstrumentDefinition(m) => self.instruments.write(&InstrumentRow::from(m)).await,
-            _ => return,
+            NormalizedMessage::InstrumentDefinition(m) => {
+                // InstrumentDefinition carries its own scale — no lookup needed.
+                self.instruments.write(&InstrumentRow::from(m)).await
+            }
+            NormalizedMessage::FundingRate(m) => {
+                // funding_rate uses hardcoded scale=9 in the normalizer.
+                self.funding.write(&FundingRateRow::from(m)).await
+            }
+            other => {
+                let id = other.header().instrument_id;
+                let (ps, qs) = match scales.get(&id) {
+                    Some(&s) => s,
+                    None => {
+                        warn!(instrument_id = id, "no scale info yet, dropping message");
+                        return;
+                    }
+                };
+                match other {
+                    NormalizedMessage::Trade(m)        => self.trades.write(&TradeRow::new(m, ps, qs)).await,
+                    NormalizedMessage::BestBidOffer(m) => self.bbo.write(&BboRow::new(m, ps, qs)).await,
+                    NormalizedMessage::MarkPrice(m)    => self.mark_price.write(&MarkPriceRow::new(m, ps)).await,
+                    NormalizedMessage::Liquidation(m)  => self.liquidation.write(&LiquidationRow::new(m, ps, qs)).await,
+                    NormalizedMessage::OpenInterest(m) => self.open_interest.write(&OpenInterestRow::new(m, qs)).await,
+                    NormalizedMessage::BookDelta(m)    => self.book_delta.write(&BookDeltaRow::new(m, ps, qs)).await,
+                    _ => return,
+                }
+            }
         };
         if let Err(e) = result {
             warn!(error = %e, "inserter write error");
@@ -563,6 +585,9 @@ async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
     let write_timeout  = Duration::from_secs(3);
     let commit_timeout = Duration::from_secs(3);
     let mut msgs_written: u64 = 0;
+    // instrument_id → (price_scale, qty_scale), populated from InstrumentDefinition
+    // messages which the connector publishes at startup before any market data.
+    let mut scale_map: HashMap<u32, (u32, u32)> = HashMap::new();
 
     loop {
         tokio::select! {
@@ -576,7 +601,12 @@ async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
                     Some(m) => m,
                     None    => { info!("message channel closed"); break; }
                 };
-                if tokio::time::timeout(write_timeout, inserters.write(&msg)).await.is_err() {
+                // Update the scale map from InstrumentDefinition messages so
+                // that subsequent price/qty conversions use the correct scale.
+                if let NormalizedMessage::InstrumentDefinition(ref m) = msg {
+                    scale_map.insert(m.header.instrument_id, (m.price_scale, m.qty_scale));
+                }
+                if tokio::time::timeout(write_timeout, inserters.write(&msg, &scale_map)).await.is_err() {
                     warn!("ClickHouse write timed out");
                 }
                 msgs_written += 1;
