@@ -1,0 +1,15 @@
+[package]
+name    = "clickhouse-bridge"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+connector-core     = { workspace = true }
+anyhow             = { workspace = true }
+clap               = { workspace = true }
+tokio              = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde              = { workspace = true }
+rusteron-client    = { workspace = true }
+clickhouse         = { version = "0.15", features = ["inserter"] }

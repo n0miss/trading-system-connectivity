@@ -18,6 +18,7 @@ members = [
     "bin/shadow-compare",
     "bin/aeron-driver",
     "bin/aeron-observer",
+    "bin/clickhouse-bridge",
 ]
 
 [workspace.dependencies]

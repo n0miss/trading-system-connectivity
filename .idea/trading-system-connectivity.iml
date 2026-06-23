@@ -20,6 +20,9 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/redundancy/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/refdata/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/replay/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/bin/aeron-driver/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/bin/aeron-observer/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/bin/clickhouse-bridge/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
