@@ -258,11 +258,27 @@ Key Aeron API:
 ## Testing
 
 ```bash
-cargo test --workspace --lib --bins   # 855 tests, all pass
+cargo test --workspace --lib --bins   # all pass
 cargo build --examples                # ensures examples compile too
 ```
 
 Tests are in-crate (`#[cfg(test)]`). No integration test crate yet. Golden-file fixtures in `crates/protocol-sbe/`.
+
+### Binance geo-IP restriction (US IPs)
+
+`fstream.binance.com` silently blocks `@aggTrade`, `@markPrice`, and `@forceOrder` streams from US IP addresses. The WebSocket connection succeeds and `@bookTicker` / `@depth` are delivered normally, but trade, mark-price, and liquidation streams produce zero events with no error. This is a Binance compliance restriction, not a code bug.
+
+**Effect on local dev**: ClickHouse tables `trades`, `mark_prices`, `funding_rates`, and `liquidations` will be empty when running from a US IP. `best_bid_offers` and `book_deltas` work correctly.
+
+**Workaround**:
+- Run the connector on a non-US IP (cloud instance, VPN)
+- Or point `futures_url` at the Binance futures testnet for smoke-testing:
+  ```toml
+  [websocket]
+  futures_url = "wss://stream.binancefuture.com"
+  ```
+
+The ignored integration test `integration_agg_trade_and_mark_price_received` in `crates/binance-futures-adapter` uses the testnet and passes — it proves the parsing pipeline is correct end-to-end.
 
 ---
 
