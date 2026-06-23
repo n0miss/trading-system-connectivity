@@ -231,6 +231,7 @@ async fn main() -> Result<()> {
                 binance_futures_adapter::FuturesStream::BookTicker.stream_name(sym),
                 binance_futures_adapter::FuturesStream::Depth { update_speed_ms: 100 }.stream_name(sym),
                 binance_futures_adapter::FuturesStream::AggTrade.stream_name(sym),
+                binance_futures_adapter::FuturesStream::MarkPrice { update_interval_secs: 3 }.stream_name(sym),
             ])
             .collect(),
     };
