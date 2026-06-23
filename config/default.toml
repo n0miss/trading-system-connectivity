@@ -39,6 +39,7 @@ spot_base_url    = "https://api.binance.com"
 futures_base_url = "https://fapi.binance.com"
 timeout_ms  = 5000
 max_retries = 3
+open_interest_poll_secs = 60   # futures only; set to 0 to disable
 
 [recovery]
 # Per-symbol recovery buffer limits (addendum §1.3)

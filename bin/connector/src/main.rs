@@ -327,6 +327,41 @@ async fn main() -> Result<()> {
         conn_tasks.push(task);
     }
 
+    // ── Open interest polling (futures only) ─────────────────────────────────
+    if venue_id == VenueId::BinanceFutures && cfg.rest.open_interest_poll_secs > 0 {
+        let poll_interval = Duration::from_secs(cfg.rest.open_interest_poll_secs);
+        let owned_instruments: Vec<InstrumentDefinition> = universe
+            .iter()
+            .filter_map(|sym| inst_map.get(sym).cloned())
+            .collect();
+
+        info!(
+            symbols       = owned_instruments.len(),
+            interval_secs = cfg.rest.open_interest_poll_secs,
+            "starting open interest poller"
+        );
+
+        let oi_client = connector_refdata::RestClient::new(rest_base_url);
+        let mut oi_poller = connector_refdata::OpenInterestPoller::new(
+            oi_client,
+            owned_instruments,
+            poll_interval,
+        );
+
+        let sd        = shutdown_rx.clone();
+        let aeron_cfg = cfg.aeron.clone();
+        let m         = metrics.clone();
+        let oi_task = tokio::spawn(async move {
+            let mut publisher = build_publisher(&aeron_cfg, shard_id);
+            let mut buf = vec![0u8; 65_536];
+            oi_poller.run(sd, |msg| {
+                let nm = NormalizedMessage::OpenInterest(msg);
+                publish_one(&nm, shard_id, &mut publisher, &m, &mut buf);
+            }).await.ok();
+        });
+        conn_tasks.push(oi_task);
+    }
+
     // ── Main loop ─────────────────────────────────────────────────────────────
     tokio::select! {
         result = axum::serve(listener, app) => { result?; }

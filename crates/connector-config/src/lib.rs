@@ -132,6 +132,11 @@ pub struct RestConfig {
 
     #[serde(default = "defaults::max_retries")]
     pub max_retries: u32,
+
+    /// How often to poll `/fapi/v1/openInterest` per symbol (futures only).
+    /// Set to 0 to disable.
+    #[serde(default = "defaults::open_interest_poll_secs")]
+    pub open_interest_poll_secs: u64,
 }
 
 /// Per-symbol recovery buffer limits (addendum §1.3).
@@ -304,6 +309,7 @@ mod defaults {
     pub fn futures_base_url()     -> String { "https://fapi.binance.com".to_owned() }
     pub fn timeout_ms()           -> u64   { 5_000 }
     pub fn max_retries()          -> u32   { 3 }
+    pub fn open_interest_poll_secs() -> u64 { 60 }
     pub fn max_buffered_events()  -> u32   { 2_048 }
     pub fn max_buffered_bytes()   -> u64   { 4 * 1024 * 1024 }  // 4 MiB
     pub fn max_buffer_age_secs()  -> u32   { 10 }

@@ -245,6 +245,55 @@ pub fn parse_exchange_info(
 }
 
 // ---------------------------------------------------------------------------
+// Open interest
+// ---------------------------------------------------------------------------
+
+/// Response from `GET /fapi/v1/openInterest?symbol=X`.
+#[derive(serde::Deserialize)]
+pub struct OpenInterestResponse {
+    pub symbol:        String,
+    #[serde(rename = "openInterest")]
+    pub open_interest: String,
+    /// Exchange timestamp in milliseconds.
+    #[serde(rename = "time")]
+    pub time_ms:       i64,
+}
+
+/// Build a normalised [`connector_core::OpenInterest`] from a REST response.
+///
+/// `open_interest` is scaled by `inst.qty_scale`.
+/// `exchange_event_ts` is converted from milliseconds to nanoseconds.
+pub fn normalize_open_interest(
+    resp: &OpenInterestResponse,
+    inst: &InstrumentDefinition,
+    seq:  u64,
+) -> Result<connector_core::OpenInterest, RefDataError> {
+    use connector_core::{MessageType, OpenInterest, SCHEMA_VERSION, TS_NONE};
+
+    let open_interest = parse_scaled(&resp.open_interest, inst.qty_scale)?;
+    let exchange_event_ts = resp.time_ms * 1_000_000; // ms → ns
+    let ts = now_nanos();
+    Ok(OpenInterest {
+        header: MessageHeader {
+            schema_version:    SCHEMA_VERSION,
+            message_type:      MessageType::OpenInterest,
+            venue_id:          inst.header.venue_id,
+            market_type:       inst.header.market_type,
+            instrument_id:     inst.header.instrument_id,
+            connection_id:     0,
+            instance_id:       inst.header.instance_id,
+            sequence_number:   seq,
+            exchange_event_ts,
+            exchange_tx_ts:    TS_NONE,
+            local_recv_ts:     ts,
+            local_publish_ts:  ts,
+        },
+        symbol:        inst.symbol.clone(),
+        open_interest,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Depth snapshot parsing
 // ---------------------------------------------------------------------------
 

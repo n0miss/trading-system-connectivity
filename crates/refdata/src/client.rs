@@ -4,7 +4,7 @@ use tracing::debug;
 
 use crate::{
     error::RefDataError,
-    normalizer::parse_exchange_info,
+    normalizer::{parse_exchange_info, OpenInterestResponse},
 };
 
 /// REST client for fetching Binance exchange info.
@@ -98,6 +98,28 @@ impl RestClient {
             .await?;
 
         crate::normalizer::parse_depth_snapshot(&bytes, inst, recv_ts)
+    }
+
+    /// Fetch open interest for one symbol from `GET /fapi/v1/openInterest`.
+    ///
+    /// Futures only — returns the raw parsed response; callers normalise with
+    /// [`normalize_open_interest`].
+    ///
+    /// [`normalize_open_interest`]: crate::normalizer::normalize_open_interest
+    pub async fn fetch_futures_open_interest(
+        &self,
+        symbol: &str,
+    ) -> Result<OpenInterestResponse, RefDataError> {
+        let url = format!("{}/fapi/v1/openInterest?symbol={}", self.base_url, symbol);
+        debug!(%url, %symbol, "fetching open interest");
+        let bytes = self.http
+            .get(&url)
+            .send()
+            .await?
+            .error_for_status()?
+            .bytes()
+            .await?;
+        Ok(serde_json::from_slice(&bytes)?)
     }
 }
 
