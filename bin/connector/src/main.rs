@@ -75,7 +75,6 @@ async fn build_publisher(
     connector_aeron::build_aeron_with_retry(
         cfg,
         &[shard_id],
-        cfg.connect_retries,
         Duration::from_millis(cfg.connect_retry_delay_ms),
     ).await
 }

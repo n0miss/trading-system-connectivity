@@ -175,57 +175,46 @@ pub fn build_aeron(
     Ok(ShardedPublisher::new(shards))
 }
 
-/// Connects to the Aeron media driver with configurable retries.
+/// Connects to the Aeron media driver, retrying forever until it succeeds.
 ///
-/// On each failure waits `retry_delay` before the next attempt. Falls back to
-/// a [`NullPublication`] publisher if all `retries` attempts fail, so the
-/// connector keeps running and the call site never blocks indefinitely.
+/// Waits `retry_delay` between each attempt. The call suspends the async task
+/// while sleeping so other tasks are not blocked.
 ///
-/// Without the `aeron` feature this always returns a null publisher immediately.
+/// Without the `aeron` feature this returns a null publisher immediately.
 pub async fn build_aeron_with_retry(
     cfg:         &connector_config::AeronConfig,
     shards:      &[u32],
-    retries:     u32,
     retry_delay: std::time::Duration,
 ) -> DynShardedPublisher {
     #[cfg(feature = "aeron")]
     {
-        let max = retries.max(1);
-        for attempt in 1..=max {
+        let mut attempt = 0u32;
+        loop {
+            attempt += 1;
             match build_aeron(cfg, shards) {
                 Ok(p) => {
                     tracing::info!(
                         attempt,
-                        max,
                         channel = %channel_from_config(cfg),
                         "Aeron publisher connected"
                     );
                     return p;
                 }
-                Err(e) if attempt < max => {
+                Err(e) => {
                     tracing::warn!(
                         error    = %e,
                         attempt,
-                        max,
                         delay_ms = retry_delay.as_millis(),
                         "Aeron connect failed — retrying"
                     );
                     tokio::time::sleep(retry_delay).await;
                 }
-                Err(e) => {
-                    tracing::warn!(
-                        error = %e,
-                        max,
-                        "Aeron connect failed after all attempts — using null publisher"
-                    );
-                }
             }
         }
     }
 
-    // Feature not compiled in, or all retries exhausted.
     #[cfg(not(feature = "aeron"))]
-    let _ = (cfg, retries, retry_delay);
+    let _ = (cfg, retry_delay);
 
     build_null_boxed(shards)
 }
@@ -233,11 +222,11 @@ pub async fn build_aeron_with_retry(
 /// Replace the publications for `shard_id` after a runtime `Closed` event.
 ///
 /// Called synchronously from the publish hot path when [`OfferResult::Closed`]
-/// is returned, meaning the media driver has died or restarted.  This blocks
-/// the calling thread up to `retries × (5 s connect_timeout + retry_delay)` —
-/// acceptable because messages are already being lost.  If all attempts fail
-/// the publisher is replaced with a [`NullPublication`] so subsequent calls do
-/// not error.
+/// is returned, meaning the media driver has died or restarted.  Retries
+/// forever until the driver comes back.  Blocks the calling thread while
+/// reconnecting — acceptable because messages are already being lost.
+///
+/// Without the `aeron` feature this is a no-op (the publisher is already null).
 pub fn reconnect_sync(
     cfg:       &connector_config::AeronConfig,
     shard_id:  u32,
@@ -245,12 +234,13 @@ pub fn reconnect_sync(
 ) {
     #[cfg(feature = "aeron")]
     {
-        let retries = cfg.connect_retries.max(1);
-        let delay   = std::time::Duration::from_millis(cfg.connect_retry_delay_ms);
-        for attempt in 1..=retries {
+        let delay = std::time::Duration::from_millis(cfg.connect_retry_delay_ms);
+        let mut attempt = 0u32;
+        loop {
+            attempt += 1;
             match build_aeron(cfg, &[shard_id]) {
                 Ok(p) => {
-                    tracing::info!(shard_id, attempt, retries, "Aeron publication reconnected");
+                    tracing::info!(shard_id, attempt, "Aeron publication reconnected");
                     *publisher = p;
                     return;
                 }
@@ -259,22 +249,16 @@ pub fn reconnect_sync(
                         shard_id,
                         error   = %e,
                         attempt,
-                        retries,
-                        "Aeron reconnect attempt failed"
+                        "Aeron reconnect failed — retrying"
                     );
-                    if attempt < retries {
-                        std::thread::sleep(delay);
-                    }
+                    std::thread::sleep(delay);
                 }
             }
         }
-        tracing::warn!(shard_id, retries, "Aeron reconnect exhausted — using null publisher");
     }
 
     #[cfg(not(feature = "aeron"))]
-    let _ = (cfg, shard_id);
-
-    *publisher = build_null_boxed(&[shard_id]);
+    let _ = (cfg, shard_id, publisher);
 }
 
 /// Builds a [`ShardedPublisher`] where each shard sends to an mpsc channel.
@@ -416,7 +400,6 @@ mod tests {
             mtu:                   1408,
             term_length_mib:       64,
             archive_enabled:       false,
-            connect_retries:       5,
             connect_retry_delay_ms: 1000,
         };
         assert_eq!(channel_from_config(&cfg), "aeron:ipc");
@@ -431,57 +414,46 @@ mod tests {
             mtu:                   1408,
             term_length_mib:       64,
             archive_enabled:       false,
-            connect_retries:       5,
             connect_retry_delay_ms: 1000,
         };
         assert_eq!(channel_from_config(&cfg), "aeron:udp?endpoint=10.0.0.2:40123");
     }
 
-    // --- build_aeron_with_retry ---
+    // --- build_aeron_with_retry / reconnect_sync ---
+    //
+    // These tests run only without the `aeron` feature compiled in.  With the
+    // feature enabled, both functions retry forever until a real media driver is
+    // present; running them in unit tests would block indefinitely.
 
+    #[cfg(not(feature = "aeron"))]
     fn no_driver_cfg() -> AeronConfig {
         AeronConfig {
-            // Non-existent dir ensures Aeron connect always fails immediately.
             media_driver_dir:      "/tmp/aeron-nonexistent-test-dir".into(),
             ipc_enabled:           true,
             udp_endpoint:          None,
             mtu:                   1408,
             term_length_mib:       64,
             archive_enabled:       false,
-            // 1 retry keeps the test fast even when the aeron feature is enabled:
-            // each attempt has a 5-s connect timeout, so 1 retry = ~5 s max.
-            connect_retries:       1,
             connect_retry_delay_ms: 1,
         }
     }
 
+    #[cfg(not(feature = "aeron"))]
     #[tokio::test]
-    async fn build_aeron_with_retry_falls_back_to_null_when_driver_absent() {
+    async fn build_aeron_with_retry_returns_null_without_aeron_feature() {
         let cfg = no_driver_cfg();
-        // With no media driver running, all attempts fail and we get a null publisher.
-        let mut pub_ = build_aeron_with_retry(
-            &cfg, &[0], cfg.connect_retries, Duration::from_millis(1),
-        ).await;
-        // NullPublication silently accepts all offers (Ok with cumulative byte count).
+        // Without the aeron feature, the function returns a null publisher immediately.
+        let mut pub_ = build_aeron_with_retry(&cfg, &[0], Duration::from_millis(1)).await;
         assert!(matches!(pub_.offer(0, b"ping"), Ok(OfferResult::Ok(_))));
     }
 
-    #[tokio::test]
-    async fn build_aeron_with_retry_zero_retries_treated_as_one_attempt() {
-        let cfg = no_driver_cfg();
-        // retries=0 is clamped to 1 internally: a single attempt is made.
-        let mut pub_ = build_aeron_with_retry(&cfg, &[5], 0, Duration::from_millis(1)).await;
-        assert!(matches!(pub_.offer(5, b"x"), Ok(OfferResult::Ok(_))));
-    }
-
-    // --- reconnect_sync ---
-
+    #[cfg(not(feature = "aeron"))]
     #[test]
-    fn reconnect_sync_leaves_publisher_functional_when_driver_absent() {
+    fn reconnect_sync_is_noop_without_aeron_feature() {
         let cfg = no_driver_cfg();
         let mut pub_ = build_null_boxed(&[0]);
-        // Without a running driver, reconnect_sync falls back to null — publisher
-        // remains functional rather than crashing.
+        // Without the aeron feature, reconnect_sync is a no-op and the null
+        // publisher keeps accepting offers.
         reconnect_sync(&cfg, 0, &mut pub_);
         assert!(matches!(pub_.offer(0, b"x"), Ok(OfferResult::Ok(_))));
     }
