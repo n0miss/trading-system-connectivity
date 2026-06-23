@@ -429,6 +429,40 @@ struct TableRow {
     name: String,
 }
 
+/// Pre-populate the scale map from the instruments table so that market data
+/// messages arriving before (or without) a live InstrumentDefinition message
+/// on Aeron are not dropped.
+///
+/// The connector publishes InstrumentDefinition once at startup.  If the bridge
+/// starts after the connector those messages are gone from the ring buffer.
+/// Loading from ClickHouse makes restarts seamless after the first run.
+async fn load_scales(client: &Client) -> HashMap<u32, (u32, u32)> {
+    #[derive(clickhouse::Row, Deserialize)]
+    struct ScaleRow {
+        instrument_id: u32,
+        price_scale:   u32,
+        qty_scale:     u32,
+    }
+    match client
+        .query("SELECT instrument_id, price_scale, qty_scale FROM instruments FINAL")
+        .fetch_all::<ScaleRow>()
+        .await
+    {
+        Ok(rows) => {
+            let map: HashMap<u32, (u32, u32)> = rows
+                .into_iter()
+                .map(|r| (r.instrument_id, (r.price_scale, r.qty_scale)))
+                .collect();
+            info!(instruments = map.len(), "pre-loaded instrument scales from ClickHouse");
+            map
+        }
+        Err(e) => {
+            warn!(error = %e, "could not pre-load scales; messages will be dropped until InstrumentDefinition messages arrive on Aeron");
+            HashMap::new()
+        }
+    }
+}
+
 async fn check_tables(client: &Client, database: &str) -> Result<()> {
     let rows: Vec<TableRow> = client
         .query("SELECT name FROM system.tables WHERE database = ? AND name IN ('trades','best_bid_offers','mark_prices','funding_rates','liquidations','open_interest','book_deltas','instruments')")
@@ -503,6 +537,8 @@ async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
 
     check_tables(&client, &args.database).await?;
     info!(database = %args.database, "all required tables present");
+
+    let initial_scales = load_scales(&client).await;
 
     let mut inserters = Inserters::new(
         &client,
@@ -585,9 +621,9 @@ async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
     let write_timeout  = Duration::from_secs(3);
     let commit_timeout = Duration::from_secs(3);
     let mut msgs_written: u64 = 0;
-    // instrument_id → (price_scale, qty_scale), populated from InstrumentDefinition
-    // messages which the connector publishes at startup before any market data.
-    let mut scale_map: HashMap<u32, (u32, u32)> = HashMap::new();
+    // instrument_id → (price_scale, qty_scale).  Seeded from the instruments
+    // ClickHouse table at startup; kept live by InstrumentDefinition messages.
+    let mut scale_map = initial_scales;
 
     loop {
         tokio::select! {
