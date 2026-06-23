@@ -157,8 +157,11 @@ async fn connect_and_run<F: FnMut(RawFrame)>(
         }
     }
 
-    let connect_fut = connect_async(request);
-    let (ws, _) = match tokio::time::timeout(Duration::from_secs(10), connect_fut).await {
+    let connect_result = tokio::select! {
+        r = tokio::time::timeout(Duration::from_secs(10), connect_async(request)) => r,
+        _ = shutdown.changed() => return Ok(DisconnectReason::Shutdown),
+    };
+    let (ws, _) = match connect_result {
         Ok(Ok(pair)) => pair,
         Ok(Err(e)) => {
             warn!("WebSocket connect failed: {e}");

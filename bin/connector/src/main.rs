@@ -71,11 +71,13 @@ fn futures_symbol(event: &FuturesEvent) -> Option<&str> {
 async fn build_publisher(
     cfg:      &connector_config::AeronConfig,
     shard_id: u32,
+    shutdown: watch::Receiver<bool>,
 ) -> connector_aeron::DynShardedPublisher {
     connector_aeron::build_aeron_with_retry(
         cfg,
         &[shard_id],
         Duration::from_millis(cfg.connect_retry_delay_ms),
+        shutdown,
     ).await
 }
 
@@ -259,7 +261,7 @@ async fn main() -> Result<()> {
                     instance_id,
                     connection_id: conn_id,
                 };
-                let mut publisher = build_publisher(&aeron_cfg, shard_id).await;
+                let mut publisher = build_publisher(&aeron_cfg, shard_id, sd.clone()).await;
                 let mut buf = vec![0u8; 65_536];
                 let mut seq = 0u64;
 
@@ -298,7 +300,7 @@ async fn main() -> Result<()> {
                     instance_id,
                     connection_id: conn_id,
                 };
-                let mut publisher = build_publisher(&aeron_cfg, shard_id).await;
+                let mut publisher = build_publisher(&aeron_cfg, shard_id, sd.clone()).await;
                 let mut buf = vec![0u8; 65_536];
                 let mut seq = 0u64;
 
@@ -357,7 +359,7 @@ async fn main() -> Result<()> {
         let aeron_cfg = cfg.aeron.clone();
         let m         = metrics.clone();
         let oi_task = tokio::spawn(async move {
-            let mut publisher = build_publisher(&aeron_cfg, shard_id).await;
+            let mut publisher = build_publisher(&aeron_cfg, shard_id, sd.clone()).await;
             let mut buf = vec![0u8; 65_536];
             oi_poller.run(sd, |msg| {
                 let nm = NormalizedMessage::OpenInterest(msg);
@@ -376,9 +378,21 @@ async fn main() -> Result<()> {
         }
     }
 
-    for task in conn_tasks {
-        let _ = task.await;
+    // Wait up to 5 s for async tasks to honour the shutdown signal.
+    let drain = async {
+        for task in conn_tasks {
+            let _ = task.await;
+        }
+    };
+    match tokio::time::timeout(Duration::from_secs(5), drain).await {
+        Ok(_)  => info!("all tasks stopped gracefully"),
+        Err(_) => warn!("graceful shutdown timed out after 5 s"),
     }
 
-    Ok(())
+    // Always force-exit rather than returning Ok(()) and letting the tokio
+    // runtime drop.  The runtime drop waits for spawn_blocking threads that
+    // may still be mid-execution in Aeron native C code (10-s heartbeat
+    // timeout), which causes a segfault during teardown.  process::exit skips
+    // all destructors and lets the OS clean up file descriptors and sockets.
+    std::process::exit(0);
 }

@@ -125,11 +125,19 @@ async fn connect_and_run<F: FnMut(RawFrame)>(
     shutdown: &mut watch::Receiver<bool>,
     metrics:  Option<&ConnectorMetrics>,
 ) -> Result<DisconnectReason, FuturesAdapterError> {
-    let (ws, _) = match connect_async(url).await {
-        Ok(pair) => pair,
-        Err(e) => {
+    let connect_result = tokio::select! {
+        r = tokio::time::timeout(Duration::from_secs(10), connect_async(url)) => r,
+        _ = shutdown.changed() => return Ok(DisconnectReason::Shutdown),
+    };
+    let (ws, _) = match connect_result {
+        Ok(Ok(pair)) => pair,
+        Ok(Err(e)) => {
             warn!("WebSocket connect failed: {e}");
             return Err(FuturesAdapterError::WebSocket(e));
+        }
+        Err(_) => {
+            warn!("WebSocket connect timed out after 10s");
+            return Err(FuturesAdapterError::ConnectTimeout);
         }
     };
     info!("Futures WebSocket session established");

@@ -42,23 +42,51 @@ impl OpenInterestPoller {
         mut shutdown: watch::Receiver<bool>,
         mut on_msg:   impl FnMut(OpenInterest),
     ) -> Result<(), RefDataError> {
+        // Exit immediately if shutdown was already signalled before this task
+        // started (e.g., Ctrl+C fired while waiting for the Aeron driver).
+        if *shutdown.borrow() {
+            return Ok(());
+        }
+
         info!(
             symbols       = self.symbols.len(),
             interval_secs = self.interval.as_secs(),
             "open interest poller starting"
         );
 
-        // Poll immediately on startup.
-        self.poll_all(&mut on_msg).await;
+        // Initial poll raced against shutdown so Ctrl+C interrupts it even
+        // when poll_all is mid-flight (HTTP requests are cancel-safe).
+        tokio::select! {
+            _ = self.poll_all(&mut on_msg) => {}
+            _ = shutdown.changed() => {
+                info!("open interest poller shutting down");
+                return Ok(());
+            }
+        }
 
         let mut ticker = tokio::time::interval(self.interval);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
-        ticker.tick().await; // consume the immediate first tick
+        // Consume the immediate first tick; also race against shutdown.
+        tokio::select! {
+            _ = ticker.tick() => {}
+            _ = shutdown.changed() => {
+                info!("open interest poller shutting down");
+                return Ok(());
+            }
+        }
 
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
-                    self.poll_all(&mut on_msg).await;
+                    // Race each poll cycle against shutdown so a slow Binance
+                    // REST response doesn't delay process exit.
+                    tokio::select! {
+                        _ = self.poll_all(&mut on_msg) => {}
+                        _ = shutdown.changed() => {
+                            info!("open interest poller shutting down");
+                            return Ok(());
+                        }
+                    }
                 }
                 _ = shutdown.changed() => {
                     info!("open interest poller shutting down");

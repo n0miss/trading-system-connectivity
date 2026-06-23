@@ -177,21 +177,54 @@ pub fn build_aeron(
 
 /// Connects to the Aeron media driver, retrying forever until it succeeds.
 ///
-/// Waits `retry_delay` between each attempt. The call suspends the async task
-/// while sleeping so other tasks are not blocked.
+/// Each `build_aeron` call is run on a `spawn_blocking` thread so the tokio
+/// worker thread stays free to poll the shutdown receiver.  When shutdown
+/// fires, the `JoinHandle` is dropped (the blocking thread finishes the native
+/// call on its own, then exits — but the process will be force-exited by the
+/// drain timeout in `main` before the 10-s Aeron heartbeat expires).
+///
+/// The back-off sleep is also raced against `shutdown` for fast Ctrl+C
+/// response during the idle window between attempts.
 ///
 /// Without the `aeron` feature this returns a null publisher immediately.
 pub async fn build_aeron_with_retry(
-    cfg:         &connector_config::AeronConfig,
-    shards:      &[u32],
-    retry_delay: std::time::Duration,
+    cfg:          &connector_config::AeronConfig,
+    shards:       &[u32],
+    retry_delay:  std::time::Duration,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> DynShardedPublisher {
     #[cfg(feature = "aeron")]
     {
         let mut attempt = 0u32;
         loop {
+            if *shutdown.borrow() {
+                tracing::info!("Aeron connect cancelled — connector shutting down");
+                return build_null_boxed(shards);
+            }
+
             attempt += 1;
-            match build_aeron(cfg, shards) {
+
+            // Run the blocking native call on a dedicated thread so this
+            // async task can still poll `shutdown` while it waits.
+            let cfg2    = cfg.clone();
+            let shards2 = shards.to_vec();
+            let connect = tokio::task::spawn_blocking(move || build_aeron(&cfg2, &shards2));
+
+            let result = tokio::select! {
+                r = connect => match r {
+                    Ok(inner)   => inner,
+                    Err(join_e) => Err(crate::error::PublisherError::AeronConnect(join_e.to_string())),
+                },
+                _ = shutdown.changed() => {
+                    // JoinHandle dropped; blocking thread finishes the native
+                    // call on its own and then exits.  The drain timeout in
+                    // main will force-exit before the 10-s Aeron timeout.
+                    tracing::info!("Aeron connect interrupted by shutdown signal");
+                    return build_null_boxed(shards);
+                }
+            };
+
+            match result {
                 Ok(p) => {
                     tracing::info!(
                         attempt,
@@ -207,14 +240,20 @@ pub async fn build_aeron_with_retry(
                         delay_ms = retry_delay.as_millis(),
                         "Aeron connect failed — retrying"
                     );
-                    tokio::time::sleep(retry_delay).await;
+                    tokio::select! {
+                        _ = tokio::time::sleep(retry_delay) => {}
+                        _ = shutdown.changed() => {
+                            tracing::info!("Aeron retry interrupted by shutdown signal");
+                            return build_null_boxed(shards);
+                        }
+                    }
                 }
             }
         }
     }
 
     #[cfg(not(feature = "aeron"))]
-    let _ = (cfg, retry_delay);
+    let _ = (cfg, retry_delay, shutdown);
 
     build_null_boxed(shards)
 }

@@ -12,4 +12,7 @@ pub enum FuturesAdapterError {
 
     #[error("normalize error: {0}")]
     Normalize(String),
+
+    #[error("WebSocket connect timed out")]
+    ConnectTimeout,
 }
