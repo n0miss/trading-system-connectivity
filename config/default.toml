@@ -26,6 +26,8 @@ ipc_enabled      = true
 mtu              = 1408   # bytes; must be in 576..=65535
 term_length_mib  = 64     # must be a power of two
 archive_enabled  = false
+connect_retries       = 5     # startup connection attempts before falling back to null
+connect_retry_delay_ms = 1000 # ms between attempts
 
 [websocket]
 url                        = "wss://stream.binance.com:443"

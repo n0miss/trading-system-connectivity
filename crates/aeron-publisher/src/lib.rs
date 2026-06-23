@@ -20,5 +20,7 @@ pub use publisher::{
     shard_stream_id,
 };
 
+pub use publisher::{build_aeron_with_retry, reconnect_sync};
+
 #[cfg(feature = "aeron")]
 pub use publisher::build_aeron;

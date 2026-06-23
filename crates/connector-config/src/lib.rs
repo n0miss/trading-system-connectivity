@@ -94,6 +94,15 @@ pub struct AeronConfig {
 
     #[serde(default)]
     pub archive_enabled: bool,
+
+    /// How many times to attempt connecting to the Aeron media driver at
+    /// startup before falling back to a null (no-op) publisher.
+    #[serde(default = "defaults::connect_retries")]
+    pub connect_retries: u32,
+
+    /// Milliseconds to wait between connection retry attempts.
+    #[serde(default = "defaults::connect_retry_delay_ms")]
+    pub connect_retry_delay_ms: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -301,6 +310,8 @@ mod defaults {
     pub fn ipc_enabled()          -> bool  { true }
     pub fn mtu()                  -> u32   { 1408 }
     pub fn term_length_mib()      -> u64   { 64 }
+    pub fn connect_retries()      -> u32   { 5 }
+    pub fn connect_retry_delay_ms() -> u64 { 1_000 }
     pub fn ping_interval_secs()   -> u32   { 20 }
     pub fn max_streams_per_connection() -> u32  { 1024 }
     pub fn reconnect_delay_ms()   -> u64   { 500 }

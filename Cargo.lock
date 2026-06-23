@@ -503,6 +503,7 @@ dependencies = [
  "connector-core",
  "rusteron-client",
  "thiserror 2.0.18",
+ "tokio",
  "tracing",
 ]
 

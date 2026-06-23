@@ -64,24 +64,20 @@ fn futures_symbol(event: &FuturesEvent) -> Option<&str> {
 
 /// Build a [`DynShardedPublisher`] for the given shard.
 ///
-/// Attempts to connect to the Aeron media driver configured in `cfg`.
-/// Falls back to a null (no-op) publisher and logs a warning if the driver
-/// is unavailable — this allows the connector to keep running for latency
-/// measurement and testing without a live Aeron deployment.
-fn build_publisher(
+/// Retries up to `cfg.connect_retries` times with `cfg.connect_retry_delay_ms`
+/// between each attempt.  Falls back to a null (no-op) publisher if all
+/// attempts fail, so the connector keeps running for testing without a live
+/// Aeron deployment.
+async fn build_publisher(
     cfg:      &connector_config::AeronConfig,
     shard_id: u32,
 ) -> connector_aeron::DynShardedPublisher {
-    match connector_aeron::build_aeron(cfg, &[shard_id]) {
-        Ok(p) => {
-            tracing::info!(shard_id, channel = %connector_aeron::channel_from_config(cfg), "Aeron publisher connected");
-            p
-        }
-        Err(e) => {
-            tracing::warn!(shard_id, error = %e, "Aeron unavailable — using null publisher");
-            connector_aeron::build_null_boxed(&[shard_id])
-        }
-    }
+    connector_aeron::build_aeron_with_retry(
+        cfg,
+        &[shard_id],
+        cfg.connect_retries,
+        Duration::from_millis(cfg.connect_retry_delay_ms),
+    ).await
 }
 
 /// Encode one normalized message, stamp `local_publish_ts`, and offer it.
@@ -89,10 +85,16 @@ fn build_publisher(
 /// `local_publish_ts` is patched in-place at byte offset 48 of the header
 /// (see [`connector_core::header`] wire layout) so the publish timestamp is
 /// accurate without re-encoding the full message.
+///
+/// When the publication has been closed by the media driver (`Closed` return
+/// code), a synchronous reconnect is attempted via [`connector_aeron::reconnect_sync`].
+/// This blocks the calling thread while reconnecting, but at that point messages
+/// are already being lost, so the delay is acceptable.
 fn publish_one(
     msg:       &NormalizedMessage,
     shard_id:  u32,
     publisher: &mut connector_aeron::DynShardedPublisher,
+    aeron_cfg: &connector_config::AeronConfig,
     metrics:   &connector_metrics::ConnectorMetrics,
     buf:       &mut [u8],
 ) {
@@ -114,6 +116,10 @@ fn publish_one(
         .unwrap_or(connector_aeron::OfferResult::Closed);
     if !offer.is_ok() {
         binance_spot_adapter::record_offer_failure(metrics);
+        if matches!(offer, connector_aeron::OfferResult::Closed) {
+            tracing::error!(shard_id, "Aeron publication closed — attempting sync reconnect");
+            connector_aeron::reconnect_sync(aeron_cfg, shard_id, publisher);
+        }
     }
 }
 
@@ -254,7 +260,7 @@ async fn main() -> Result<()> {
                     instance_id,
                     connection_id: conn_id,
                 };
-                let mut publisher = build_publisher(&aeron_cfg, shard_id);
+                let mut publisher = build_publisher(&aeron_cfg, shard_id).await;
                 let mut buf = vec![0u8; 65_536];
                 let mut seq = 0u64;
 
@@ -279,7 +285,7 @@ async fn main() -> Result<()> {
                         Ok(None)    => return,
                         Err(e)      => { warn!("normalize: {e}"); return; }
                     };
-                    publish_one(&msg, shard_id, &mut publisher, &m, &mut buf);
+                    publish_one(&msg, shard_id, &mut publisher, &aeron_cfg, &m, &mut buf);
                 }, sd).await;
             }),
 
@@ -293,7 +299,7 @@ async fn main() -> Result<()> {
                     instance_id,
                     connection_id: conn_id,
                 };
-                let mut publisher = build_publisher(&aeron_cfg, shard_id);
+                let mut publisher = build_publisher(&aeron_cfg, shard_id).await;
                 let mut buf = vec![0u8; 65_536];
                 let mut seq = 0u64;
 
@@ -318,7 +324,7 @@ async fn main() -> Result<()> {
                         Err(e) => { warn!("normalize: {e}"); return; }
                     };
                     for msg in &msgs {
-                        publish_one(msg, shard_id, &mut publisher, &m, &mut buf);
+                        publish_one(msg, shard_id, &mut publisher, &aeron_cfg, &m, &mut buf);
                     }
                 }, sd).await;
             }),
@@ -352,11 +358,11 @@ async fn main() -> Result<()> {
         let aeron_cfg = cfg.aeron.clone();
         let m         = metrics.clone();
         let oi_task = tokio::spawn(async move {
-            let mut publisher = build_publisher(&aeron_cfg, shard_id);
+            let mut publisher = build_publisher(&aeron_cfg, shard_id).await;
             let mut buf = vec![0u8; 65_536];
             oi_poller.run(sd, |msg| {
                 let nm = NormalizedMessage::OpenInterest(msg);
-                publish_one(&nm, shard_id, &mut publisher, &m, &mut buf);
+                publish_one(&nm, shard_id, &mut publisher, &aeron_cfg, &m, &mut buf);
             }).await.ok();
         });
         conn_tasks.push(oi_task);

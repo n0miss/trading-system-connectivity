@@ -10,5 +10,6 @@ aeron = ["dep:rusteron-client"]
 connector-core   = { workspace = true }
 connector-config = { workspace = true }
 thiserror        = { workspace = true }
+tokio            = { workspace = true, features = ["time"] }
 tracing          = { workspace = true }
 rusteron-client  = { workspace = true, optional = true }
