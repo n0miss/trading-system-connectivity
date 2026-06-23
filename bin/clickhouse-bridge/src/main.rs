@@ -434,6 +434,36 @@ async fn check_tables(client: &Client, database: &str) -> Result<()> {
     Ok(())
 }
 
+/// Polls ClickHouse until the connection succeeds, then verifies tables exist.
+/// Retries with exponential backoff (1 s → 2 s → … → 30 s) on network errors.
+/// Fails immediately if ClickHouse is reachable but tables are missing — that
+/// requires operator action, not more waiting.
+async fn wait_for_clickhouse(client: &Client, database: &str) -> Result<()> {
+    let mut delay = Duration::from_secs(1);
+    let mut attempt = 0u32;
+    loop {
+        attempt += 1;
+        match client.query("SELECT 1").execute().await {
+            Ok(_) => {
+                if attempt > 1 {
+                    info!("ClickHouse is reachable after {attempt} attempts");
+                }
+                return check_tables(client, database).await;
+            }
+            Err(e) => {
+                warn!(
+                    error      = %e,
+                    attempt,
+                    retry_secs = delay.as_secs(),
+                    "ClickHouse not ready — retrying"
+                );
+                tokio::time::sleep(delay).await;
+                delay = (delay * 2).min(Duration::from_secs(30));
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -484,7 +514,7 @@ async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
         .with_user(&args.username)
         .with_password(&args.password);
 
-    check_tables(&client, &args.database).await?;
+    wait_for_clickhouse(&client, &args.database).await?;
     info!(database = %args.database, "all required tables present");
 
     let mut inserters = Inserters::new(

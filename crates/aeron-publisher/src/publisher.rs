@@ -191,6 +191,7 @@ pub async fn build_aeron_with_retry(
     cfg:          &connector_config::AeronConfig,
     shards:       &[u32],
     retry_delay:  std::time::Duration,
+    #[cfg_attr(not(feature = "aeron"), allow(unused_mut))]
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> DynShardedPublisher {
     #[cfg(feature = "aeron")]
@@ -253,9 +254,10 @@ pub async fn build_aeron_with_retry(
     }
 
     #[cfg(not(feature = "aeron"))]
-    let _ = (cfg, retry_delay, shutdown);
-
-    build_null_boxed(shards)
+    {
+        let _ = (cfg, retry_delay, shutdown);
+        build_null_boxed(shards)
+    }
 }
 
 /// Replace the publications for `shard_id` after a runtime `Closed` event.
