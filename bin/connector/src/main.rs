@@ -222,6 +222,7 @@ async fn main() -> Result<()> {
             .flat_map(|sym| [
                 binance_spot_adapter::SpotStream::BookTicker.stream_name(sym),
                 binance_spot_adapter::SpotStream::Depth { update_speed_ms: 100 }.stream_name(sym),
+                binance_spot_adapter::SpotStream::Trade.stream_name(sym),
             ])
             .collect(),
         VenueId::BinanceFutures => universe
@@ -229,6 +230,7 @@ async fn main() -> Result<()> {
             .flat_map(|sym| [
                 binance_futures_adapter::FuturesStream::BookTicker.stream_name(sym),
                 binance_futures_adapter::FuturesStream::Depth { update_speed_ms: 100 }.stream_name(sym),
+                binance_futures_adapter::FuturesStream::AggTrade.stream_name(sym),
             ])
             .collect(),
     };
