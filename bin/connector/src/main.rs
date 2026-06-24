@@ -307,9 +307,7 @@ async fn main() -> Result<()> {
     let mut conn_tasks = Vec::new();
     for (i, chunk) in streams.chunks(max_streams).enumerate() {
         let url = match venue_id {
-            VenueId::BinanceSpot => {
-                binance_spot_adapter::build_url(&cfg.websocket.url, chunk)
-            }
+            VenueId::BinanceSpot => binance_spot_adapter::build_url(&cfg.websocket.url, chunk),
             VenueId::BinanceFutures => {
                 binance_futures_adapter::build_url(&cfg.websocket.futures_url, chunk)
             }

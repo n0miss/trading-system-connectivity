@@ -140,8 +140,8 @@ fn run_demo(cfg: CompareConfig) {
     let prices: &[(&str, i64, i64)] = &[
         ("BTCUSDT", 640_000_000, 640_010_000),
         ("ETHUSDT", 170_000_000, 170_010_000),
-        ("BNBUSDT",  60_000_000,  60_010_000),
-        ("SOLUSDT",   7_000_000,   7_010_000),
+        ("BNBUSDT", 60_000_000, 60_010_000),
+        ("SOLUSDT", 7_000_000, 7_010_000),
     ];
     for seq in 0..cfg.min_samples {
         for &(sym, bid, ask) in prices {
