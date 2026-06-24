@@ -38,7 +38,7 @@ jobs:
             rust:1-slim-bookworm \
             bash -c "
               apt-get update -qq
-              apt-get install -y --no-install-recommends pkg-config libssl-dev
+              apt-get install -y --no-install-recommends pkg-config libssl-dev uuid-dev libbsd-dev
               cargo build --release \
                 --bin connector \
                 --bin aeron-driver \
