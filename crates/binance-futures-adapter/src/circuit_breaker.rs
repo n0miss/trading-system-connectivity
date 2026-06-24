@@ -144,7 +144,7 @@ mod tests {
     fn record_failure_when_open_does_not_restart_timer() {
         let mut cb = CircuitBreaker::with_limits(1, 30 * SEC);
         cb.record_failure(0); // opens; until = 30s
-        assert!(!cb.record_failure(1 * SEC));
+        assert!(!cb.record_failure(SEC));
         assert_eq!(cb.open_until(), Some(30 * SEC)); // timer not restarted
     }
 }
