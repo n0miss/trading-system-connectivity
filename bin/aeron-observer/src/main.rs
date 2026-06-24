@@ -1,5 +1,5 @@
 use clap::Parser;
-use connector_core::{MessageHeader, TS_NONE, HEADER_SIZE};
+use connector_core::{MessageHeader, HEADER_SIZE, TS_NONE};
 use rusteron_client::{Aeron, AeronContext};
 use std::ffi::CString;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -9,7 +9,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 // ---------------------------------------------------------------------------
 
 #[derive(Parser)]
-#[command(name = "aeron-observer", about = "Subscribe to the connector Aeron stream and report latency breakdowns")]
+#[command(
+    name = "aeron-observer",
+    about = "Subscribe to the connector Aeron stream and report latency breakdowns"
+)]
 struct Args {
     /// Aeron media driver directory. Must match aeron.media_driver_dir in the connector config.
     #[arg(long, default_value = "/tmp/aeron")]
@@ -75,32 +78,40 @@ impl LatencyBucket {
         self.samples.sort_unstable();
         let s = &self.samples;
         let n = s.len();
-        let p = |f: f64| s[((n as f64 * f).ceil() as usize).saturating_sub(1).min(n - 1)];
+        let p = |f: f64| {
+            s[((n as f64 * f).ceil() as usize)
+                .saturating_sub(1)
+                .min(n - 1)]
+        };
         Some((p(0.5), p(0.99), p(0.999), *s.last().unwrap()))
     }
 
-    fn count(&self) -> usize { self.samples.len() }
+    fn count(&self) -> usize {
+        self.samples.len()
+    }
 
-    fn reset(&mut self) { self.samples.clear(); }
+    fn reset(&mut self) {
+        self.samples.clear();
+    }
 }
 
 struct IntervalStats {
-    wire:            LatencyBucket, // exchange_event → local_recv
-    encode:          LatencyBucket, // local_recv → local_publish
-    ipc:             LatencyBucket, // local_publish → observer_recv
-    e2e:             LatencyBucket, // exchange_event → observer_recv
-    total_msgs:      u64,
-    no_exchange_ts:  u64,           // msgs without exchange timestamp (bookTicker etc.)
+    wire: LatencyBucket,   // exchange_event → local_recv
+    encode: LatencyBucket, // local_recv → local_publish
+    ipc: LatencyBucket,    // local_publish → observer_recv
+    e2e: LatencyBucket,    // exchange_event → observer_recv
+    total_msgs: u64,
+    no_exchange_ts: u64, // msgs without exchange timestamp (bookTicker etc.)
 }
 
 impl IntervalStats {
     fn new() -> Self {
         Self {
-            wire:           LatencyBucket::default(),
-            encode:         LatencyBucket::default(),
-            ipc:            LatencyBucket::default(),
-            e2e:            LatencyBucket::default(),
-            total_msgs:     0,
+            wire: LatencyBucket::default(),
+            encode: LatencyBucket::default(),
+            ipc: LatencyBucket::default(),
+            e2e: LatencyBucket::default(),
+            total_msgs: 0,
             no_exchange_ts: 0,
         }
     }
@@ -109,11 +120,11 @@ impl IntervalStats {
         self.total_msgs += 1;
 
         self.encode.push(hdr.local_publish_ts - hdr.local_recv_ts);
-        self.ipc   .push(observer_recv_ts - hdr.local_publish_ts);
+        self.ipc.push(observer_recv_ts - hdr.local_publish_ts);
 
         if hdr.exchange_event_ts != TS_NONE {
-            self.wire.push(hdr.local_recv_ts   - hdr.exchange_event_ts);
-            self.e2e .push(observer_recv_ts    - hdr.exchange_event_ts);
+            self.wire.push(hdr.local_recv_ts - hdr.exchange_event_ts);
+            self.e2e.push(observer_recv_ts - hdr.exchange_event_ts);
         } else {
             self.no_exchange_ts += 1;
         }
@@ -121,45 +132,56 @@ impl IntervalStats {
 
     fn print_and_reset(&mut self, elapsed: Duration) {
         let secs = elapsed.as_secs_f64().max(0.001);
-        let rate  = self.total_msgs as f64 / secs;
+        let rate = self.total_msgs as f64 / secs;
 
         let now = chrono_local();
         println!("────────────────────────────────────────────────────────────────");
-        println!("{now} │ {:.0}s │ {} msgs │ {:.0}/s",
-            secs, fmt_count(self.total_msgs), rate);
-        println!("{:<10}  {:>12}  {:>12}  {:>12}  {:>12}  {:>8}",
-            "", "p50", "p99", "p99.9", "max", "count");
+        println!(
+            "{now} │ {:.0}s │ {} msgs │ {:.0}/s",
+            secs,
+            fmt_count(self.total_msgs),
+            rate
+        );
+        println!(
+            "{:<10}  {:>12}  {:>12}  {:>12}  {:>12}  {:>8}",
+            "", "p50", "p99", "p99.9", "max", "count"
+        );
 
-        print_bucket("wire",   &mut self.wire);
+        print_bucket("wire", &mut self.wire);
         print_bucket("encode", &mut self.encode);
-        print_bucket("ipc",    &mut self.ipc);
-        print_bucket("e2e",    &mut self.e2e);
+        print_bucket("ipc", &mut self.ipc);
+        print_bucket("e2e", &mut self.e2e);
 
         if self.no_exchange_ts > 0 {
-            println!("  (no exchange_ts: {} msgs — bookTicker streams have no E field)",
-                fmt_count(self.no_exchange_ts));
+            println!(
+                "  (no exchange_ts: {} msgs — bookTicker streams have no E field)",
+                fmt_count(self.no_exchange_ts)
+            );
         }
 
         self.wire.reset();
         self.encode.reset();
         self.ipc.reset();
         self.e2e.reset();
-        self.total_msgs     = 0;
+        self.total_msgs = 0;
         self.no_exchange_ts = 0;
     }
 }
 
 fn print_bucket(label: &str, b: &mut LatencyBucket) {
     match b.percentiles() {
-        None => println!("{label:<10}  {:>12}  {:>12}  {:>12}  {:>12}  {:>8}",
-            "-", "-", "-", "-", 0),
+        None => println!(
+            "{label:<10}  {:>12}  {:>12}  {:>12}  {:>12}  {:>8}",
+            "-", "-", "-", "-", 0
+        ),
         Some((p50, p99, p999, max)) => {
-            println!("{label:<10}  {p50:>12}  {p99:>12}  {p999:>12}  {max:>12}  {cnt:>8}",
-                p50  = fmt_ns(p50),
-                p99  = fmt_ns(p99),
+            println!(
+                "{label:<10}  {p50:>12}  {p99:>12}  {p999:>12}  {max:>12}  {cnt:>8}",
+                p50 = fmt_ns(p50),
+                p99 = fmt_ns(p99),
                 p999 = fmt_ns(p999),
-                max  = fmt_ns(max),
-                cnt  = fmt_count(b.count() as u64),
+                max = fmt_ns(max),
+                cnt = fmt_count(b.count() as u64),
             );
         }
     }
@@ -170,7 +192,9 @@ fn fmt_count(n: u64) -> String {
     let s = n.to_string();
     let mut out = String::new();
     for (i, c) in s.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 { out.push(','); }
+        if i > 0 && i % 3 == 0 {
+            out.push(',');
+        }
         out.push(c);
     }
     out.chars().rev().collect()
@@ -195,8 +219,10 @@ fn chrono_local() -> String {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    eprintln!("aeron-observer: connecting, dir={} channel={} stream={}",
-        args.dir, args.channel, args.stream);
+    eprintln!(
+        "aeron-observer: connecting, dir={} channel={} stream={}",
+        args.dir, args.channel, args.stream
+    );
 
     let context = AeronContext::new()?;
     let dir_cstr = CString::new(args.dir.as_str())?;
@@ -221,23 +247,28 @@ fn main() -> anyhow::Result<()> {
     }
     eprintln!("aeron-observer: publisher connected — streaming latency stats");
     println!("────────────────────────────────────────────────────────────────");
-    println!("{:<10}  {:>12}  {:>12}  {:>12}  {:>12}  {:>8}",
-        "segment", "p50", "p99", "p99.9", "max", "count");
+    println!(
+        "{:<10}  {:>12}  {:>12}  {:>12}  {:>12}  {:>8}",
+        "segment", "p50", "p99", "p99.9", "max", "count"
+    );
 
-    let mut stats    = IntervalStats::new();
+    let mut stats = IntervalStats::new();
     let mut deadline = Instant::now() + Duration::from_secs(args.interval);
 
     loop {
-        let fragments = subscription.poll_once(|bytes: &[u8], _hdr| {
-            let obs_ts = now_nanos();
-            if bytes.len() < HEADER_SIZE {
-                return;
-            }
-            match MessageHeader::decode(bytes) {
-                Ok(hdr) => stats.record(&hdr, obs_ts),
-                Err(_)  => {}
-            }
-        }, 256)?;
+        let fragments = subscription.poll_once(
+            |bytes: &[u8], _hdr| {
+                let obs_ts = now_nanos();
+                if bytes.len() < HEADER_SIZE {
+                    return;
+                }
+                match MessageHeader::decode(bytes) {
+                    Ok(hdr) => stats.record(&hdr, obs_ts),
+                    Err(_) => {}
+                }
+            },
+            256,
+        )?;
 
         if fragments == 0 {
             // No data — yield briefly rather than burning a core.
