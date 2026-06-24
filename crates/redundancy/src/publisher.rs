@@ -228,11 +228,11 @@ mod tests {
             final_update_id: 100,
             prev_update_id: UPDATE_ID_NONE,
             bids: vec![PriceLevel {
-                price: 3000_00,
+                price: 300_000,
                 qty: 10,
             }],
             asks: vec![PriceLevel {
-                price: 3001_00,
+                price: 300_100,
                 qty: 5,
             }],
         };

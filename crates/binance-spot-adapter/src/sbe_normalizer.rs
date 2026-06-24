@@ -404,7 +404,7 @@ mod tests {
             event_time: 1_699_000_000_000,
             transact_time: 1_699_000_000_500,
             best_bid_price: d64(9_650_000_000_000), // 96500.00
-            best_bid_qty: d64(1_230_000_000_00),    // 1.23 × 10^8 = 123_000_000
+            best_bid_qty: d64(123_000_000_000),     // 1.23 × 10^11
             best_ask_price: d64(9_650_100_000_000), // 96501.00
             best_ask_qty: d64(50_000_000),          // 0.50 × 10^8
             symbol: "BTCUSDT".to_string(),

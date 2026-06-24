@@ -289,8 +289,8 @@ mod tests {
     fn apply_delta_adds_bid_and_ask_levels() {
         let mut book = OrderBook::new("BTCUSDT");
         book.apply_delta(&delta(
-            vec![level(96_500_00, 100), level(96_499_00, 200)],
-            vec![level(96_501_00, 50)],
+            vec![level(9_650_000, 100), level(9_649_900, 200)],
+            vec![level(9_650_100, 50)],
             1,
         ));
         assert_eq!(book.bid_depth(), 2);
