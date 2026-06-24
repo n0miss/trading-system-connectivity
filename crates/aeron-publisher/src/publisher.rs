@@ -341,7 +341,6 @@ pub fn build_channel(
 mod tests {
     use super::*;
     use crate::publication::{NullPublication, OfferResult};
-    use std::time::Duration;
 
     // --- shard_stream_id ---
 
