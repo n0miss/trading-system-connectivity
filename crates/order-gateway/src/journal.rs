@@ -606,7 +606,7 @@ mod tests {
             cloid: cloid(),
             request: limit_request(),
         };
-        let recovered = write_read(&[original.clone()]);
+        let recovered = write_read(std::slice::from_ref(&original));
         assert_eq!(recovered.len(), 1);
         assert_eq!(recovered[0], original);
     }
@@ -618,7 +618,7 @@ mod tests {
             cloid: cloid(),
             request: market_request(),
         };
-        let recovered = write_read(&[original.clone()]);
+        let recovered = write_read(std::slice::from_ref(&original));
         assert_eq!(recovered[0], original);
     }
 
@@ -629,7 +629,7 @@ mod tests {
             cloid: cloid(),
             exchange_id: 0xdeadbeef_cafebabe,
         };
-        let recovered = write_read(&[original.clone()]);
+        let recovered = write_read(std::slice::from_ref(&original));
         assert_eq!(recovered[0], original);
     }
 
@@ -642,7 +642,7 @@ mod tests {
             fill_price: 99_500,
             is_final: false,
         };
-        let recovered = write_read(&[original.clone()]);
+        let recovered = write_read(std::slice::from_ref(&original));
         assert_eq!(recovered[0], original);
     }
 
@@ -655,7 +655,7 @@ mod tests {
             fill_price: 99_900,
             is_final: true,
         };
-        let recovered = write_read(&[original.clone()]);
+        let recovered = write_read(std::slice::from_ref(&original));
         assert_eq!(recovered[0], original);
     }
 
@@ -665,7 +665,7 @@ mod tests {
             timestamp_ns: 5_000,
             cloid: cloid(),
         };
-        let recovered = write_read(&[original.clone()]);
+        let recovered = write_read(std::slice::from_ref(&original));
         assert_eq!(recovered[0], original);
     }
 
@@ -676,7 +676,7 @@ mod tests {
             cloid: cloid(),
             reason: "MIN_NOTIONAL filter violated".into(),
         };
-        let recovered = write_read(&[original.clone()]);
+        let recovered = write_read(std::slice::from_ref(&original));
         assert_eq!(recovered[0], original);
     }
 
@@ -686,7 +686,7 @@ mod tests {
             timestamp_ns: 8_000,
             cloid: cloid(),
         };
-        let recovered = write_read(&[original.clone()]);
+        let recovered = write_read(std::slice::from_ref(&original));
         assert_eq!(recovered[0], original);
     }
 
@@ -778,7 +778,7 @@ mod tests {
                     time_in_force: tif,
                 },
             };
-            let recovered = write_read(&[entry.clone()]);
+            let recovered = write_read(std::slice::from_ref(&entry));
             assert_eq!(recovered[0], entry, "TIF round-trip failed for {tif:?}");
         }
     }
