@@ -27,6 +27,9 @@ jobs:
       # Ubuntu has libuuid and libbsd that rusteron's precompiled Aeron library
       # requires; Amazon Linux 2023 does not.
       # Named Docker volumes provide a persistent cargo cache across workflow runs.
+      - name: Clear stale build cache
+        run: docker volume rm rust-target-cache 2>/dev/null || true
+
       - name: Build release binaries
         run: |
           docker run --rm \
@@ -37,6 +40,7 @@ jobs:
             -e RUSTFLAGS="-C target-cpu=neoverse-n1" \
             rust:1-slim-bookworm \
             bash -c "
+              echo '==> container arch:' \$(uname -m)
               apt-get update -qq
               apt-get install -y --no-install-recommends pkg-config libssl-dev uuid-dev libbsd-dev
               cargo build --release \
