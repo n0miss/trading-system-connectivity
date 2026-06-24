@@ -58,8 +58,10 @@ async fn run_venue(
     // --- first refresh ---------------------------------------------------
     let events = svc.refresh().await.expect("fetch_exchange_info failed");
 
-    let mut stats = VenueStats::default();
-    stats.instruments = events.len() as u32;
+    let mut stats = VenueStats {
+        instruments: events.len() as u32,
+        ..Default::default()
+    };
 
     for event in &events {
         if event.is_added() {
