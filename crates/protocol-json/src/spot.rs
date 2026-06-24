@@ -152,9 +152,9 @@ fn stream_kind(stream: &str) -> StreamKind {
     let kind = stream.splitn(3, '@').nth(1).unwrap_or("");
     match kind {
         "bookTicker" => StreamKind::BookTicker,
-        "depth"      => StreamKind::DepthUpdate,
-        "trade"      => StreamKind::Trade,
-        _            => StreamKind::Unknown,
+        "depth" => StreamKind::DepthUpdate,
+        "trade" => StreamKind::Trade,
+        _ => StreamKind::Unknown,
     }
 }
 
@@ -233,13 +233,15 @@ mod tests {
     #[test]
     fn parse_book_ticker() {
         let event = parse_spot_message(BOOK_TICKER_MSG).unwrap();
-        let SpotEvent::BookTicker(bt) = event else { panic!("wrong variant") };
+        let SpotEvent::BookTicker(bt) = event else {
+            panic!("wrong variant")
+        };
         assert_eq!(bt.update_id, 400_900_217);
         assert_eq!(bt.symbol, "BTCUSDT");
         assert_eq!(bt.bid_price, "96500.00000000");
-        assert_eq!(bt.bid_qty,   "1.23000000");
+        assert_eq!(bt.bid_qty, "1.23000000");
         assert_eq!(bt.ask_price, "96501.00000000");
-        assert_eq!(bt.ask_qty,   "0.50000000");
+        assert_eq!(bt.ask_qty, "0.50000000");
     }
 
     // --- depth update ---
@@ -247,11 +249,13 @@ mod tests {
     #[test]
     fn parse_depth_update() {
         let event = parse_spot_message(DEPTH_UPDATE_MSG).unwrap();
-        let SpotEvent::DepthUpdate(du) = event else { panic!("wrong variant") };
+        let SpotEvent::DepthUpdate(du) = event else {
+            panic!("wrong variant")
+        };
         assert_eq!(du.symbol, "BTCUSDT");
         assert_eq!(du.event_time_ms, 1_748_000_000_000);
         assert_eq!(du.first_update_id, 50_000_001);
-        assert_eq!(du.last_update_id,  50_000_005);
+        assert_eq!(du.last_update_id, 50_000_005);
 
         assert_eq!(du.bids.len(), 2);
         assert_eq!(du.bids[0], ["96500.00000000", "2.50000000"]);
@@ -277,7 +281,9 @@ mod tests {
             }
         }"#;
         let event = parse_spot_message(msg).unwrap();
-        let SpotEvent::DepthUpdate(du) = event else { panic!("wrong variant") };
+        let SpotEvent::DepthUpdate(du) = event else {
+            panic!("wrong variant")
+        };
         assert!(du.bids.is_empty());
         assert_eq!(du.asks.len(), 1);
     }
@@ -287,11 +293,13 @@ mod tests {
     #[test]
     fn parse_trade_buyer_is_aggressor() {
         let event = parse_spot_message(TRADE_MSG).unwrap();
-        let SpotEvent::Trade(tr) = event else { panic!("wrong variant") };
+        let SpotEvent::Trade(tr) = event else {
+            panic!("wrong variant")
+        };
         assert_eq!(tr.symbol, "BTCUSDT");
         assert_eq!(tr.trade_id, 3_000_001);
         assert_eq!(tr.price, "96500.50000000");
-        assert_eq!(tr.qty,   "0.01500000");
+        assert_eq!(tr.qty, "0.01500000");
         assert_eq!(tr.event_time_ms, 1_748_000_000_001);
         assert_eq!(tr.trade_time_ms, 1_748_000_000_000);
         assert!(!tr.is_buyer_maker); // buyer aggressed → m=false
@@ -300,7 +308,9 @@ mod tests {
     #[test]
     fn parse_trade_seller_is_aggressor() {
         let event = parse_spot_message(TRADE_BUYER_MAKER_MSG).unwrap();
-        let SpotEvent::Trade(tr) = event else { panic!("wrong variant") };
+        let SpotEvent::Trade(tr) = event else {
+            panic!("wrong variant")
+        };
         assert_eq!(tr.symbol, "ETHUSDT");
         assert!(tr.is_buyer_maker); // seller aggressed → m=true
     }
@@ -310,7 +320,9 @@ mod tests {
     #[test]
     fn unknown_stream_type_returns_unknown_variant() {
         let event = parse_spot_message(UNKNOWN_STREAM_MSG).unwrap();
-        let SpotEvent::Unknown(name) = event else { panic!("wrong variant") };
+        let SpotEvent::Unknown(name) = event else {
+            panic!("wrong variant")
+        };
         assert_eq!(name, "btcusdt@aggTrade");
     }
 

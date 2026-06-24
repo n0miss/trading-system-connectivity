@@ -6,15 +6,14 @@
 /// Unlike the spot normalizer, this function returns a `Vec` because a single
 /// `markPriceUpdate` event produces two messages: [`MarkPrice`] and,
 /// when the funding rate is present, [`FundingRate`].
-
 use connector_core::{
-    AggressorSide, BestBidOffer, BookDelta, FundingRate, InstrumentDefinition,
-    Liquidation, MarketType, MarkPrice, MessageHeader, MessageType, NormalizedMessage,
-    PriceLevel, Trade, VenueId, SCHEMA_VERSION, TS_NONE,
+    AggressorSide, BestBidOffer, BookDelta, FundingRate, InstrumentDefinition, Liquidation,
+    MarkPrice, MarketType, MessageHeader, MessageType, NormalizedMessage, PriceLevel, Trade,
+    VenueId, SCHEMA_VERSION, TS_NONE,
 };
 use protocol_json::{
-    FuturesAggTrade, FuturesBookTicker, FuturesDepthUpdate, FuturesEvent,
-    FuturesForceOrder, FuturesMarkPrice,
+    FuturesAggTrade, FuturesBookTicker, FuturesDepthUpdate, FuturesEvent, FuturesForceOrder,
+    FuturesMarkPrice,
 };
 use thiserror::Error;
 
@@ -25,10 +24,10 @@ use thiserror::Error;
 /// Runtime context shared across all normalizer calls for one connection.
 #[derive(Debug, Clone, Copy)]
 pub struct NormalizeCtx {
-    pub venue_id:      VenueId,
-    pub market_type:   MarketType,
+    pub venue_id: VenueId,
+    pub market_type: MarketType,
     /// Zero-based instance index written into every message header.
-    pub instance_id:   u32,
+    pub instance_id: u32,
     /// WebSocket connection ID written into every message header.
     pub connection_id: u32,
 }
@@ -37,8 +36,8 @@ pub struct NormalizeCtx {
 pub enum NormalizeError {
     #[error("invalid decimal \"{value}\" (scale {scale}): {source}")]
     InvalidDecimal {
-        value:  String,
-        scale:  u32,
+        value: String,
+        scale: u32,
         source: std::num::ParseIntError,
     },
     #[error("unknown liquidation side \"{0}\"")]
@@ -60,10 +59,10 @@ pub enum NormalizeError {
 /// `seq` is incremented by one for each message produced.
 /// `recv_ts` is the nanosecond-precision local socket receive timestamp.
 pub fn normalize_futures_event(
-    event:   &FuturesEvent,
-    inst:    &InstrumentDefinition,
-    ctx:     &NormalizeCtx,
-    seq:     &mut u64,
+    event: &FuturesEvent,
+    inst: &InstrumentDefinition,
+    ctx: &NormalizeCtx,
+    seq: &mut u64,
     recv_ts: i64,
 ) -> Result<Vec<NormalizedMessage>, NormalizeError> {
     match event {
@@ -79,9 +78,7 @@ pub fn normalize_futures_event(
             let msg = normalize_agg_trade(at, inst, ctx, take_seq(seq), recv_ts)?;
             Ok(vec![NormalizedMessage::Trade(msg)])
         }
-        FuturesEvent::MarkPrice(mp) => {
-            normalize_mark_price(mp, inst, ctx, seq, recv_ts)
-        }
+        FuturesEvent::MarkPrice(mp) => normalize_mark_price(mp, inst, ctx, seq, recv_ts),
         FuturesEvent::ForceOrder(fo) => {
             let msg = normalize_force_order(fo, inst, ctx, take_seq(seq), recv_ts)?;
             Ok(vec![NormalizedMessage::Liquidation(msg)])
@@ -95,75 +92,87 @@ pub fn normalize_futures_event(
 // ---------------------------------------------------------------------------
 
 fn normalize_book_ticker(
-    bt:      &FuturesBookTicker,
-    inst:    &InstrumentDefinition,
-    ctx:     &NormalizeCtx,
-    seq:     u64,
+    bt: &FuturesBookTicker,
+    inst: &InstrumentDefinition,
+    ctx: &NormalizeCtx,
+    seq: u64,
     recv_ts: i64,
 ) -> Result<BestBidOffer, NormalizeError> {
     let p = inst.price_scale;
     let q = inst.qty_scale;
     Ok(BestBidOffer {
         // Futures bookTicker carries no exchange timestamp.
-        header:      make_header(MessageType::BestBidOffer, inst, ctx, seq, TS_NONE, recv_ts),
-        symbol:      inst.symbol.clone(),
+        header: make_header(MessageType::BestBidOffer, inst, ctx, seq, TS_NONE, recv_ts),
+        symbol: inst.symbol.clone(),
         price_scale: p as u8,
-        qty_scale:   q as u8,
-        bid_price:   parse_scaled(&bt.bid_price, p)?,
-        bid_qty:     parse_scaled(&bt.bid_qty,   q)?,
-        ask_price:   parse_scaled(&bt.ask_price, p)?,
-        ask_qty:     parse_scaled(&bt.ask_qty,   q)?,
-        update_id:   bt.update_id,
+        qty_scale: q as u8,
+        bid_price: parse_scaled(&bt.bid_price, p)?,
+        bid_qty: parse_scaled(&bt.bid_qty, q)?,
+        ask_price: parse_scaled(&bt.ask_price, p)?,
+        ask_qty: parse_scaled(&bt.ask_qty, q)?,
+        update_id: bt.update_id,
     })
 }
 
 fn normalize_depth_update(
-    du:      &FuturesDepthUpdate,
-    inst:    &InstrumentDefinition,
-    ctx:     &NormalizeCtx,
-    seq:     u64,
+    du: &FuturesDepthUpdate,
+    inst: &InstrumentDefinition,
+    ctx: &NormalizeCtx,
+    seq: u64,
     recv_ts: i64,
 ) -> Result<BookDelta, NormalizeError> {
     let p = inst.price_scale;
     let q = inst.qty_scale;
 
-    let bids = du.bids.iter()
-        .map(|[price, qty]| Ok(PriceLevel {
-            price: parse_scaled(price, p)?,
-            qty:   parse_scaled(qty,   q)?,
-        }))
+    let bids = du
+        .bids
+        .iter()
+        .map(|[price, qty]| {
+            Ok(PriceLevel {
+                price: parse_scaled(price, p)?,
+                qty: parse_scaled(qty, q)?,
+            })
+        })
         .collect::<Result<Vec<_>, NormalizeError>>()?;
 
-    let asks = du.asks.iter()
-        .map(|[price, qty]| Ok(PriceLevel {
-            price: parse_scaled(price, p)?,
-            qty:   parse_scaled(qty,   q)?,
-        }))
+    let asks = du
+        .asks
+        .iter()
+        .map(|[price, qty]| {
+            Ok(PriceLevel {
+                price: parse_scaled(price, p)?,
+                qty: parse_scaled(qty, q)?,
+            })
+        })
         .collect::<Result<Vec<_>, NormalizeError>>()?;
 
     Ok(BookDelta {
-        header:          make_header(
-            MessageType::BookDelta, inst, ctx, seq,
-            ms_to_ns(du.event_time_ms), recv_ts,
+        header: make_header(
+            MessageType::BookDelta,
+            inst,
+            ctx,
+            seq,
+            ms_to_ns(du.event_time_ms),
+            recv_ts,
         ),
-        symbol:          inst.symbol.clone(),
-        price_scale:     p as u8,
-        qty_scale:       q as u8,
+        symbol: inst.symbol.clone(),
+        price_scale: p as u8,
+        qty_scale: q as u8,
         first_update_id: du.first_update_id,
         final_update_id: du.last_update_id,
         // Futures depth events carry pu (prev_final_update_id) directly —
         // the sequence validator uses this instead of a snapshot handshake.
-        prev_update_id:  du.prev_final_update_id,
+        prev_update_id: du.prev_final_update_id,
         bids,
         asks,
     })
 }
 
 fn normalize_agg_trade(
-    at:      &FuturesAggTrade,
-    inst:    &InstrumentDefinition,
-    ctx:     &NormalizeCtx,
-    seq:     u64,
+    at: &FuturesAggTrade,
+    inst: &InstrumentDefinition,
+    ctx: &NormalizeCtx,
+    seq: u64,
     recv_ts: i64,
 ) -> Result<Trade, NormalizeError> {
     // m=true  → buyer is maker → seller is the aggressor
@@ -175,16 +184,20 @@ fn normalize_agg_trade(
     };
     Ok(Trade {
         header: make_header(
-            MessageType::Trade, inst, ctx, seq,
-            ms_to_ns(at.event_time_ms), recv_ts,
+            MessageType::Trade,
+            inst,
+            ctx,
+            seq,
+            ms_to_ns(at.event_time_ms),
+            recv_ts,
         ),
-        symbol:         inst.symbol.clone(),
-        price_scale:    inst.price_scale as u8,
-        qty_scale:      inst.qty_scale   as u8,
-        trade_id:       at.agg_trade_id,
-        price:          parse_scaled(&at.price, inst.price_scale)?,
-        qty:            parse_scaled(&at.qty,   inst.qty_scale)?,
-        trade_ts:       ms_to_ns(at.trade_time_ms),
+        symbol: inst.symbol.clone(),
+        price_scale: inst.price_scale as u8,
+        qty_scale: inst.qty_scale as u8,
+        trade_id: at.agg_trade_id,
+        price: parse_scaled(&at.price, inst.price_scale)?,
+        qty: parse_scaled(&at.qty, inst.qty_scale)?,
+        trade_ts: ms_to_ns(at.trade_time_ms),
         is_buyer_maker: at.is_buyer_maker,
         aggressor_side,
     })
@@ -193,10 +206,10 @@ fn normalize_agg_trade(
 /// Produces up to two messages: always a `MarkPrice`, and a `FundingRate`
 /// only when the funding rate field is present and non-empty.
 fn normalize_mark_price(
-    mp:      &FuturesMarkPrice,
-    inst:    &InstrumentDefinition,
-    ctx:     &NormalizeCtx,
-    seq:     &mut u64,
+    mp: &FuturesMarkPrice,
+    inst: &InstrumentDefinition,
+    ctx: &NormalizeCtx,
+    seq: &mut u64,
     recv_ts: i64,
 ) -> Result<Vec<NormalizedMessage>, NormalizeError> {
     let p = inst.price_scale;
@@ -210,12 +223,16 @@ fn normalize_mark_price(
 
     let mark = MarkPrice {
         header: make_header(
-            MessageType::MarkPrice, inst, ctx, take_seq(seq),
-            ms_to_ns(mp.event_time_ms), recv_ts,
+            MessageType::MarkPrice,
+            inst,
+            ctx,
+            take_seq(seq),
+            ms_to_ns(mp.event_time_ms),
+            recv_ts,
         ),
-        symbol:      inst.symbol.clone(),
+        symbol: inst.symbol.clone(),
         price_scale: p as u8,
-        mark_price:  parse_scaled(&mp.mark_price, p)?,
+        mark_price: parse_scaled(&mp.mark_price, p)?,
         index_price,
     };
 
@@ -226,14 +243,18 @@ fn normalize_mark_price(
     if !mp.funding_rate.is_empty() {
         let rate = FundingRate {
             header: make_header(
-                MessageType::FundingRate, inst, ctx, take_seq(seq),
-                ms_to_ns(mp.event_time_ms), recv_ts,
+                MessageType::FundingRate,
+                inst,
+                ctx,
+                take_seq(seq),
+                ms_to_ns(mp.event_time_ms),
+                recv_ts,
             ),
-            symbol:             inst.symbol.clone(),
+            symbol: inst.symbol.clone(),
             funding_rate_scale: 9,
             // FundingRate is stored as rate × 10^9.
-            funding_rate:       parse_scaled(&mp.funding_rate, 9)?,
-            next_funding_time:  ms_to_ns(mp.next_funding_time_ms),
+            funding_rate: parse_scaled(&mp.funding_rate, 9)?,
+            next_funding_time: ms_to_ns(mp.next_funding_time_ms),
         };
         out.push(NormalizedMessage::FundingRate(rate));
     }
@@ -242,32 +263,36 @@ fn normalize_mark_price(
 }
 
 fn normalize_force_order(
-    fo:      &FuturesForceOrder,
-    inst:    &InstrumentDefinition,
-    ctx:     &NormalizeCtx,
-    seq:     u64,
+    fo: &FuturesForceOrder,
+    inst: &InstrumentDefinition,
+    ctx: &NormalizeCtx,
+    seq: u64,
     recv_ts: i64,
 ) -> Result<Liquidation, NormalizeError> {
     let ord = &fo.order;
     let side = match ord.side.as_str() {
-        "BUY"  => AggressorSide::Buy,
+        "BUY" => AggressorSide::Buy,
         "SELL" => AggressorSide::Sell,
-        other  => return Err(NormalizeError::UnknownSide(other.to_string())),
+        other => return Err(NormalizeError::UnknownSide(other.to_string())),
     };
     let p = inst.price_scale;
     let q = inst.qty_scale;
     Ok(Liquidation {
         header: make_header(
-            MessageType::Liquidation, inst, ctx, seq,
-            ms_to_ns(fo.event_time_ms), recv_ts,
+            MessageType::Liquidation,
+            inst,
+            ctx,
+            seq,
+            ms_to_ns(fo.event_time_ms),
+            recv_ts,
         ),
-        symbol:          inst.symbol.clone(),
-        price_scale:     p as u8,
-        qty_scale:       q as u8,
+        symbol: inst.symbol.clone(),
+        price_scale: p as u8,
+        qty_scale: q as u8,
         side,
-        price:           parse_scaled(&ord.price,           p)?,
-        qty:             parse_scaled(&ord.qty,             q)?,
-        avg_price:       parse_scaled(&ord.avg_price,       p)?,
+        price: parse_scaled(&ord.price, p)?,
+        qty: parse_scaled(&ord.qty, q)?,
+        avg_price: parse_scaled(&ord.avg_price, p)?,
         last_filled_qty: parse_scaled(&ord.last_filled_qty, q)?,
     })
 }
@@ -277,25 +302,25 @@ fn normalize_force_order(
 // ---------------------------------------------------------------------------
 
 fn make_header(
-    msg_type:          MessageType,
-    inst:              &InstrumentDefinition,
-    ctx:               &NormalizeCtx,
-    seq:               u64,
+    msg_type: MessageType,
+    inst: &InstrumentDefinition,
+    ctx: &NormalizeCtx,
+    seq: u64,
     exchange_event_ts: i64,
-    recv_ts:           i64,
+    recv_ts: i64,
 ) -> MessageHeader {
     MessageHeader {
-        schema_version:   SCHEMA_VERSION,
-        message_type:     msg_type,
-        venue_id:         ctx.venue_id,
-        market_type:      ctx.market_type,
-        instrument_id:    inst.header.instrument_id,
-        connection_id:    ctx.connection_id,
-        instance_id:      ctx.instance_id,
-        sequence_number:  seq,
+        schema_version: SCHEMA_VERSION,
+        message_type: msg_type,
+        venue_id: ctx.venue_id,
+        market_type: ctx.market_type,
+        instrument_id: inst.header.instrument_id,
+        connection_id: ctx.connection_id,
+        instance_id: ctx.instance_id,
+        sequence_number: seq,
         exchange_event_ts,
-        exchange_tx_ts:   TS_NONE,
-        local_recv_ts:    recv_ts,
+        exchange_tx_ts: TS_NONE,
+        local_recv_ts: recv_ts,
         local_publish_ts: TS_NONE,
     }
 }
@@ -319,7 +344,7 @@ fn parse_scaled(s: &str, scale: u32) -> Result<i64, NormalizeError> {
     let s = s.trim();
 
     let (int_s, frac_s) = match s.find('.') {
-        None      => (s, ""),
+        None => (s, ""),
         Some(dot) => (&s[..dot], &s[dot + 1..]),
     };
 
@@ -327,7 +352,9 @@ fn parse_scaled(s: &str, scale: u32) -> Result<i64, NormalizeError> {
         0
     } else {
         int_s.parse().map_err(|e| NormalizeError::InvalidDecimal {
-            value: s.to_string(), scale, source: e,
+            value: s.to_string(),
+            scale,
+            source: e,
         })?
     };
 
@@ -336,9 +363,13 @@ fn parse_scaled(s: &str, scale: u32) -> Result<i64, NormalizeError> {
     } else {
         let n = scale as usize;
         let padded = format!("{:0<width$}", frac_s, width = n);
-        padded[..n].parse().map_err(|e| NormalizeError::InvalidDecimal {
-            value: s.to_string(), scale, source: e,
-        })?
+        padded[..n]
+            .parse()
+            .map_err(|e| NormalizeError::InvalidDecimal {
+                value: s.to_string(),
+                scale,
+                source: e,
+            })?
     };
 
     Ok(int_val * 10_i64.pow(scale) + frac_val)
@@ -356,9 +387,9 @@ mod tests {
 
     fn test_ctx() -> NormalizeCtx {
         NormalizeCtx {
-            venue_id:      VenueId::BinanceFutures,
-            market_type:   MarketType::UsdmFutures,
-            instance_id:   0,
+            venue_id: VenueId::BinanceFutures,
+            market_type: MarketType::UsdmFutures,
+            instance_id: 0,
             connection_id: 1,
         }
     }
@@ -366,30 +397,30 @@ mod tests {
     fn test_inst(instrument_id: u32, price_scale: u32, qty_scale: u32) -> InstrumentDefinition {
         InstrumentDefinition {
             header: MessageHeader {
-                schema_version:    SCHEMA_VERSION,
-                message_type:      MessageType::InstrumentDefinition,
-                venue_id:          VenueId::BinanceFutures,
-                market_type:       MarketType::UsdmFutures,
+                schema_version: SCHEMA_VERSION,
+                message_type: MessageType::InstrumentDefinition,
+                venue_id: VenueId::BinanceFutures,
+                market_type: MarketType::UsdmFutures,
                 instrument_id,
-                connection_id:     0,
-                instance_id:       0,
-                sequence_number:   0,
+                connection_id: 0,
+                instance_id: 0,
+                sequence_number: 0,
                 exchange_event_ts: TS_NONE,
-                exchange_tx_ts:    TS_NONE,
-                local_recv_ts:     TS_NONE,
-                local_publish_ts:  TS_NONE,
+                exchange_tx_ts: TS_NONE,
+                local_recv_ts: TS_NONE,
+                local_publish_ts: TS_NONE,
             },
-            symbol:        "BTCUSDT".to_string(),
-            base_asset:    "BTC".to_string(),
-            quote_asset:   "USDT".to_string(),
+            symbol: "BTCUSDT".to_string(),
+            base_asset: "BTC".to_string(),
+            quote_asset: "USDT".to_string(),
             price_scale,
             qty_scale,
-            tick_size:     100,
-            step_size:     10,
-            min_qty:       10,
-            min_notional:  10_000_000_000,
+            tick_size: 100,
+            step_size: 10,
+            min_qty: 10,
+            min_notional: 10_000_000_000,
             contract_size: 0,
-            is_trading:    true,
+            is_trading: true,
         }
     }
 
@@ -397,7 +428,10 @@ mod tests {
 
     #[test]
     fn parse_scaled_full_decimal() {
-        assert_eq!(parse_scaled("96500.50000000", 8).unwrap(), 9_650_050_000_000);
+        assert_eq!(
+            parse_scaled("96500.50000000", 8).unwrap(),
+            9_650_050_000_000
+        );
     }
 
     #[test]
@@ -429,24 +463,26 @@ mod tests {
             "stream":"btcusdt@bookTicker",
             "data":{"u":400900217,"s":"BTCUSDT","b":"96500.00000000","B":"1.23000000","a":"96501.00000000","A":"0.50000000"}
         }"#;
-        let event   = parse_futures_message(raw).unwrap();
-        let inst    = test_inst(12345, 8, 8);
-        let ctx     = test_ctx();
+        let event = parse_futures_message(raw).unwrap();
+        let inst = test_inst(12345, 8, 8);
+        let ctx = test_ctx();
         let mut seq = 0u64;
 
         let msgs = normalize_futures_event(&event, &inst, &ctx, &mut seq, 999_000_000).unwrap();
         assert_eq!(msgs.len(), 1);
-        let NormalizedMessage::BestBidOffer(bbo) = &msgs[0] else { panic!("wrong variant") };
+        let NormalizedMessage::BestBidOffer(bbo) = &msgs[0] else {
+            panic!("wrong variant")
+        };
 
-        assert_eq!(bbo.header.instrument_id,     12345);
-        assert_eq!(bbo.header.sequence_number,   0);
+        assert_eq!(bbo.header.instrument_id, 12345);
+        assert_eq!(bbo.header.sequence_number, 0);
         assert_eq!(bbo.header.exchange_event_ts, TS_NONE);
-        assert_eq!(bbo.header.local_recv_ts,     999_000_000);
-        assert_eq!(bbo.symbol,    "BTCUSDT");
+        assert_eq!(bbo.header.local_recv_ts, 999_000_000);
+        assert_eq!(bbo.symbol, "BTCUSDT");
         assert_eq!(bbo.bid_price, 9_650_000_000_000);
-        assert_eq!(bbo.bid_qty,   123_000_000);
+        assert_eq!(bbo.bid_qty, 123_000_000);
         assert_eq!(bbo.ask_price, 9_650_100_000_000);
-        assert_eq!(bbo.ask_qty,   50_000_000);
+        assert_eq!(bbo.ask_qty, 50_000_000);
         assert_eq!(bbo.update_id, 400_900_217);
         assert_eq!(seq, 1);
     }
@@ -463,17 +499,22 @@ mod tests {
                 "b":[["96500.00000000","2.50000000"]],"a":[]
             }
         }"#;
-        let event   = parse_futures_message(raw).unwrap();
-        let inst    = test_inst(99, 8, 8);
-        let ctx     = test_ctx();
+        let event = parse_futures_message(raw).unwrap();
+        let inst = test_inst(99, 8, 8);
+        let ctx = test_ctx();
         let mut seq = 10u64;
 
         let msgs = normalize_futures_event(&event, &inst, &ctx, &mut seq, 42).unwrap();
         assert_eq!(msgs.len(), 1);
-        let NormalizedMessage::BookDelta(bd) = &msgs[0] else { panic!("wrong variant") };
+        let NormalizedMessage::BookDelta(bd) = &msgs[0] else {
+            panic!("wrong variant")
+        };
 
         assert_eq!(bd.header.sequence_number, 10);
-        assert_eq!(bd.header.exchange_event_ts, 1_748_000_000_000_i64 * 1_000_000);
+        assert_eq!(
+            bd.header.exchange_event_ts,
+            1_748_000_000_000_i64 * 1_000_000
+        );
         assert_eq!(bd.first_update_id, 50_000_001);
         assert_eq!(bd.final_update_id, 50_000_005);
         // Key difference vs spot: prev_update_id comes from pu, not UPDATE_ID_NONE.
@@ -492,17 +533,19 @@ mod tests {
             }
         }"#;
         let event = parse_futures_message(raw).unwrap();
-        let inst  = test_inst(1, 2, 2);
-        let ctx   = test_ctx();
+        let inst = test_inst(1, 2, 2);
+        let ctx = test_ctx();
         let mut seq = 0u64;
 
         let msgs = normalize_futures_event(&event, &inst, &ctx, &mut seq, 0).unwrap();
-        let NormalizedMessage::BookDelta(bd) = &msgs[0] else { panic!() };
+        let NormalizedMessage::BookDelta(bd) = &msgs[0] else {
+            panic!()
+        };
 
         assert_eq!(bd.bids.len(), 2);
         assert_eq!(bd.bids[0].price, 9_650_000); // 96500.00 * 10^2
-        assert_eq!(bd.bids[0].qty,   250);        // 2.50 * 10^2
-        assert_eq!(bd.bids[1].qty,   0);          // removal marker
+        assert_eq!(bd.bids[0].qty, 250); // 2.50 * 10^2
+        assert_eq!(bd.bids[1].qty, 0); // removal marker
         assert_eq!(bd.asks.len(), 1);
         assert_eq!(bd.asks[0].price, 9_650_100);
     }
@@ -519,14 +562,16 @@ mod tests {
                 "f":100,"l":105,"T":1748000000000,"m":false
             }
         }"#;
-        let event   = parse_futures_message(raw).unwrap();
-        let inst    = test_inst(7, 8, 8);
-        let ctx     = test_ctx();
+        let event = parse_futures_message(raw).unwrap();
+        let inst = test_inst(7, 8, 8);
+        let ctx = test_ctx();
         let mut seq = 5u64;
 
         let msgs = normalize_futures_event(&event, &inst, &ctx, &mut seq, 1).unwrap();
         assert_eq!(msgs.len(), 1);
-        let NormalizedMessage::Trade(tr) = &msgs[0] else { panic!() };
+        let NormalizedMessage::Trade(tr) = &msgs[0] else {
+            panic!()
+        };
 
         assert_eq!(tr.header.sequence_number, 5);
         assert_eq!(tr.trade_id, 26_129); // agg_trade_id used as trade_id
@@ -546,12 +591,14 @@ mod tests {
                     "p":"3500.00000000","q":"0.50000000","f":200,"l":200,"T":1748000000001,"m":true}
         }"#;
         let event = parse_futures_message(raw).unwrap();
-        let inst  = test_inst(88, 8, 8);
-        let ctx   = test_ctx();
+        let inst = test_inst(88, 8, 8);
+        let ctx = test_ctx();
         let mut seq = 0u64;
 
         let msgs = normalize_futures_event(&event, &inst, &ctx, &mut seq, 1).unwrap();
-        let NormalizedMessage::Trade(tr) = &msgs[0] else { panic!() };
+        let NormalizedMessage::Trade(tr) = &msgs[0] else {
+            panic!()
+        };
         assert!(tr.is_buyer_maker);
         assert_eq!(tr.aggressor_side, AggressorSide::Sell);
     }
@@ -568,24 +615,35 @@ mod tests {
                 "r":"0.00010000","T":1749600000000
             }
         }"#;
-        let event   = parse_futures_message(raw).unwrap();
-        let inst    = test_inst(3, 8, 8);
-        let ctx     = test_ctx();
+        let event = parse_futures_message(raw).unwrap();
+        let inst = test_inst(3, 8, 8);
+        let ctx = test_ctx();
         let mut seq = 0u64;
 
         let msgs = normalize_futures_event(&event, &inst, &ctx, &mut seq, 5).unwrap();
-        assert_eq!(msgs.len(), 2, "markPrice must produce MarkPrice + FundingRate");
+        assert_eq!(
+            msgs.len(),
+            2,
+            "markPrice must produce MarkPrice + FundingRate"
+        );
 
-        let NormalizedMessage::MarkPrice(mp) = &msgs[0] else { panic!("expected MarkPrice") };
+        let NormalizedMessage::MarkPrice(mp) = &msgs[0] else {
+            panic!("expected MarkPrice")
+        };
         assert_eq!(mp.header.sequence_number, 0);
-        assert_eq!(mp.symbol,      "BTCUSDT");
-        assert_eq!(mp.mark_price,  9_650_050_000_000); // 96500.50 * 10^8
+        assert_eq!(mp.symbol, "BTCUSDT");
+        assert_eq!(mp.mark_price, 9_650_050_000_000); // 96500.50 * 10^8
         assert_eq!(mp.index_price, 9_650_100_000_000); // 96501.00 * 10^8
-        assert_eq!(mp.header.exchange_event_ts, 1_748_000_000_000_i64 * 1_000_000);
+        assert_eq!(
+            mp.header.exchange_event_ts,
+            1_748_000_000_000_i64 * 1_000_000
+        );
 
-        let NormalizedMessage::FundingRate(fr) = &msgs[1] else { panic!("expected FundingRate") };
+        let NormalizedMessage::FundingRate(fr) = &msgs[1] else {
+            panic!("expected FundingRate")
+        };
         assert_eq!(fr.header.sequence_number, 1);
-        assert_eq!(fr.funding_rate,      100_000); // 0.00010000 × 10^9
+        assert_eq!(fr.funding_rate, 100_000); // 0.00010000 × 10^9
         assert_eq!(fr.next_funding_time, 1_749_600_000_000_i64 * 1_000_000);
         assert_eq!(seq, 2);
     }
@@ -599,9 +657,9 @@ mod tests {
                 "p":"96500.50000000","i":"96501.00000000","T":1749600000000
             }
         }"#;
-        let event   = parse_futures_message(raw).unwrap();
-        let inst    = test_inst(3, 8, 8);
-        let ctx     = test_ctx();
+        let event = parse_futures_message(raw).unwrap();
+        let inst = test_inst(3, 8, 8);
+        let ctx = test_ctx();
         let mut seq = 0u64;
 
         let msgs = normalize_futures_event(&event, &inst, &ctx, &mut seq, 0).unwrap();
@@ -620,12 +678,14 @@ mod tests {
             }
         }"#;
         let event = parse_futures_message(raw).unwrap();
-        let inst  = test_inst(3, 2, 8);
-        let ctx   = test_ctx();
+        let inst = test_inst(3, 2, 8);
+        let ctx = test_ctx();
         let mut seq = 0u64;
 
         let msgs = normalize_futures_event(&event, &inst, &ctx, &mut seq, 0).unwrap();
-        let NormalizedMessage::MarkPrice(mp) = &msgs[0] else { panic!() };
+        let NormalizedMessage::MarkPrice(mp) = &msgs[0] else {
+            panic!()
+        };
         assert_eq!(mp.index_price, 0);
     }
 
@@ -642,22 +702,27 @@ mod tests {
                      "l":"0.014","z":"0.014","T":1748000000000}
             }
         }"#;
-        let event   = parse_futures_message(raw).unwrap();
-        let inst    = test_inst(5, 2, 3);
-        let ctx     = test_ctx();
+        let event = parse_futures_message(raw).unwrap();
+        let inst = test_inst(5, 2, 3);
+        let ctx = test_ctx();
         let mut seq = 0u64;
 
         let msgs = normalize_futures_event(&event, &inst, &ctx, &mut seq, 9).unwrap();
         assert_eq!(msgs.len(), 1);
-        let NormalizedMessage::Liquidation(liq) = &msgs[0] else { panic!() };
+        let NormalizedMessage::Liquidation(liq) = &msgs[0] else {
+            panic!()
+        };
 
         assert_eq!(liq.header.sequence_number, 0);
-        assert_eq!(liq.header.exchange_event_ts, 1_748_000_000_000_i64 * 1_000_000);
+        assert_eq!(
+            liq.header.exchange_event_ts,
+            1_748_000_000_000_i64 * 1_000_000
+        );
         assert_eq!(liq.symbol, "BTCUSDT");
-        assert_eq!(liq.side,   AggressorSide::Sell);
-        assert_eq!(liq.price,           991_000); // "9910" * 10^2
-        assert_eq!(liq.avg_price,       991_000);
-        assert_eq!(liq.qty,             14);       // "0.014" * 10^3
+        assert_eq!(liq.side, AggressorSide::Sell);
+        assert_eq!(liq.price, 991_000); // "9910" * 10^2
+        assert_eq!(liq.avg_price, 991_000);
+        assert_eq!(liq.qty, 14); // "0.014" * 10^3
         assert_eq!(liq.last_filled_qty, 14);
         assert_eq!(seq, 1);
     }
@@ -674,12 +739,14 @@ mod tests {
             }
         }"#;
         let event = parse_futures_message(raw).unwrap();
-        let inst  = test_inst(8, 2, 2);
-        let ctx   = test_ctx();
+        let inst = test_inst(8, 2, 2);
+        let ctx = test_ctx();
         let mut seq = 0u64;
 
         let msgs = normalize_futures_event(&event, &inst, &ctx, &mut seq, 0).unwrap();
-        let NormalizedMessage::Liquidation(liq) = &msgs[0] else { panic!() };
+        let NormalizedMessage::Liquidation(liq) = &msgs[0] else {
+            panic!()
+        };
         assert_eq!(liq.side, AggressorSide::Buy);
     }
 
@@ -695,8 +762,8 @@ mod tests {
             }
         }"#;
         let event = parse_futures_message(raw).unwrap();
-        let inst  = test_inst(1, 2, 2);
-        let ctx   = test_ctx();
+        let inst = test_inst(1, 2, 2);
+        let ctx = test_ctx();
         let mut seq = 0u64;
 
         assert!(normalize_futures_event(&event, &inst, &ctx, &mut seq, 0).is_err());
@@ -706,9 +773,9 @@ mod tests {
 
     #[test]
     fn unknown_event_returns_empty_and_does_not_advance_seq() {
-        let event   = FuturesEvent::Unknown("btcusdt@kline_1m".to_string());
-        let inst    = test_inst(1, 8, 8);
-        let ctx     = test_ctx();
+        let event = FuturesEvent::Unknown("btcusdt@kline_1m".to_string());
+        let inst = test_inst(1, 8, 8);
+        let ctx = test_ctx();
         let mut seq = 7u64;
 
         let msgs = normalize_futures_event(&event, &inst, &ctx, &mut seq, 0).unwrap();
@@ -719,13 +786,13 @@ mod tests {
     #[test]
     fn sequence_increments_per_produced_message() {
         let bbo_raw = br#"{"stream":"btcusdt@bookTicker","data":{"u":1,"s":"BTCUSDT","b":"100.0","B":"1.0","a":"101.0","A":"1.0"}}"#;
-        let inst    = test_inst(1, 2, 2);
-        let ctx     = test_ctx();
+        let inst = test_inst(1, 2, 2);
+        let ctx = test_ctx();
         let mut seq = 0u64;
 
         for expected_seq in 0..5u64 {
             let event = parse_futures_message(bbo_raw).unwrap();
-            let msgs  = normalize_futures_event(&event, &inst, &ctx, &mut seq, 0).unwrap();
+            let msgs = normalize_futures_event(&event, &inst, &ctx, &mut seq, 0).unwrap();
             assert_eq!(msgs[0].header().sequence_number, expected_seq);
         }
         assert_eq!(seq, 5);

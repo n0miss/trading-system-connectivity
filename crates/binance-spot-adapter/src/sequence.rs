@@ -83,7 +83,9 @@ pub struct SequenceValidator {
 
 impl SequenceValidator {
     pub fn new() -> Self {
-        Self { state: ValidationState::AwaitingSnapshot }
+        Self {
+            state: ValidationState::AwaitingSnapshot,
+        }
     }
 
     /// Call this after applying a REST depth snapshot with `last_update_id`.
@@ -91,7 +93,9 @@ impl SequenceValidator {
     /// Transitions the validator to [`ValidationState::Bridging`] so the next
     /// delta can bridge from the snapshot into the live stream.
     pub fn on_snapshot(&mut self, last_update_id: u64) {
-        self.state = ValidationState::Bridging { snapshot_id: last_update_id };
+        self.state = ValidationState::Bridging {
+            snapshot_id: last_update_id,
+        };
     }
 
     /// Validate an incoming depth delta with Binance fields `U` (`first`) and
@@ -115,8 +119,8 @@ impl SequenceValidator {
                     let last_valid = snapshot_id;
                     self.state = ValidationState::Stale { last_valid };
                     ValidateResult::Gap {
-                        expected:   snapshot_id + 1,
-                        actual:     first,
+                        expected: snapshot_id + 1,
+                        actual: first,
                         last_valid,
                     }
                 }
@@ -130,7 +134,9 @@ impl SequenceValidator {
                     ValidateResult::Apply
                 } else if first > expected {
                     // Gap.
-                    self.state = ValidationState::Stale { last_valid: last_final };
+                    self.state = ValidationState::Stale {
+                        last_valid: last_final,
+                    };
                     ValidateResult::Gap {
                         expected,
                         actual: first,
@@ -152,10 +158,10 @@ impl SequenceValidator {
     /// final-update-id in Active state.  Returns `None` in AwaitingSnapshot.
     pub fn last_valid_id(&self) -> Option<u64> {
         match self.state {
-            ValidationState::AwaitingSnapshot   => None,
+            ValidationState::AwaitingSnapshot => None,
             ValidationState::Bridging { snapshot_id } => Some(snapshot_id),
-            ValidationState::Active   { last_final  } => Some(last_final),
-            ValidationState::Stale    { last_valid  } => Some(last_valid),
+            ValidationState::Active { last_final } => Some(last_final),
+            ValidationState::Stale { last_valid } => Some(last_valid),
         }
     }
 
@@ -270,7 +276,11 @@ mod tests {
         let r = v.validate(103, 107);
         assert_eq!(
             r,
-            ValidateResult::Gap { expected: 101, actual: 103, last_valid: 100 },
+            ValidateResult::Gap {
+                expected: 101,
+                actual: 103,
+                last_valid: 100
+            },
         );
         assert_eq!(v.state(), ValidationState::Stale { last_valid: 100 });
     }
@@ -281,7 +291,7 @@ mod tests {
     fn active_exact_continuity_applies() {
         let mut v = SequenceValidator::new();
         v.on_snapshot(10);
-        v.validate(11, 15);  // bridge → Active { last_final: 15 }
+        v.validate(11, 15); // bridge → Active { last_final: 15 }
         assert_eq!(v.validate(16, 20), ValidateResult::Apply);
         assert_eq!(v.state(), ValidationState::Active { last_final: 20 });
     }
@@ -290,7 +300,7 @@ mod tests {
     fn active_chain_of_three_deltas_applies_all() {
         let mut v = SequenceValidator::new();
         v.on_snapshot(0);
-        assert_eq!(v.validate(1, 10),  ValidateResult::Apply);
+        assert_eq!(v.validate(1, 10), ValidateResult::Apply);
         assert_eq!(v.validate(11, 20), ValidateResult::Apply);
         assert_eq!(v.validate(21, 30), ValidateResult::Apply);
         assert_eq!(v.state(), ValidationState::Active { last_final: 30 });
@@ -302,11 +312,15 @@ mod tests {
     fn active_gap_marks_stale() {
         let mut v = SequenceValidator::new();
         v.on_snapshot(10);
-        v.validate(11, 20);  // bridge → Active { last_final: 20 }
-        let r = v.validate(23, 30);  // expected 21, got 23
+        v.validate(11, 20); // bridge → Active { last_final: 20 }
+        let r = v.validate(23, 30); // expected 21, got 23
         assert_eq!(
             r,
-            ValidateResult::Gap { expected: 21, actual: 23, last_valid: 20 },
+            ValidateResult::Gap {
+                expected: 21,
+                actual: 23,
+                last_valid: 20
+            },
         );
         assert_eq!(v.state(), ValidationState::Stale { last_valid: 20 });
     }
@@ -317,8 +331,8 @@ mod tests {
     fn active_duplicate_event_discarded() {
         let mut v = SequenceValidator::new();
         v.on_snapshot(10);
-        v.validate(11, 20);  // Active { last_final: 20 }
-        // first == 15 < 21 → duplicate
+        v.validate(11, 20); // Active { last_final: 20 }
+                            // first == 15 < 21 → duplicate
         let r = v.validate(15, 20);
         assert_eq!(r, ValidateResult::Discard);
         // State should not change
@@ -329,8 +343,8 @@ mod tests {
     fn active_overlapping_event_discarded() {
         let mut v = SequenceValidator::new();
         v.on_snapshot(10);
-        v.validate(11, 50);  // Active { last_final: 50 }
-        // first == 40, expected 51 → old event
+        v.validate(11, 50); // Active { last_final: 50 }
+                            // first == 40, expected 51 → old event
         assert_eq!(v.validate(40, 55), ValidateResult::Discard);
         assert_eq!(v.state(), ValidationState::Active { last_final: 50 });
     }
@@ -342,7 +356,7 @@ mod tests {
         let mut v = SequenceValidator::new();
         v.on_snapshot(10);
         v.validate(11, 20);
-        v.validate(25, 30);  // gap → Stale
+        v.validate(25, 30); // gap → Stale
         assert_eq!(v.validate(31, 40), ValidateResult::Buffering);
         assert_eq!(v.validate(41, 50), ValidateResult::Buffering);
     }
@@ -352,7 +366,7 @@ mod tests {
         let mut v = SequenceValidator::new();
         v.on_snapshot(10);
         v.validate(11, 20);
-        v.validate(25, 30);  // gap → Stale { last_valid: 20 }
+        v.validate(25, 30); // gap → Stale { last_valid: 20 }
         assert_eq!(v.last_valid_id(), Some(20));
     }
 
@@ -361,8 +375,8 @@ mod tests {
         let mut v = SequenceValidator::new();
         v.on_snapshot(10);
         v.validate(11, 20);
-        v.validate(25, 30);  // → Stale
-        // Recovery: new snapshot
+        v.validate(25, 30); // → Stale
+                            // Recovery: new snapshot
         v.on_snapshot(28);
         assert_eq!(v.state(), ValidationState::Bridging { snapshot_id: 28 });
     }
@@ -373,7 +387,7 @@ mod tests {
     fn reset_from_active_returns_to_awaiting_snapshot() {
         let mut v = SequenceValidator::new();
         v.on_snapshot(10);
-        v.validate(11, 20);  // → Active
+        v.validate(11, 20); // → Active
         v.reset();
         assert_eq!(v.state(), ValidationState::AwaitingSnapshot);
         assert_eq!(v.last_valid_id(), None);
@@ -384,7 +398,7 @@ mod tests {
         let mut v = SequenceValidator::new();
         v.on_snapshot(10);
         v.validate(11, 20);
-        v.validate(25, 30);  // → Stale
+        v.validate(25, 30); // → Stale
         v.reset();
         assert_eq!(v.state(), ValidationState::AwaitingSnapshot);
     }

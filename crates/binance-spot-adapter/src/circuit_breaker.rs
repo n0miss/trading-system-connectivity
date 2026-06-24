@@ -12,7 +12,7 @@
 // ---------------------------------------------------------------------------
 
 pub const MAX_ATTEMPTS: u32 = 5;
-pub const COOLDOWN_NS:  i64 = 30_000_000_000; // 30 s
+pub const COOLDOWN_NS: i64 = 30_000_000_000; // 30 s
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,12 +42,12 @@ impl CircuitState {
 /// Create one per symbol (or one per channel in a multi-symbol setup).
 #[derive(Debug)]
 pub struct CircuitBreaker {
-    failures:     u32,
+    failures: u32,
     max_attempts: u32,
-    cooldown_ns:  i64,
+    cooldown_ns: i64,
     /// Nanosecond epoch timestamp at which the cooldown expires.
     /// `None` while the circuit is closed.
-    open_until:   Option<i64>,
+    open_until: Option<i64>,
 }
 
 impl CircuitBreaker {
@@ -59,10 +59,10 @@ impl CircuitBreaker {
     /// Create a circuit breaker with custom limits (useful for tests).
     pub fn with_limits(max_attempts: u32, cooldown_ns: i64) -> Self {
         Self {
-            failures:     0,
+            failures: 0,
             max_attempts,
             cooldown_ns,
-            open_until:   None,
+            open_until: None,
         }
     }
 
@@ -77,10 +77,12 @@ impl CircuitBreaker {
     pub fn check(&mut self, now_ns: i64) -> CircuitState {
         if let Some(until) = self.open_until {
             if now_ns < until {
-                return CircuitState::Open { retry_after_ns: until };
+                return CircuitState::Open {
+                    retry_after_ns: until,
+                };
             }
             // Cooldown expired — auto-reset.
-            self.failures   = 0;
+            self.failures = 0;
             self.open_until = None;
         }
         CircuitState::Closed
@@ -92,7 +94,7 @@ impl CircuitBreaker {
     ///
     /// Resets the failure counter and closes the circuit unconditionally.
     pub fn record_success(&mut self) {
-        self.failures   = 0;
+        self.failures = 0;
         self.open_until = None;
     }
 
@@ -118,10 +120,18 @@ impl CircuitBreaker {
 
     // --- Accessors ----------------------------------------------------------
 
-    pub fn failures(&self)     -> u32       { self.failures }
-    pub fn max_attempts(&self) -> u32       { self.max_attempts }
-    pub fn cooldown_ns(&self)  -> i64       { self.cooldown_ns }
-    pub fn open_until(&self)   -> Option<i64> { self.open_until }
+    pub fn failures(&self) -> u32 {
+        self.failures
+    }
+    pub fn max_attempts(&self) -> u32 {
+        self.max_attempts
+    }
+    pub fn cooldown_ns(&self) -> i64 {
+        self.cooldown_ns
+    }
+    pub fn open_until(&self) -> Option<i64> {
+        self.open_until
+    }
 }
 
 impl Default for CircuitBreaker {
@@ -201,7 +211,9 @@ mod tests {
         }
         assert_eq!(
             cb.check(0),
-            CircuitState::Open { retry_after_ns: 30 * SEC },
+            CircuitState::Open {
+                retry_after_ns: 30 * SEC
+            },
         );
     }
 
@@ -260,7 +272,7 @@ mod tests {
         let mut cb = CircuitBreaker::with_limits(2, 10 * SEC);
         cb.record_failure(0);
         cb.record_failure(0); // opens at t=0
-        cb.check(10 * SEC);   // auto-reset
+        cb.check(10 * SEC); // auto-reset
         cb.record_failure(10 * SEC);
         let opened = cb.record_failure(10 * SEC);
         assert!(opened); // circuit re-opens
@@ -304,7 +316,7 @@ mod tests {
         let mut cb = CircuitBreaker::with_limits(2, 30 * SEC);
         cb.record_failure(0);
         cb.record_failure(0); // opens
-        cb.record_success();  // closes
+        cb.record_success(); // closes
         cb.record_failure(1 * SEC);
         let opened = cb.record_failure(1 * SEC);
         assert!(opened);
@@ -316,7 +328,7 @@ mod tests {
     fn default_matches_new() {
         let cb = CircuitBreaker::default();
         assert_eq!(cb.max_attempts(), MAX_ATTEMPTS);
-        assert_eq!(cb.cooldown_ns(),  COOLDOWN_NS);
+        assert_eq!(cb.cooldown_ns(), COOLDOWN_NS);
     }
 
     // --- state machine integration ---

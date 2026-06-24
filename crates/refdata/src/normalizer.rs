@@ -1,6 +1,6 @@
 use connector_core::{
-    BookSnapshot, InstrumentDefinition, MarketType, MessageHeader, MessageType,
-    PriceLevel, VenueId, SCHEMA_VERSION, TS_NONE,
+    BookSnapshot, InstrumentDefinition, MarketType, MessageHeader, MessageType, PriceLevel,
+    VenueId, SCHEMA_VERSION, TS_NONE,
 };
 use serde::Deserialize;
 
@@ -57,7 +57,7 @@ pub(crate) struct RawFilter {
 pub fn derive_scale(s: &str) -> u32 {
     match s.find('.') {
         Some(dot) => (s.len() - dot - 1) as u32,
-        None      => 0,
+        None => 0,
     }
 }
 
@@ -75,7 +75,7 @@ pub fn parse_scaled(s: &str, scale: u32) -> Result<i64, RefDataError> {
 
     let (int_str, frac_str) = match s.find('.') {
         Some(dot) => (&s[..dot], &s[dot + 1..]),
-        None      => (s, ""),
+        None => (s, ""),
     };
 
     let int_part: i64 = int_str.parse().map_err(|_| err(s))?;
@@ -135,18 +135,18 @@ fn make_header(
 ) -> MessageHeader {
     let ts = now_nanos();
     MessageHeader {
-        schema_version:    SCHEMA_VERSION,
+        schema_version: SCHEMA_VERSION,
         message_type,
         venue_id,
         market_type,
         instrument_id,
-        connection_id:     0,
+        connection_id: 0,
         instance_id,
-        sequence_number:   seq,
+        sequence_number: seq,
         exchange_event_ts: TS_NONE,
-        exchange_tx_ts:    TS_NONE,
-        local_recv_ts:     ts,
-        local_publish_ts:  ts,
+        exchange_tx_ts: TS_NONE,
+        local_recv_ts: ts,
+        local_publish_ts: ts,
     }
 }
 
@@ -164,8 +164,11 @@ pub fn normalize_symbol(
     let symbol = &info.symbol;
 
     // --- extract filters -------------------------------------------------
-    let price_filter = info.filters.iter().find(|f| f.filter_type == "PRICE_FILTER");
-    let lot_filter   = info.filters.iter().find(|f| f.filter_type == "LOT_SIZE");
+    let price_filter = info
+        .filters
+        .iter()
+        .find(|f| f.filter_type == "PRICE_FILTER");
+    let lot_filter = info.filters.iter().find(|f| f.filter_type == "LOT_SIZE");
 
     let tick_size_str = price_filter
         .and_then(|f| f.tick_size.as_deref())
@@ -175,9 +178,7 @@ pub fn normalize_symbol(
         .and_then(|f| f.step_size.as_deref())
         .unwrap_or("0.00000001");
 
-    let min_qty_str = lot_filter
-        .and_then(|f| f.min_qty.as_deref())
-        .unwrap_or("0");
+    let min_qty_str = lot_filter.and_then(|f| f.min_qty.as_deref()).unwrap_or("0");
 
     // min_notional: Spot uses NOTIONAL/minNotional, Futures uses MIN_NOTIONAL/notional
     let min_notional_str = info
@@ -189,21 +190,21 @@ pub fn normalize_symbol(
 
     // --- derive scales ---------------------------------------------------
     let price_scale = derive_scale(tick_size_str);
-    let qty_scale   = derive_scale(step_size_str);
+    let qty_scale = derive_scale(step_size_str);
 
     // --- convert to scaled integers (no floats) --------------------------
-    let tick_size    = parse_scaled(tick_size_str, price_scale)?;
-    let step_size    = parse_scaled(step_size_str, qty_scale)?;
-    let min_qty      = parse_scaled(min_qty_str, qty_scale)?;
+    let tick_size = parse_scaled(tick_size_str, price_scale)?;
+    let step_size = parse_scaled(step_size_str, qty_scale)?;
+    let min_qty = parse_scaled(min_qty_str, qty_scale)?;
     let min_notional = parse_scaled(min_notional_str, price_scale)?;
 
     let contract_size = match market_type {
         MarketType::UsdmFutures => 1,
-        MarketType::Spot        => 0,
+        MarketType::Spot => 0,
     };
 
     let is_trading = info.status == "TRADING";
-    let instr_id   = symbol_instrument_id(symbol);
+    let instr_id = symbol_instrument_id(symbol);
 
     Ok(InstrumentDefinition {
         header: make_header(
@@ -214,9 +215,9 @@ pub fn normalize_symbol(
             instance_id,
             seq,
         ),
-        symbol:        symbol.clone(),
-        base_asset:    info.base_asset.clone(),
-        quote_asset:   info.quote_asset.clone(),
+        symbol: symbol.clone(),
+        base_asset: info.base_asset.clone(),
+        quote_asset: info.quote_asset.clone(),
         price_scale,
         qty_scale,
         tick_size,
@@ -239,7 +240,13 @@ pub fn parse_exchange_info(
     let resp: ExchangeInfoResponse = serde_json::from_slice(json)?;
     let mut out = Vec::with_capacity(resp.symbols.len());
     for (i, sym) in resp.symbols.iter().enumerate() {
-        out.push(normalize_symbol(sym, venue_id, market_type, instance_id, first_seq + i as u64)?);
+        out.push(normalize_symbol(
+            sym,
+            venue_id,
+            market_type,
+            instance_id,
+            first_seq + i as u64,
+        )?);
     }
     Ok(out)
 }
@@ -251,12 +258,12 @@ pub fn parse_exchange_info(
 /// Response from `GET /fapi/v1/openInterest?symbol=X`.
 #[derive(serde::Deserialize)]
 pub struct OpenInterestResponse {
-    pub symbol:        String,
+    pub symbol: String,
     #[serde(rename = "openInterest")]
     pub open_interest: String,
     /// Exchange timestamp in milliseconds.
     #[serde(rename = "time")]
-    pub time_ms:       i64,
+    pub time_ms: i64,
 }
 
 /// Build a normalised [`connector_core::OpenInterest`] from a REST response.
@@ -266,7 +273,7 @@ pub struct OpenInterestResponse {
 pub fn normalize_open_interest(
     resp: &OpenInterestResponse,
     inst: &InstrumentDefinition,
-    seq:  u64,
+    seq: u64,
 ) -> Result<connector_core::OpenInterest, RefDataError> {
     use connector_core::{MessageType, OpenInterest, SCHEMA_VERSION, TS_NONE};
 
@@ -275,21 +282,21 @@ pub fn normalize_open_interest(
     let ts = now_nanos();
     Ok(OpenInterest {
         header: MessageHeader {
-            schema_version:    SCHEMA_VERSION,
-            message_type:      MessageType::OpenInterest,
-            venue_id:          inst.header.venue_id,
-            market_type:       inst.header.market_type,
-            instrument_id:     inst.header.instrument_id,
-            connection_id:     0,
-            instance_id:       inst.header.instance_id,
-            sequence_number:   seq,
+            schema_version: SCHEMA_VERSION,
+            message_type: MessageType::OpenInterest,
+            venue_id: inst.header.venue_id,
+            market_type: inst.header.market_type,
+            instrument_id: inst.header.instrument_id,
+            connection_id: 0,
+            instance_id: inst.header.instance_id,
+            sequence_number: seq,
             exchange_event_ts,
-            exchange_tx_ts:    TS_NONE,
-            local_recv_ts:     ts,
-            local_publish_ts:  ts,
+            exchange_tx_ts: TS_NONE,
+            local_recv_ts: ts,
+            local_publish_ts: ts,
         },
-        symbol:        inst.symbol.clone(),
-        qty_scale:     inst.qty_scale as u8,
+        symbol: inst.symbol.clone(),
+        qty_scale: inst.qty_scale as u8,
         open_interest,
     })
 }
@@ -310,25 +317,25 @@ pub(crate) struct DepthSnapshotResponse {
 ///
 /// `recv_ts` is the nanosecond timestamp when the HTTP response was received.
 pub fn parse_depth_snapshot(
-    json:    &[u8],
-    inst:    &InstrumentDefinition,
+    json: &[u8],
+    inst: &InstrumentDefinition,
     recv_ts: i64,
 ) -> Result<BookSnapshot, RefDataError> {
     let resp: DepthSnapshotResponse = serde_json::from_slice(json)?;
 
     let header = MessageHeader {
-        schema_version:    SCHEMA_VERSION,
-        message_type:      MessageType::BookSnapshot,
-        venue_id:          inst.header.venue_id,
-        market_type:       inst.header.market_type,
-        instrument_id:     inst.header.instrument_id,
-        connection_id:     0,
-        instance_id:       inst.header.instance_id,
-        sequence_number:   0,
+        schema_version: SCHEMA_VERSION,
+        message_type: MessageType::BookSnapshot,
+        venue_id: inst.header.venue_id,
+        market_type: inst.header.market_type,
+        instrument_id: inst.header.instrument_id,
+        connection_id: 0,
+        instance_id: inst.header.instance_id,
+        sequence_number: 0,
         exchange_event_ts: TS_NONE,
-        exchange_tx_ts:    TS_NONE,
-        local_recv_ts:     recv_ts,
-        local_publish_ts:  recv_ts,
+        exchange_tx_ts: TS_NONE,
+        local_recv_ts: recv_ts,
+        local_publish_ts: recv_ts,
     };
 
     let bids = parse_price_levels(&resp.bids, inst.price_scale, inst.qty_scale)?;
@@ -336,25 +343,25 @@ pub fn parse_depth_snapshot(
 
     Ok(BookSnapshot {
         header,
-        symbol:      inst.symbol.clone(),
+        symbol: inst.symbol.clone(),
         price_scale: inst.price_scale as u8,
-        qty_scale:   inst.qty_scale   as u8,
-        update_id:   resp.last_update_id,
+        qty_scale: inst.qty_scale as u8,
+        update_id: resp.last_update_id,
         bids,
         asks,
     })
 }
 
 fn parse_price_levels(
-    levels:      &[[String; 2]],
+    levels: &[[String; 2]],
     price_scale: u32,
-    qty_scale:   u32,
+    qty_scale: u32,
 ) -> Result<Vec<PriceLevel>, RefDataError> {
     levels
         .iter()
         .map(|[price_str, qty_str]| {
             let price = parse_scaled(price_str, price_scale)?;
-            let qty   = parse_scaled(qty_str,   qty_scale)?;
+            let qty = parse_scaled(qty_str, qty_scale)?;
             Ok(PriceLevel { price, qty })
         })
         .collect()
@@ -426,13 +433,13 @@ mod tests {
     #[test]
     fn derive_scale_fewer_places() {
         assert_eq!(derive_scale("0.001"), 3);
-        assert_eq!(derive_scale("0.1"),   1);
-        assert_eq!(derive_scale("0.10"),  2);
+        assert_eq!(derive_scale("0.1"), 1);
+        assert_eq!(derive_scale("0.10"), 2);
     }
 
     #[test]
     fn derive_scale_integer() {
-        assert_eq!(derive_scale("1"),   0);
+        assert_eq!(derive_scale("1"), 0);
         assert_eq!(derive_scale("100"), 0);
     }
 
@@ -441,7 +448,10 @@ mod tests {
         assert_eq!(parse_scaled("0.01000000", 8).unwrap(), 1_000_000);
         assert_eq!(parse_scaled("0.00000001", 8).unwrap(), 1);
         assert_eq!(parse_scaled("1.00000000", 8).unwrap(), 100_000_000);
-        assert_eq!(parse_scaled("43000.00000000", 8).unwrap(), 4_300_000_000_000);
+        assert_eq!(
+            parse_scaled("43000.00000000", 8).unwrap(),
+            4_300_000_000_000
+        );
     }
 
     #[test]
@@ -479,8 +489,14 @@ mod tests {
 
     #[test]
     fn symbol_instrument_id_is_deterministic() {
-        assert_eq!(symbol_instrument_id("BTCUSDT"), symbol_instrument_id("BTCUSDT"));
-        assert_ne!(symbol_instrument_id("BTCUSDT"), symbol_instrument_id("ETHUSDT"));
+        assert_eq!(
+            symbol_instrument_id("BTCUSDT"),
+            symbol_instrument_id("BTCUSDT")
+        );
+        assert_ne!(
+            symbol_instrument_id("BTCUSDT"),
+            symbol_instrument_id("ETHUSDT")
+        );
     }
 
     // ---- Spot exchange info parsing -------------------------------------
@@ -570,44 +586,48 @@ mod tests {
 
     #[test]
     fn parse_spot_exchange_info_count() {
-        let defs = parse_exchange_info(SPOT_JSON, VenueId::BinanceSpot, MarketType::Spot, 1, 0).unwrap();
+        let defs =
+            parse_exchange_info(SPOT_JSON, VenueId::BinanceSpot, MarketType::Spot, 1, 0).unwrap();
         assert_eq!(defs.len(), 3);
     }
 
     #[test]
     fn parse_spot_btcusdt_fields() {
-        let defs = parse_exchange_info(SPOT_JSON, VenueId::BinanceSpot, MarketType::Spot, 1, 0).unwrap();
+        let defs =
+            parse_exchange_info(SPOT_JSON, VenueId::BinanceSpot, MarketType::Spot, 1, 0).unwrap();
         let btc = defs.iter().find(|d| d.symbol == "BTCUSDT").unwrap();
 
-        assert_eq!(btc.base_asset,  "BTC");
+        assert_eq!(btc.base_asset, "BTC");
         assert_eq!(btc.quote_asset, "USDT");
         assert_eq!(btc.price_scale, 8);
-        assert_eq!(btc.qty_scale,   8);
-        assert_eq!(btc.tick_size,   1_000_000);       // 0.01 * 10^8
-        assert_eq!(btc.step_size,   1_000);           // 0.00001 * 10^8
-        assert_eq!(btc.min_qty,     1_000);           // 0.00001 * 10^8
-        assert_eq!(btc.min_notional, 500_000_000);    // 5 * 10^8
+        assert_eq!(btc.qty_scale, 8);
+        assert_eq!(btc.tick_size, 1_000_000); // 0.01 * 10^8
+        assert_eq!(btc.step_size, 1_000); // 0.00001 * 10^8
+        assert_eq!(btc.min_qty, 1_000); // 0.00001 * 10^8
+        assert_eq!(btc.min_notional, 500_000_000); // 5 * 10^8
         assert_eq!(btc.contract_size, 0);
         assert!(btc.is_trading);
     }
 
     #[test]
     fn parse_spot_break_status_not_trading() {
-        let defs = parse_exchange_info(SPOT_JSON, VenueId::BinanceSpot, MarketType::Spot, 1, 0).unwrap();
+        let defs =
+            parse_exchange_info(SPOT_JSON, VenueId::BinanceSpot, MarketType::Spot, 1, 0).unwrap();
         let xrp = defs.iter().find(|d| d.symbol == "XRPUSDT").unwrap();
         assert!(!xrp.is_trading);
     }
 
     #[test]
     fn parse_spot_header_fields() {
-        let defs = parse_exchange_info(SPOT_JSON, VenueId::BinanceSpot, MarketType::Spot, 7, 100).unwrap();
+        let defs =
+            parse_exchange_info(SPOT_JSON, VenueId::BinanceSpot, MarketType::Spot, 7, 100).unwrap();
         let btc = defs.iter().find(|d| d.symbol == "BTCUSDT").unwrap();
 
-        assert_eq!(btc.header.venue_id,      VenueId::BinanceSpot);
-        assert_eq!(btc.header.market_type,   MarketType::Spot);
-        assert_eq!(btc.header.message_type,  MessageType::InstrumentDefinition);
+        assert_eq!(btc.header.venue_id, VenueId::BinanceSpot);
+        assert_eq!(btc.header.market_type, MarketType::Spot);
+        assert_eq!(btc.header.message_type, MessageType::InstrumentDefinition);
         assert_eq!(btc.header.instrument_id, symbol_instrument_id("BTCUSDT"));
-        assert_eq!(btc.header.instance_id,   7);
+        assert_eq!(btc.header.instance_id, 7);
         // sequence numbers are assigned consecutively starting at first_seq
         assert!(btc.header.sequence_number >= 100);
     }
@@ -683,30 +703,40 @@ mod tests {
     #[test]
     fn parse_futures_btcusdt_fields() {
         let defs = parse_exchange_info(
-            FUTURES_JSON, VenueId::BinanceFutures, MarketType::UsdmFutures, 1, 0,
-        ).unwrap();
+            FUTURES_JSON,
+            VenueId::BinanceFutures,
+            MarketType::UsdmFutures,
+            1,
+            0,
+        )
+        .unwrap();
         let btc = defs.iter().find(|d| d.symbol == "BTCUSDT").unwrap();
 
-        assert_eq!(btc.base_asset,  "BTC");
+        assert_eq!(btc.base_asset, "BTC");
         assert_eq!(btc.quote_asset, "USDT");
-        assert_eq!(btc.price_scale, 8);    // "0.10000000" → 8 decimal places
-        assert_eq!(btc.qty_scale,   3);    // "0.001" → 3 decimal places
-        assert_eq!(btc.tick_size,   10_000_000);  // 0.1 * 10^8
-        assert_eq!(btc.step_size,   1);            // 0.001 * 10^3
-        assert_eq!(btc.min_qty,     1);            // 0.001 * 10^3
-        // min_notional = "100" with price_scale=8 → 100 * 10^8 = 10_000_000_000
+        assert_eq!(btc.price_scale, 8); // "0.10000000" → 8 decimal places
+        assert_eq!(btc.qty_scale, 3); // "0.001" → 3 decimal places
+        assert_eq!(btc.tick_size, 10_000_000); // 0.1 * 10^8
+        assert_eq!(btc.step_size, 1); // 0.001 * 10^3
+        assert_eq!(btc.min_qty, 1); // 0.001 * 10^3
+                                    // min_notional = "100" with price_scale=8 → 100 * 10^8 = 10_000_000_000
         assert_eq!(btc.min_notional, 10_000_000_000);
         assert_eq!(btc.contract_size, 1);
         assert!(btc.is_trading);
-        assert_eq!(btc.header.venue_id,    VenueId::BinanceFutures);
+        assert_eq!(btc.header.venue_id, VenueId::BinanceFutures);
         assert_eq!(btc.header.market_type, MarketType::UsdmFutures);
     }
 
     #[test]
     fn parse_futures_eth_min_notional_from_notional_field() {
         let defs = parse_exchange_info(
-            FUTURES_JSON, VenueId::BinanceFutures, MarketType::UsdmFutures, 1, 0,
-        ).unwrap();
+            FUTURES_JSON,
+            VenueId::BinanceFutures,
+            MarketType::UsdmFutures,
+            1,
+            0,
+        )
+        .unwrap();
         let eth = defs.iter().find(|d| d.symbol == "ETHUSDT").unwrap();
         // min_notional = "5" with price_scale=8 → 500_000_000
         assert_eq!(eth.min_notional, 500_000_000);
@@ -727,12 +757,13 @@ mod tests {
         assert_eq!(defs.len(), 1);
         // Default tick_size "0.00000001" → price_scale = 8, tick_size = 1
         assert_eq!(defs[0].price_scale, 8);
-        assert_eq!(defs[0].tick_size,   1);
+        assert_eq!(defs[0].tick_size, 1);
     }
 
     #[test]
     fn sequence_numbers_are_consecutive() {
-        let defs = parse_exchange_info(SPOT_JSON, VenueId::BinanceSpot, MarketType::Spot, 1, 50).unwrap();
+        let defs =
+            parse_exchange_info(SPOT_JSON, VenueId::BinanceSpot, MarketType::Spot, 1, 50).unwrap();
         let seqs: Vec<u64> = defs.iter().map(|d| d.header.sequence_number).collect();
         assert_eq!(seqs, vec![50, 51, 52]);
     }
@@ -740,11 +771,17 @@ mod tests {
     // ---- depth snapshot ------------------------------------------------
 
     fn btcusdt_def() -> InstrumentDefinition {
-        parse_exchange_info(SPOT_JSON_FOR_TESTS, VenueId::BinanceSpot, MarketType::Spot, 1, 0)
-            .unwrap()
-            .into_iter()
-            .find(|d| d.symbol == "BTCUSDT")
-            .unwrap()
+        parse_exchange_info(
+            SPOT_JSON_FOR_TESTS,
+            VenueId::BinanceSpot,
+            MarketType::Spot,
+            1,
+            0,
+        )
+        .unwrap()
+        .into_iter()
+        .find(|d| d.symbol == "BTCUSDT")
+        .unwrap()
     }
 
     const DEPTH_JSON: &[u8] = br#"{
@@ -799,11 +836,11 @@ mod tests {
         let inst = btcusdt_def();
         let recv_ts = 9_999_999_999_i64;
         let snap = parse_depth_snapshot(DEPTH_JSON, &inst, recv_ts).unwrap();
-        assert_eq!(snap.header.message_type,  MessageType::BookSnapshot);
-        assert_eq!(snap.header.venue_id,      VenueId::BinanceSpot);
-        assert_eq!(snap.header.market_type,   MarketType::Spot);
+        assert_eq!(snap.header.message_type, MessageType::BookSnapshot);
+        assert_eq!(snap.header.venue_id, VenueId::BinanceSpot);
+        assert_eq!(snap.header.market_type, MarketType::Spot);
         assert_eq!(snap.header.local_recv_ts, recv_ts);
-        assert_eq!(snap.symbol,               "BTCUSDT");
+        assert_eq!(snap.symbol, "BTCUSDT");
     }
 
     #[test]

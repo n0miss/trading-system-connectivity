@@ -24,7 +24,6 @@ use crate::render::render_prometheus;
 /// ```
 pub struct ConnectorMetrics {
     // ---- Latency histograms (nanoseconds) ---------------------------------
-
     /// Time between the exchange-side event timestamp and local socket receive.
     /// Measures network + OS scheduling overhead.
     pub wire_latency: Histogram,
@@ -38,7 +37,6 @@ pub struct ConnectorMetrics {
     pub end_to_end_latency: Histogram,
 
     // ---- Throughput counters ----------------------------------------------
-
     /// Raw WebSocket frames received from the exchange (both SBE and JSON).
     pub messages_in: Counter,
 
@@ -46,7 +44,6 @@ pub struct ConnectorMetrics {
     pub messages_out: Counter,
 
     // ---- Health counters --------------------------------------------------
-
     /// Number of WebSocket reconnect attempts (any cause).
     pub reconnects: Counter,
 
@@ -90,14 +87,8 @@ impl ConnectorMetrics {
                 "connector_messages_out",
                 "Normalized messages offered to Aeron.",
             ),
-            reconnects: Counter::new(
-                "connector_reconnects",
-                "WebSocket reconnect attempts.",
-            ),
-            stale_books: Counter::new(
-                "connector_stale_books",
-                "Order books marked stale.",
-            ),
+            reconnects: Counter::new("connector_reconnects", "WebSocket reconnect attempts."),
+            stale_books: Counter::new("connector_stale_books", "Order books marked stale."),
             sequence_gaps: Counter::new(
                 "connector_sequence_gaps",
                 "Sequence-number gaps detected.",
@@ -146,7 +137,9 @@ impl ConnectorMetrics {
 }
 
 impl Default for ConnectorMetrics {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -160,19 +153,19 @@ mod tests {
     #[test]
     fn new_registry_all_counters_zero() {
         let m = ConnectorMetrics::new();
-        assert_eq!(m.messages_in.get(),    0);
-        assert_eq!(m.messages_out.get(),   0);
-        assert_eq!(m.reconnects.get(),     0);
-        assert_eq!(m.stale_books.get(),    0);
-        assert_eq!(m.sequence_gaps.get(),  0);
+        assert_eq!(m.messages_in.get(), 0);
+        assert_eq!(m.messages_out.get(), 0);
+        assert_eq!(m.reconnects.get(), 0);
+        assert_eq!(m.stale_books.get(), 0);
+        assert_eq!(m.sequence_gaps.get(), 0);
         assert_eq!(m.offer_failures.get(), 0);
-        assert_eq!(m.decode_errors.get(),  0);
+        assert_eq!(m.decode_errors.get(), 0);
     }
 
     #[test]
     fn new_registry_all_histograms_empty() {
         let m = ConnectorMetrics::new();
-        assert_eq!(m.wire_latency.count(),       0);
+        assert_eq!(m.wire_latency.count(), 0);
         assert_eq!(m.processing_latency.count(), 0);
         assert_eq!(m.end_to_end_latency.count(), 0);
     }
@@ -197,8 +190,8 @@ mod tests {
         m.reconnects.increment();
         m.stale_books.add(3);
         m.sequence_gaps.add(2);
-        assert_eq!(m.reconnects.get(),    1);
-        assert_eq!(m.stale_books.get(),   3);
+        assert_eq!(m.reconnects.get(), 1);
+        assert_eq!(m.stale_books.get(), 3);
         assert_eq!(m.sequence_gaps.get(), 2);
         assert_eq!(m.offer_failures.get(), 0); // untouched
     }
@@ -206,16 +199,16 @@ mod tests {
     #[test]
     fn latency_hops_recorded_independently() {
         let m = ConnectorMetrics::new();
-        m.wire_latency.record(10_000);       // 10µs
+        m.wire_latency.record(10_000); // 10µs
         m.processing_latency.record(50_000); // 50µs
         m.end_to_end_latency.record(60_000); // 60µs
 
-        assert_eq!(m.wire_latency.count(),       1);
+        assert_eq!(m.wire_latency.count(), 1);
         assert_eq!(m.processing_latency.count(), 1);
         assert_eq!(m.end_to_end_latency.count(), 1);
-        assert_eq!(m.wire_latency.sum(),         10_000);
-        assert_eq!(m.processing_latency.sum(),   50_000);
-        assert_eq!(m.end_to_end_latency.sum(),   60_000);
+        assert_eq!(m.wire_latency.sum(), 10_000);
+        assert_eq!(m.processing_latency.sum(), 50_000);
+        assert_eq!(m.end_to_end_latency.sum(), 60_000);
     }
 
     #[test]

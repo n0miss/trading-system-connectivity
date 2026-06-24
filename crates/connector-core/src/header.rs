@@ -24,24 +24,24 @@ pub const TS_NONE: i64 = 0;
 pub const HEADER_SIZE: usize = 1 + 1 + 1 + 1   // version, msg_type, venue, market
                              + 4 + 4 + 4        // instrument_id, connection_id, instance_id
                              + 8                // sequence_number
-                             + 8 + 8 + 8 + 8;  // timestamps
+                             + 8 + 8 + 8 + 8; // timestamps
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MessageHeader {
-    pub schema_version:   u8,
-    pub message_type:     MessageType,
-    pub venue_id:         VenueId,
-    pub market_type:      MarketType,
-    pub instrument_id:    u32,
-    pub connection_id:    u32,
-    pub instance_id:      u32,
-    pub sequence_number:  u64,
+    pub schema_version: u8,
+    pub message_type: MessageType,
+    pub venue_id: VenueId,
+    pub market_type: MarketType,
+    pub instrument_id: u32,
+    pub connection_id: u32,
+    pub instance_id: u32,
+    pub sequence_number: u64,
     /// Nanoseconds since Unix epoch. TS_NONE when the exchange does not provide it.
     pub exchange_event_ts: i64,
     /// Nanoseconds since Unix epoch. TS_NONE when the exchange does not provide it.
-    pub exchange_tx_ts:   i64,
+    pub exchange_tx_ts: i64,
     /// Nanoseconds since Unix epoch: when the raw bytes arrived at the local socket.
-    pub local_recv_ts:    i64,
+    pub local_recv_ts: i64,
     /// Nanoseconds since Unix epoch: stamped immediately before the Aeron offer.
     pub local_publish_ts: i64,
 }
@@ -50,7 +50,10 @@ impl MessageHeader {
     /// Encode into the first [`HEADER_SIZE`] bytes of `buf`.
     pub fn encode_into(&self, buf: &mut [u8]) -> Result<(), Error> {
         if buf.len() < HEADER_SIZE {
-            return Err(Error::BufferTooShort { needed: HEADER_SIZE, have: buf.len() });
+            return Err(Error::BufferTooShort {
+                needed: HEADER_SIZE,
+                have: buf.len(),
+            });
         }
         buf[0] = self.schema_version;
         buf[1] = self.message_type as u8;
@@ -70,21 +73,24 @@ impl MessageHeader {
     /// Decode from the first [`HEADER_SIZE`] bytes of `buf`. Trailing bytes are ignored.
     pub fn decode(buf: &[u8]) -> Result<Self, Error> {
         if buf.len() < HEADER_SIZE {
-            return Err(Error::BufferTooShort { needed: HEADER_SIZE, have: buf.len() });
+            return Err(Error::BufferTooShort {
+                needed: HEADER_SIZE,
+                have: buf.len(),
+            });
         }
         // Safety: buf.len() >= 56 so all fixed slices below are in-bounds.
         Ok(Self {
-            schema_version:   buf[0],
-            message_type:     MessageType::try_from(buf[1])?,
-            venue_id:         VenueId::try_from(buf[2])?,
-            market_type:      MarketType::try_from(buf[3])?,
-            instrument_id:    u32::from_le_bytes(buf[4..8].try_into().unwrap()),
-            connection_id:    u32::from_le_bytes(buf[8..12].try_into().unwrap()),
-            instance_id:      u32::from_le_bytes(buf[12..16].try_into().unwrap()),
-            sequence_number:  u64::from_le_bytes(buf[16..24].try_into().unwrap()),
+            schema_version: buf[0],
+            message_type: MessageType::try_from(buf[1])?,
+            venue_id: VenueId::try_from(buf[2])?,
+            market_type: MarketType::try_from(buf[3])?,
+            instrument_id: u32::from_le_bytes(buf[4..8].try_into().unwrap()),
+            connection_id: u32::from_le_bytes(buf[8..12].try_into().unwrap()),
+            instance_id: u32::from_le_bytes(buf[12..16].try_into().unwrap()),
+            sequence_number: u64::from_le_bytes(buf[16..24].try_into().unwrap()),
             exchange_event_ts: i64::from_le_bytes(buf[24..32].try_into().unwrap()),
-            exchange_tx_ts:   i64::from_le_bytes(buf[32..40].try_into().unwrap()),
-            local_recv_ts:    i64::from_le_bytes(buf[40..48].try_into().unwrap()),
+            exchange_tx_ts: i64::from_le_bytes(buf[32..40].try_into().unwrap()),
+            local_recv_ts: i64::from_le_bytes(buf[40..48].try_into().unwrap()),
             local_publish_ts: i64::from_le_bytes(buf[48..56].try_into().unwrap()),
         })
     }
@@ -96,17 +102,17 @@ mod tests {
 
     fn sample() -> MessageHeader {
         MessageHeader {
-            schema_version:   SCHEMA_VERSION,
-            message_type:     MessageType::BookDelta,
-            venue_id:         VenueId::BinanceSpot,
-            market_type:      MarketType::Spot,
-            instrument_id:    42,
-            connection_id:    7,
-            instance_id:      1,
-            sequence_number:  1_000_000,
+            schema_version: SCHEMA_VERSION,
+            message_type: MessageType::BookDelta,
+            venue_id: VenueId::BinanceSpot,
+            market_type: MarketType::Spot,
+            instrument_id: 42,
+            connection_id: 7,
+            instance_id: 1,
+            sequence_number: 1_000_000,
             exchange_event_ts: 1_700_000_000_123_456_789,
-            exchange_tx_ts:   TS_NONE,
-            local_recv_ts:    1_700_000_000_123_500_000,
+            exchange_tx_ts: TS_NONE,
+            local_recv_ts: 1_700_000_000_123_500_000,
             local_publish_ts: 1_700_000_000_123_510_000,
         }
     }
@@ -134,14 +140,26 @@ mod tests {
         let hdr = sample();
         let mut buf = [0u8; HEADER_SIZE - 1];
         let err = hdr.encode_into(&mut buf).unwrap_err();
-        assert_eq!(err, Error::BufferTooShort { needed: HEADER_SIZE, have: HEADER_SIZE - 1 });
+        assert_eq!(
+            err,
+            Error::BufferTooShort {
+                needed: HEADER_SIZE,
+                have: HEADER_SIZE - 1
+            }
+        );
     }
 
     #[test]
     fn decode_buffer_too_short() {
         let buf = [0u8; HEADER_SIZE - 1];
         let err = MessageHeader::decode(&buf).unwrap_err();
-        assert_eq!(err, Error::BufferTooShort { needed: HEADER_SIZE, have: HEADER_SIZE - 1 });
+        assert_eq!(
+            err,
+            Error::BufferTooShort {
+                needed: HEADER_SIZE,
+                have: HEADER_SIZE - 1
+            }
+        );
     }
 
     #[test]
@@ -187,12 +205,12 @@ mod tests {
     #[test]
     fn futures_venue_round_trip() {
         let mut hdr = sample();
-        hdr.venue_id    = VenueId::BinanceFutures;
+        hdr.venue_id = VenueId::BinanceFutures;
         hdr.market_type = MarketType::UsdmFutures;
         let mut buf = [0u8; HEADER_SIZE];
         hdr.encode_into(&mut buf).unwrap();
         let decoded = MessageHeader::decode(&buf).unwrap();
-        assert_eq!(decoded.venue_id,    VenueId::BinanceFutures);
+        assert_eq!(decoded.venue_id, VenueId::BinanceFutures);
         assert_eq!(decoded.market_type, MarketType::UsdmFutures);
     }
 
@@ -200,10 +218,24 @@ mod tests {
     fn all_message_types_round_trip() {
         use MessageType::*;
         let all = [
-            InstrumentDefinition, TradingStatus, BookSnapshot, BookDelta,
-            BestBidOffer, Trade, MarkPrice, FundingRate, Liquidation,
-            OpenInterest, AccountUpdate, OrderUpdate, Heartbeat,
-            FeedStatus, GapDetected, BookStale, BookRecovered, BookChecksum,
+            InstrumentDefinition,
+            TradingStatus,
+            BookSnapshot,
+            BookDelta,
+            BestBidOffer,
+            Trade,
+            MarkPrice,
+            FundingRate,
+            Liquidation,
+            OpenInterest,
+            AccountUpdate,
+            OrderUpdate,
+            Heartbeat,
+            FeedStatus,
+            GapDetected,
+            BookStale,
+            BookRecovered,
+            BookChecksum,
         ];
         for mt in all {
             let mut hdr = sample();
@@ -226,6 +258,9 @@ mod tests {
         hdr.sequence_number = u64::MAX;
         let mut buf = [0u8; HEADER_SIZE];
         hdr.encode_into(&mut buf).unwrap();
-        assert_eq!(MessageHeader::decode(&buf).unwrap().sequence_number, u64::MAX);
+        assert_eq!(
+            MessageHeader::decode(&buf).unwrap().sequence_number,
+            u64::MAX
+        );
     }
 }

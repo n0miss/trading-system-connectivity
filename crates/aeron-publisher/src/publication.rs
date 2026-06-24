@@ -54,8 +54,12 @@ pub trait Publication: Send {
 }
 
 impl<P: Publication + ?Sized> Publication for Box<P> {
-    fn offer(&mut self, bytes: &[u8]) -> OfferResult { (**self).offer(bytes) }
-    fn is_connected(&self) -> bool { (**self).is_connected() }
+    fn offer(&mut self, bytes: &[u8]) -> OfferResult {
+        (**self).offer(bytes)
+    }
+    fn is_connected(&self) -> bool {
+        (**self).is_connected()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -69,17 +73,19 @@ impl<P: Publication + ?Sized> Publication for Box<P> {
 #[derive(Debug, Default)]
 pub struct NullPublication {
     pub messages_offered: u64,
-    pub bytes_offered:    u64,
+    pub bytes_offered: u64,
 }
 
 impl Publication for NullPublication {
     fn offer(&mut self, bytes: &[u8]) -> OfferResult {
         self.messages_offered += 1;
-        self.bytes_offered    += bytes.len() as u64;
+        self.bytes_offered += bytes.len() as u64;
         OfferResult::Ok(self.bytes_offered as i64)
     }
 
-    fn is_connected(&self) -> bool { true }
+    fn is_connected(&self) -> bool {
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -113,12 +119,14 @@ impl Publication for ChannelPublication {
                 self.position += bytes.len() as i64;
                 OfferResult::Ok(self.position)
             }
-            Err(mpsc::TrySendError::Full(_))         => OfferResult::BackPressured,
+            Err(mpsc::TrySendError::Full(_)) => OfferResult::BackPressured,
             Err(mpsc::TrySendError::Disconnected(_)) => OfferResult::Closed,
         }
     }
 
-    fn is_connected(&self) -> bool { true }
+    fn is_connected(&self) -> bool {
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -146,8 +154,14 @@ unsafe impl Send for AeronClientPublication {}
 
 #[cfg(feature = "aeron")]
 impl AeronClientPublication {
-    pub(crate) fn new(inner: rusteron_client::AeronPublication, aeron: rusteron_client::Aeron) -> Self {
-        Self { inner, _aeron: aeron }
+    pub(crate) fn new(
+        inner: rusteron_client::AeronPublication,
+        aeron: rusteron_client::Aeron,
+    ) -> Self {
+        Self {
+            inner,
+            _aeron: aeron,
+        }
     }
 }
 
@@ -157,11 +171,11 @@ impl Publication for AeronClientPublication {
         let pos = self.inner.offer_once(bytes, |_: *mut u8, _: usize| 0i64);
         match pos {
             n if n >= 0 => OfferResult::Ok(n),
-            -2          => OfferResult::BackPressured,
-            -3          => OfferResult::AdminAction,
-            -4          => OfferResult::Closed,
-            -5          => OfferResult::MaxPositionExceeded,
-            _           => OfferResult::BackPressured, // -1 NOT_CONNECTED: treat as transient
+            -2 => OfferResult::BackPressured,
+            -3 => OfferResult::AdminAction,
+            -4 => OfferResult::Closed,
+            -5 => OfferResult::MaxPositionExceeded,
+            _ => OfferResult::BackPressured, // -1 NOT_CONNECTED: treat as transient
         }
     }
 
@@ -205,7 +219,7 @@ mod tests {
     fn channel_publication_receiver_gets_bytes() {
         let (mut pub_, rx) = ChannelPublication::new(4);
         let payload = b"encoded_message";
-        let result  = pub_.offer(payload);
+        let result = pub_.offer(payload);
         assert!(result.is_ok());
         assert_eq!(rx.recv().unwrap(), payload.as_slice());
     }

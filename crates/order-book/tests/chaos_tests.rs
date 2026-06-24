@@ -15,14 +15,11 @@
 //! BACKPRESSURE_DEGRADE =      1 000 000 ns   (1 ms)  §5.3 — Aeron degrade.
 
 use connector_core::{
-    BookDelta, BookSnapshot, BookStaleReason, Heartbeat, MarketType, MessageHeader,
-    MessageType, NormalizedMessage, PriceLevel, VenueId, HEADER_SIZE, SCHEMA_VERSION,
-    TS_NONE, UPDATE_ID_NONE,
+    BookDelta, BookSnapshot, BookStaleReason, Heartbeat, MarketType, MessageHeader, MessageType,
+    NormalizedMessage, PriceLevel, VenueId, HEADER_SIZE, SCHEMA_VERSION, TS_NONE, UPDATE_ID_NONE,
 };
 use connector_order_book::{harness::SyntheticHarness, OrderBook};
-use connector_replay::{
-    FaultConfig, PollResult, RecordedFrame, ReplayMode, Replayer, SourceKind,
-};
+use connector_replay::{FaultConfig, PollResult, RecordedFrame, ReplayMode, Replayer, SourceKind};
 
 // ---------------------------------------------------------------------------
 // SLA constants — §7.3
@@ -47,25 +44,25 @@ mod sla {
 
 fn make_header(msg_type: MessageType) -> MessageHeader {
     MessageHeader {
-        schema_version:    SCHEMA_VERSION,
-        message_type:      msg_type,
-        venue_id:          VenueId::BinanceSpot,
-        market_type:       MarketType::Spot,
-        instrument_id:     0,
-        connection_id:     0,
-        instance_id:       0,
-        sequence_number:   0,
+        schema_version: SCHEMA_VERSION,
+        message_type: msg_type,
+        venue_id: VenueId::BinanceSpot,
+        market_type: MarketType::Spot,
+        instrument_id: 0,
+        connection_id: 0,
+        instance_id: 0,
+        sequence_number: 0,
         exchange_event_ts: TS_NONE,
-        exchange_tx_ts:    TS_NONE,
-        local_recv_ts:     TS_NONE,
-        local_publish_ts:  TS_NONE,
+        exchange_tx_ts: TS_NONE,
+        local_recv_ts: TS_NONE,
+        local_publish_ts: TS_NONE,
     }
 }
 
 fn snap(bids: Vec<PriceLevel>, asks: Vec<PriceLevel>, uid: u64) -> BookSnapshot {
     BookSnapshot {
-        header:    make_header(MessageType::BookSnapshot),
-        symbol:    "BTCUSDT".into(),
+        header: make_header(MessageType::BookSnapshot),
+        symbol: "BTCUSDT".into(),
         update_id: uid,
         bids,
         asks,
@@ -74,21 +71,33 @@ fn snap(bids: Vec<PriceLevel>, asks: Vec<PriceLevel>, uid: u64) -> BookSnapshot 
 
 fn delta(uid: u64) -> BookDelta {
     BookDelta {
-        header:          make_header(MessageType::BookDelta),
-        symbol:          "BTCUSDT".into(),
+        header: make_header(MessageType::BookDelta),
+        symbol: "BTCUSDT".into(),
         first_update_id: uid,
         final_update_id: uid,
-        prev_update_id:  UPDATE_ID_NONE,
-        bids:            vec![PriceLevel { price: 99_000, qty: 1 }],
-        asks:            vec![PriceLevel { price: 101_000, qty: 1 }],
+        prev_update_id: UPDATE_ID_NONE,
+        bids: vec![PriceLevel {
+            price: 99_000,
+            qty: 1,
+        }],
+        asks: vec![PriceLevel {
+            price: 101_000,
+            qty: 1,
+        }],
     }
 }
 
 fn healthy_book(n_deltas: u64) -> OrderBook {
     let mut book = OrderBook::new("BTCUSDT");
     book.apply_snapshot(&snap(
-        vec![PriceLevel { price: 99_000, qty: 100 }],
-        vec![PriceLevel { price: 101_000, qty: 100 }],
+        vec![PriceLevel {
+            price: 99_000,
+            qty: 100,
+        }],
+        vec![PriceLevel {
+            price: 101_000,
+            qty: 100,
+        }],
         1,
     ));
     for uid in 2..=n_deltas + 1 {
@@ -99,12 +108,18 @@ fn healthy_book(n_deltas: u64) -> OrderBook {
 
 /// Encode a `Heartbeat` into bytes; panics on encoding failure.
 fn encoded_heartbeat(ts_ns: i64) -> RecordedFrame {
-    let hb = Heartbeat { header: make_header(MessageType::Heartbeat) };
+    let hb = Heartbeat {
+        header: make_header(MessageType::Heartbeat),
+    };
     let mut buf = vec![0u8; HEADER_SIZE];
     hb.header.encode_into(&mut buf).unwrap();
     buf[0] = SCHEMA_VERSION;
     buf[1] = MessageType::Heartbeat as u8;
-    RecordedFrame { captured_at_ns: ts_ns, payload: buf, source_kind: SourceKind::NormalizedMessage }
+    RecordedFrame {
+        captured_at_ns: ts_ns,
+        payload: buf,
+        source_kind: SourceKind::NormalizedMessage,
+    }
 }
 
 /// Encode a `BookDelta` into bytes.
@@ -113,7 +128,11 @@ fn encoded_delta_frame(ts_ns: i64, uid: u64) -> RecordedFrame {
     let mut buf = vec![0u8; 512];
     let n = d.encode_into(&mut buf).unwrap();
     buf.truncate(n);
-    RecordedFrame { captured_at_ns: ts_ns, payload: buf, source_kind: SourceKind::NormalizedMessage }
+    RecordedFrame {
+        captured_at_ns: ts_ns,
+        payload: buf,
+        source_kind: SourceKind::NormalizedMessage,
+    }
 }
 
 /// Virtual monotonic clock to drive SLA assertions without real time.
@@ -122,11 +141,21 @@ struct Clock {
 }
 
 impl Clock {
-    fn new() -> Self { Self { ns: 0 } }
-    fn advance_ms(&mut self, ms: i64) { self.ns += ms * 1_000_000; }
-    fn advance_s(&mut self, s: i64)   { self.ns += s * 1_000_000_000; }
-    fn now(&self) -> i64              { self.ns }
-    fn elapsed_since(&self, t: i64) -> i64 { self.ns - t }
+    fn new() -> Self {
+        Self { ns: 0 }
+    }
+    fn advance_ms(&mut self, ms: i64) {
+        self.ns += ms * 1_000_000;
+    }
+    fn advance_s(&mut self, s: i64) {
+        self.ns += s * 1_000_000_000;
+    }
+    fn now(&self) -> i64 {
+        self.ns
+    }
+    fn elapsed_since(&self, t: i64) -> i64 {
+        self.ns - t
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +166,7 @@ impl Clock {
 #[test]
 fn chaos_sequence_gap_recovery_within_sla() {
     let mut book = healthy_book(50);
-    let mut clk  = Clock::new();
+    let mut clk = Clock::new();
 
     clk.advance_s(1);
     let stale_ts = clk.now();
@@ -146,8 +175,14 @@ fn chaos_sequence_gap_recovery_within_sla() {
 
     clk.advance_s(4); // now T=5s
     book.apply_snapshot(&snap(
-        vec![PriceLevel { price: 99_500, qty: 200 }],
-        vec![PriceLevel { price: 100_500, qty: 200 }],
+        vec![PriceLevel {
+            price: 99_500,
+            qty: 200,
+        }],
+        vec![PriceLevel {
+            price: 100_500,
+            qty: 200,
+        }],
         100,
     ));
     book.mark_recovered();
@@ -166,7 +201,7 @@ fn chaos_sequence_gap_recovery_within_sla() {
 #[test]
 fn chaos_sequence_gap_recovery_at_edge_of_sla() {
     let mut book = healthy_book(10);
-    let mut clk  = Clock::new();
+    let mut clk = Clock::new();
 
     let stale_ts = clk.now();
     book.mark_stale(BookStaleReason::SequenceGap);
@@ -188,7 +223,7 @@ fn chaos_sequence_gap_recovery_at_edge_of_sla() {
 #[test]
 fn chaos_multiple_reconnect_cycles_within_sla() {
     let mut book = healthy_book(5);
-    let mut clk  = Clock::new();
+    let mut clk = Clock::new();
 
     for cycle in 0..5 {
         clk.advance_ms(1_000 * (cycle + 1)); // gap grows per cycle (still < 10s each)
@@ -197,8 +232,14 @@ fn chaos_multiple_reconnect_cycles_within_sla() {
 
         clk.advance_ms(200); // 200 ms simulated REST latency
         book.apply_snapshot(&snap(
-            vec![PriceLevel { price: 99_000 + cycle as i64 * 10, qty: 1 }],
-            vec![PriceLevel { price: 101_000 + cycle as i64 * 10, qty: 1 }],
+            vec![PriceLevel {
+                price: 99_000 + cycle as i64 * 10,
+                qty: 1,
+            }],
+            vec![PriceLevel {
+                price: 101_000 + cycle as i64 * 10,
+                qty: 1,
+            }],
             100 + cycle as u64,
         ));
         book.mark_recovered();
@@ -219,7 +260,7 @@ fn chaos_multiple_reconnect_cycles_within_sla() {
 #[test]
 fn chaos_stale_book_survives_many_deltas_before_recovery() {
     let mut book = healthy_book(10);
-    let mut clk  = Clock::new();
+    let mut clk = Clock::new();
 
     book.mark_stale(BookStaleReason::SequenceGap);
     let stale_ts = clk.now();
@@ -232,8 +273,14 @@ fn chaos_stale_book_survives_many_deltas_before_recovery() {
 
     clk.advance_s(7);
     book.apply_snapshot(&snap(
-        vec![PriceLevel { price: 98_000, qty: 50 }],
-        vec![PriceLevel { price: 102_000, qty: 50 }],
+        vec![PriceLevel {
+            price: 98_000,
+            qty: 50,
+        }],
+        vec![PriceLevel {
+            price: 102_000,
+            qty: 50,
+        }],
         600,
     ));
     book.mark_recovered();
@@ -250,10 +297,16 @@ fn chaos_stale_book_survives_many_deltas_before_recovery() {
 fn chaos_large_book_stale_and_recover_within_sla() {
     let mut book = OrderBook::new("BTCUSDT");
     let bid_levels: Vec<PriceLevel> = (1..=500)
-        .map(|i| PriceLevel { price: 99_000 - i * 10, qty: i })
+        .map(|i| PriceLevel {
+            price: 99_000 - i * 10,
+            qty: i,
+        })
         .collect();
     let ask_levels: Vec<PriceLevel> = (1..=500)
-        .map(|i| PriceLevel { price: 101_000 + i * 10, qty: i })
+        .map(|i| PriceLevel {
+            price: 101_000 + i * 10,
+            qty: i,
+        })
         .collect();
     book.apply_snapshot(&snap(bid_levels, ask_levels, 1));
     assert_eq!(book.bid_depth(), 500);
@@ -263,15 +316,25 @@ fn chaos_large_book_stale_and_recover_within_sla() {
     book.mark_stale(BookStaleReason::SequenceGap);
 
     clk.advance_s(3);
-    let new_bid = vec![PriceLevel { price: 99_000, qty: 10 }];
-    let new_ask = vec![PriceLevel { price: 101_000, qty: 10 }];
+    let new_bid = vec![PriceLevel {
+        price: 99_000,
+        qty: 10,
+    }];
+    let new_ask = vec![PriceLevel {
+        price: 101_000,
+        qty: 10,
+    }];
     book.apply_snapshot(&snap(new_bid, new_ask, 1_000));
     book.mark_recovered();
 
     let elapsed = clk.elapsed_since(stale_ts);
     assert!(elapsed < sla::RECOVERY_WINDOW_NS);
     assert!(!book.is_stale());
-    assert_eq!(book.bid_depth(), 1, "snapshot must fully replace prior 500 levels");
+    assert_eq!(
+        book.bid_depth(),
+        1,
+        "snapshot must fully replace prior 500 levels"
+    );
     assert_eq!(book.ask_depth(), 1);
 }
 
@@ -284,20 +347,32 @@ fn chaos_large_book_stale_and_recover_within_sla() {
 fn chaos_rest_snapshot_delayed_8s_within_sla() {
     let mut book = OrderBook::new("BTCUSDT");
     book.apply_snapshot(&snap(
-        vec![PriceLevel { price: 99_000, qty: 1 }],
-        vec![PriceLevel { price: 101_000, qty: 1 }],
+        vec![PriceLevel {
+            price: 99_000,
+            qty: 1,
+        }],
+        vec![PriceLevel {
+            price: 101_000,
+            qty: 1,
+        }],
         1,
     ));
 
-    let mut clk  = Clock::new();
+    let mut clk = Clock::new();
     let stale_ts = clk.now();
     book.mark_stale(BookStaleReason::SequenceGap);
 
     // Simulate slow REST endpoint — 8 seconds.
     clk.advance_s(8);
     book.apply_snapshot(&snap(
-        vec![PriceLevel { price: 99_900, qty: 5 }],
-        vec![PriceLevel { price: 100_100, qty: 5 }],
+        vec![PriceLevel {
+            price: 99_900,
+            qty: 5,
+        }],
+        vec![PriceLevel {
+            price: 100_100,
+            qty: 5,
+        }],
         100,
     ));
     book.mark_recovered();
@@ -318,7 +393,7 @@ fn chaos_rest_snapshot_delayed_11s_exceeds_sla() {
     let mut book = OrderBook::new("BTCUSDT");
     book.apply_snapshot(&snap(vec![], vec![], 1));
 
-    let mut clk  = Clock::new();
+    let mut clk = Clock::new();
     let stale_ts = clk.now();
     book.mark_stale(BookStaleReason::SequenceGap);
 
@@ -340,10 +415,14 @@ fn chaos_rest_snapshot_delayed_11s_exceeds_sla() {
 /// BBO degrade/stale thresholds (§2.3) are ordered and internally consistent.
 #[test]
 fn chaos_bbo_sla_constants_are_ordered() {
-    assert!(sla::BBO_DEGRADE_NS < sla::BBO_STALE_NS,
-        "degrade threshold must be less than stale threshold");
-    assert!(sla::BBO_STALE_NS < sla::RECOVERY_WINDOW_NS,
-        "stale threshold must be less than recovery window");
+    assert!(
+        sla::BBO_DEGRADE_NS < sla::BBO_STALE_NS,
+        "degrade threshold must be less than stale threshold"
+    );
+    assert!(
+        sla::BBO_STALE_NS < sla::RECOVERY_WINDOW_NS,
+        "stale threshold must be less than recovery window"
+    );
 }
 
 /// Backpressure thresholds (§5.3) are ordered.
@@ -400,13 +479,18 @@ fn chaos_book_checksum_message_type_is_rejected_by_normalized_decode() {
     buf[0] = SCHEMA_VERSION;
     buf[1] = MessageType::BookChecksum as u8;
     let result = NormalizedMessage::from_bytes(&buf);
-    assert!(result.is_err(), "BookChecksum must not decode as NormalizedMessage");
+    assert!(
+        result.is_err(),
+        "BookChecksum must not decode as NormalizedMessage"
+    );
 }
 
 /// A valid `Heartbeat` round-trips through encode → decode without error.
 #[test]
 fn chaos_valid_heartbeat_encodes_and_decodes() {
-    let hb = Heartbeat { header: make_header(MessageType::Heartbeat) };
+    let hb = Heartbeat {
+        header: make_header(MessageType::Heartbeat),
+    };
     let mut buf = vec![0u8; HEADER_SIZE];
     hb.header.encode_into(&mut buf).unwrap();
     buf[1] = MessageType::Heartbeat as u8; // ensure type byte is correct
@@ -419,14 +503,19 @@ fn chaos_valid_heartbeat_encodes_and_decodes() {
 /// Corrupting the message-type byte of a valid frame causes a decode error.
 #[test]
 fn chaos_corrupted_message_type_byte_is_decode_error() {
-    let hb = Heartbeat { header: make_header(MessageType::Heartbeat) };
+    let hb = Heartbeat {
+        header: make_header(MessageType::Heartbeat),
+    };
     let mut buf = vec![0u8; HEADER_SIZE];
     hb.header.encode_into(&mut buf).unwrap();
     buf[1] = MessageType::Heartbeat as u8;
 
     buf[1] = 99; // overwrite with unknown type
     let result = NormalizedMessage::from_bytes(&buf);
-    assert!(result.is_err(), "corrupted message_type byte must be a decode error");
+    assert!(
+        result.is_err(),
+        "corrupted message_type byte must be a decode error"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -442,8 +531,13 @@ fn chaos_drop_all_frames_replayer_reaches_done() {
     let n = frames.len();
 
     let mode = ReplayMode::FaultInjection {
-        inner:  Box::new(ReplayMode::AsFastAsPossible),
-        faults: FaultConfig { drop_percent: 100, corrupt_percent: 0, duplicate_percent: 0, seed: 42 },
+        inner: Box::new(ReplayMode::AsFastAsPossible),
+        faults: FaultConfig {
+            drop_percent: 100,
+            corrupt_percent: 0,
+            duplicate_percent: 0,
+            seed: 42,
+        },
     };
     let mut replayer = Replayer::new(frames, mode);
 
@@ -467,8 +561,13 @@ fn chaos_corrupt_all_frames_sets_was_corrupted_flag() {
     let n = frames.len();
 
     let mode = ReplayMode::FaultInjection {
-        inner:  Box::new(ReplayMode::AsFastAsPossible),
-        faults: FaultConfig { drop_percent: 0, corrupt_percent: 100, duplicate_percent: 0, seed: 7 },
+        inner: Box::new(ReplayMode::AsFastAsPossible),
+        faults: FaultConfig {
+            drop_percent: 0,
+            corrupt_percent: 100,
+            duplicate_percent: 0,
+            seed: 7,
+        },
     };
     let mut replayer = Replayer::new(frames, mode);
     let mut corrupted = 0usize;
@@ -477,7 +576,10 @@ fn chaos_corrupt_all_frames_sets_was_corrupted_flag() {
         match replayer.next_frame() {
             PollResult::Done => break,
             PollResult::Ready(ev) => {
-                assert!(ev.was_corrupted, "corrupt_percent=100 must flag every frame");
+                assert!(
+                    ev.was_corrupted,
+                    "corrupt_percent=100 must flag every frame"
+                );
                 corrupted += 1;
                 // Decode must either succeed or fail gracefully — must not panic.
                 let _ = NormalizedMessage::from_bytes(&ev.payload);
@@ -485,7 +587,10 @@ fn chaos_corrupt_all_frames_sets_was_corrupted_flag() {
             PollResult::NotYet { .. } => {}
         }
     }
-    assert_eq!(corrupted, n, "all {n} frames must be delivered (none dropped)");
+    assert_eq!(
+        corrupted, n,
+        "all {n} frames must be delivered (none dropped)"
+    );
     assert_eq!(replayer.stats().frames_corrupted, n as u64);
 }
 
@@ -498,14 +603,25 @@ fn chaos_duplicate_delta_delivery_preserves_book_invariants() {
         .collect();
 
     let mode = ReplayMode::FaultInjection {
-        inner:  Box::new(ReplayMode::AsFastAsPossible),
-        faults: FaultConfig { drop_percent: 0, corrupt_percent: 0, duplicate_percent: 100, seed: 13 },
+        inner: Box::new(ReplayMode::AsFastAsPossible),
+        faults: FaultConfig {
+            drop_percent: 0,
+            corrupt_percent: 0,
+            duplicate_percent: 100,
+            seed: 13,
+        },
     };
     let mut replayer = Replayer::new(frames, mode);
     let mut book = OrderBook::new("BTCUSDT");
     book.apply_snapshot(&snap(
-        vec![PriceLevel { price: 99_000, qty: 1 }],
-        vec![PriceLevel { price: 101_000, qty: 1 }],
+        vec![PriceLevel {
+            price: 99_000,
+            qty: 1,
+        }],
+        vec![PriceLevel {
+            price: 101_000,
+            qty: 1,
+        }],
         1,
     ));
 
@@ -526,7 +642,10 @@ fn chaos_duplicate_delta_delivery_preserves_book_invariants() {
         }
     }
 
-    assert!(events > 0, "at least some duplicate frames must have been delivered");
+    assert!(
+        events > 0,
+        "at least some duplicate frames must have been delivered"
+    );
     assert!(
         book.best_bid().is_some(),
         "book must remain non-empty after duplicate deltas"
@@ -534,8 +653,12 @@ fn chaos_duplicate_delta_delivery_preserves_book_invariants() {
     if let (Some(bb), Some(ba)) = (book.best_bid(), book.best_ask()) {
         assert!(bb.price < ba.price, "crossed book after duplicate delivery");
     }
-    for lvl in book.bids() { assert!(lvl.qty > 0, "zero-qty bid after duplicates"); }
-    for lvl in book.asks() { assert!(lvl.qty > 0, "zero-qty ask after duplicates"); }
+    for lvl in book.bids() {
+        assert!(lvl.qty > 0, "zero-qty bid after duplicates");
+    }
+    for lvl in book.asks() {
+        assert!(lvl.qty > 0, "zero-qty ask after duplicates");
+    }
 }
 
 /// Mixed faults (drop=10%, corrupt=10%, dup=10%): the harness must not
@@ -551,8 +674,13 @@ fn chaos_mixed_fault_injection_harness_stays_consistent() {
         .collect();
 
     let mode = ReplayMode::FaultInjection {
-        inner:  Box::new(ReplayMode::AsFastAsPossible),
-        faults: FaultConfig { drop_percent: 10, corrupt_percent: 10, duplicate_percent: 10, seed: 31337 },
+        inner: Box::new(ReplayMode::AsFastAsPossible),
+        faults: FaultConfig {
+            drop_percent: 10,
+            corrupt_percent: 10,
+            duplicate_percent: 10,
+            seed: 31337,
+        },
     };
     let mut replayer = Replayer::new(frames, mode);
 
@@ -581,7 +709,9 @@ fn chaos_mixed_fault_injection_harness_stays_consistent() {
     assert!(
         s.frames_dropped + s.frames_delivered >= 50,
         "stat accounting off: dropped={} delivered={} dup={}",
-        s.frames_dropped, s.frames_delivered, s.frames_duplicated,
+        s.frames_dropped,
+        s.frames_delivered,
+        s.frames_duplicated,
     );
 }
 

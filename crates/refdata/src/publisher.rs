@@ -35,7 +35,7 @@ pub enum RefDataPublishError {
 /// [`broadcast`]: RefDataPublisher::broadcast
 pub struct RefDataPublisher<P> {
     publisher: ShardedPublisher<P>,
-    buf:       Vec<u8>,
+    buf: Vec<u8>,
 }
 
 impl<P: Publication> RefDataPublisher<P> {
@@ -69,7 +69,7 @@ impl<P: Publication> RefDataPublisher<P> {
     pub fn offer_to_shard(
         &mut self,
         shard_id: u32,
-        event:    &RefDataEvent,
+        event: &RefDataEvent,
     ) -> Result<u32, RefDataPublishError> {
         let def = event.definition();
         let n = def.encode_into(&mut self.buf)?;
@@ -103,33 +103,33 @@ mod tests {
         SCHEMA_VERSION, TS_NONE,
     };
 
-    use crate::event::{RefDataEvent, make_trading_status};
+    use crate::event::{make_trading_status, RefDataEvent};
 
     fn make_def(symbol: &str, is_trading: bool) -> InstrumentDefinition {
         InstrumentDefinition {
             header: MessageHeader {
-                schema_version:    SCHEMA_VERSION,
-                message_type:      MessageType::InstrumentDefinition,
-                venue_id:          VenueId::BinanceSpot,
-                market_type:       MarketType::Spot,
-                instrument_id:     1,
-                connection_id:     0,
-                instance_id:       1,
-                sequence_number:   0,
+                schema_version: SCHEMA_VERSION,
+                message_type: MessageType::InstrumentDefinition,
+                venue_id: VenueId::BinanceSpot,
+                market_type: MarketType::Spot,
+                instrument_id: 1,
+                connection_id: 0,
+                instance_id: 1,
+                sequence_number: 0,
                 exchange_event_ts: TS_NONE,
-                exchange_tx_ts:    TS_NONE,
-                local_recv_ts:     TS_NONE,
-                local_publish_ts:  TS_NONE,
+                exchange_tx_ts: TS_NONE,
+                local_recv_ts: TS_NONE,
+                local_publish_ts: TS_NONE,
             },
-            symbol:        symbol.to_string(),
-            base_asset:    "BTC".to_string(),
-            quote_asset:   "USDT".to_string(),
-            price_scale:   2,
-            qty_scale:     3,
-            tick_size:     100,
-            step_size:     10,
-            min_qty:       10,
-            min_notional:  10_000,
+            symbol: symbol.to_string(),
+            base_asset: "BTC".to_string(),
+            quote_asset: "USDT".to_string(),
+            price_scale: 2,
+            qty_scale: 3,
+            tick_size: 100,
+            step_size: 10,
+            min_qty: 10,
+            min_notional: 10_000,
             contract_size: 0,
             is_trading,
         }
@@ -145,14 +145,22 @@ mod tests {
         let old = make_def(symbol, true);
         let mut new = make_def(symbol, true);
         new.tick_size = 200;
-        RefDataEvent::Updated { old, new, status: None }
+        RefDataEvent::Updated {
+            old,
+            new,
+            status: None,
+        }
     }
 
     fn updated_with_status(symbol: &str) -> RefDataEvent {
         let old = make_def(symbol, true);
         let new = make_def(symbol, false);
         let ts = make_trading_status(&new, 1);
-        RefDataEvent::Updated { old, new, status: Some(ts) }
+        RefDataEvent::Updated {
+            old,
+            new,
+            status: Some(ts),
+        }
     }
 
     // --- message counts ---
@@ -224,9 +232,9 @@ mod tests {
         let rx = rxs.get_mut(&0).unwrap();
         let def_bytes = rx.try_recv().unwrap();
         let decoded = InstrumentDefinition::decode(&def_bytes).unwrap();
-        assert_eq!(decoded.symbol,      "BTCUSDT");
+        assert_eq!(decoded.symbol, "BTCUSDT");
         assert_eq!(decoded.price_scale, 2);
-        assert_eq!(decoded.tick_size,   100);
+        assert_eq!(decoded.tick_size, 100);
         assert!(decoded.is_trading);
     }
 

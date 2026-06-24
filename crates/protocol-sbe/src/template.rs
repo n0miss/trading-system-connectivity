@@ -8,13 +8,13 @@ use crate::error::SbeError;
 #[repr(u16)]
 pub enum TemplateId {
     /// Individual trade event (JSON: `aggTrade` / `trade` streams).
-    TradesStream    = 0,
+    TradesStream = 0,
     /// Best bid and ask update (JSON: `bookTicker` stream).
-    BestBidAsk      = 1,
+    BestBidAsk = 1,
     /// Partial order book snapshot (JSON: `<symbol>@depth<N>` stream).
-    DepthSnapshot   = 2,
+    DepthSnapshot = 2,
     /// Incremental depth diff update (JSON: `<symbol>@depth@<ms>` stream).
-    DepthDiff       = 3,
+    DepthDiff = 3,
 }
 
 impl TemplateId {
@@ -72,9 +72,9 @@ mod tests {
     fn as_u16_round_trips() {
         for (raw, variant) in [
             (0u16, TemplateId::TradesStream),
-            (1,    TemplateId::BestBidAsk),
-            (2,    TemplateId::DepthSnapshot),
-            (3,    TemplateId::DepthDiff),
+            (1, TemplateId::BestBidAsk),
+            (2, TemplateId::DepthSnapshot),
+            (3, TemplateId::DepthDiff),
         ] {
             assert_eq!(variant.as_u16(), raw);
             assert_eq!(TemplateId::from_u16(raw).unwrap(), variant);

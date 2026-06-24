@@ -8,7 +8,6 @@
 ///
 /// The encoding and offer are both on the hot path, so no heap allocation
 /// is performed.  The caller keeps a single `ChecksumPublisher` per shard.
-
 use tracing::warn;
 
 use connector_aeron::publication::{OfferResult, Publication};
@@ -82,9 +81,9 @@ impl<P: Publication> ChecksumPublisher<P> {
     pub fn new(publication: P) -> Self {
         Self {
             publication,
-            buf:       [0u8; MAX_CHECKSUM_MSG_BYTES],
+            buf: [0u8; MAX_CHECKSUM_MSG_BYTES],
             published: 0,
-            failed:    0,
+            failed: 0,
         }
     }
 
@@ -104,11 +103,11 @@ impl<P: Publication> ChecksumPublisher<P> {
 
         let msg = BookChecksum {
             header,
-            symbol:    book.symbol().to_owned(),
+            symbol: book.symbol().to_owned(),
             update_id: book.last_update_id(),
             bid_depth: book.bid_depth() as u32,
             ask_depth: book.ask_depth() as u32,
-            checksum:  book.checksum(),
+            checksum: book.checksum(),
         };
 
         let n = match msg.encode_into(&mut self.buf) {
@@ -125,19 +124,25 @@ impl<P: Publication> ChecksumPublisher<P> {
         let result = self.publication.offer(&self.buf[..n]);
         match result {
             OfferResult::Ok(_) => self.published += 1,
-            _                  => self.failed    += 1,
+            _ => self.failed += 1,
         }
         result
     }
 
     /// Access the wrapped publication (e.g. to read stats from `NullPublication`).
-    pub fn publication(&self) -> &P { &self.publication }
+    pub fn publication(&self) -> &P {
+        &self.publication
+    }
 
     /// Unwrap the inner publication.
-    pub fn into_inner(self) -> P { self.publication }
+    pub fn into_inner(self) -> P {
+        self.publication
+    }
 
     /// Whether the underlying publication reports at least one connected subscriber.
-    pub fn is_connected(&self) -> bool { self.publication.is_connected() }
+    pub fn is_connected(&self) -> bool {
+        self.publication.is_connected()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -148,29 +153,29 @@ impl<P: Publication> ChecksumPublisher<P> {
 mod tests {
     use super::*;
     use connector_aeron::publication::{ChannelPublication, NullPublication, OfferResult};
-    use connector_core::{
-        BookChecksum, MarketType, MessageType, VenueId, SCHEMA_VERSION, TS_NONE,
-    };
+    use connector_core::{BookChecksum, MarketType, MessageType, VenueId, SCHEMA_VERSION, TS_NONE};
     use connector_order_book::OrderBook;
 
     fn test_header(instance_id: u32) -> MessageHeader {
         MessageHeader {
-            schema_version:    SCHEMA_VERSION,
-            message_type:      MessageType::BookChecksum,
-            venue_id:          VenueId::BinanceSpot,
-            market_type:       MarketType::Spot,
-            instrument_id:     1,
-            connection_id:     0,
+            schema_version: SCHEMA_VERSION,
+            message_type: MessageType::BookChecksum,
+            venue_id: VenueId::BinanceSpot,
+            market_type: MarketType::Spot,
+            instrument_id: 1,
+            connection_id: 0,
             instance_id,
-            sequence_number:   0,
+            sequence_number: 0,
             exchange_event_ts: TS_NONE,
-            exchange_tx_ts:    TS_NONE,
-            local_recv_ts:     TS_NONE,
-            local_publish_ts:  TS_NONE,
+            exchange_tx_ts: TS_NONE,
+            local_recv_ts: TS_NONE,
+            local_publish_ts: TS_NONE,
         }
     }
 
-    fn empty_book() -> OrderBook { OrderBook::new("BTCUSDT") }
+    fn empty_book() -> OrderBook {
+        OrderBook::new("BTCUSDT")
+    }
 
     // -----------------------------------------------------------------------
     // Basic publish behaviour
@@ -178,7 +183,7 @@ mod tests {
 
     #[test]
     fn publish_on_null_publication_returns_ok() {
-        let mut cp   = ChecksumPublisher::new(NullPublication::default());
+        let mut cp = ChecksumPublisher::new(NullPublication::default());
         let result = cp.publish(&empty_book(), test_header(1));
         assert!(result.is_ok());
     }
@@ -189,7 +194,7 @@ mod tests {
         cp.publish(&empty_book(), test_header(1));
         cp.publish(&empty_book(), test_header(1));
         assert_eq!(cp.published, 2);
-        assert_eq!(cp.failed,    0);
+        assert_eq!(cp.failed, 0);
     }
 
     #[test]
@@ -198,7 +203,7 @@ mod tests {
         let mut cp = ChecksumPublisher::new(pub_);
         let result = cp.publish(&empty_book(), test_header(1));
         assert_eq!(result, OfferResult::BackPressured);
-        assert_eq!(cp.failed,    1);
+        assert_eq!(cp.failed, 1);
         assert_eq!(cp.published, 0);
     }
 
@@ -215,15 +220,21 @@ mod tests {
         // Apply some levels so the checksum is non-trivial.
         use connector_core::{BookDelta, PriceLevel, UPDATE_ID_NONE};
         let delta = BookDelta {
-            header:          test_header(1),
-            symbol:          "ETHUSDT".into(),
-            price_scale:     2,
-            qty_scale:       3,
+            header: test_header(1),
+            symbol: "ETHUSDT".into(),
+            price_scale: 2,
+            qty_scale: 3,
             first_update_id: 100,
             final_update_id: 100,
-            prev_update_id:  UPDATE_ID_NONE,
-            bids:            vec![PriceLevel { price: 3000_00, qty: 10 }],
-            asks:            vec![PriceLevel { price: 3001_00, qty: 5  }],
+            prev_update_id: UPDATE_ID_NONE,
+            bids: vec![PriceLevel {
+                price: 3000_00,
+                qty: 10,
+            }],
+            asks: vec![PriceLevel {
+                price: 3001_00,
+                qty: 5,
+            }],
         };
         book.apply_delta(&delta);
 
@@ -237,13 +248,13 @@ mod tests {
         let bytes = rx.recv().unwrap();
         let decoded = BookChecksum::decode(&bytes).expect("decode must succeed");
 
-        assert_eq!(decoded.symbol,    "ETHUSDT");
+        assert_eq!(decoded.symbol, "ETHUSDT");
         assert_eq!(decoded.update_id, 100);
         assert_eq!(decoded.bid_depth, 1);
         assert_eq!(decoded.ask_depth, 1);
-        assert_eq!(decoded.checksum,  book.checksum());
+        assert_eq!(decoded.checksum, book.checksum());
         assert_eq!(decoded.header.sequence_number, 42);
-        assert_eq!(decoded.header.message_type,    MessageType::BookChecksum);
+        assert_eq!(decoded.header.message_type, MessageType::BookChecksum);
     }
 
     #[test]
@@ -273,7 +284,7 @@ mod tests {
 
         cp.publish(&empty_book(), test_header(1)); // instance 1 = passive
 
-        let bytes   = rx.recv().unwrap();
+        let bytes = rx.recv().unwrap();
         let decoded = BookChecksum::decode(&bytes).unwrap();
         assert_eq!(decoded.header.instance_id, 1);
     }
@@ -286,7 +297,7 @@ mod tests {
         let book = empty_book();
         cp.publish(&book, test_header(1));
 
-        let bytes   = rx.recv().unwrap();
+        let bytes = rx.recv().unwrap();
         let decoded = BookChecksum::decode(&bytes).unwrap();
         assert_eq!(decoded.checksum, book.checksum());
     }
@@ -300,31 +311,33 @@ mod tests {
 
         // First publish — empty book
         cp.publish(&book, test_header(1));
-        let bytes_1   = rx.recv().unwrap();
+        let bytes_1 = rx.recv().unwrap();
         let decoded_1 = BookChecksum::decode(&bytes_1).unwrap();
 
         // Apply a delta
         use connector_core::{BookDelta, PriceLevel, UPDATE_ID_NONE};
         let d = BookDelta {
-            header:          test_header(1),
-            symbol:          "BTCUSDT".into(),
-            price_scale:     2,
-            qty_scale:       3,
+            header: test_header(1),
+            symbol: "BTCUSDT".into(),
+            price_scale: 2,
+            qty_scale: 3,
             first_update_id: 1,
             final_update_id: 1,
-            prev_update_id:  UPDATE_ID_NONE,
-            bids:            vec![PriceLevel { price: 100, qty: 5 }],
-            asks:            vec![],
+            prev_update_id: UPDATE_ID_NONE,
+            bids: vec![PriceLevel { price: 100, qty: 5 }],
+            asks: vec![],
         };
         book.apply_delta(&d);
 
         // Second publish — book has changed
         cp.publish(&book, test_header(1));
-        let bytes_2   = rx.recv().unwrap();
+        let bytes_2 = rx.recv().unwrap();
         let decoded_2 = BookChecksum::decode(&bytes_2).unwrap();
 
-        assert_ne!(decoded_1.checksum, decoded_2.checksum,
-            "checksum must differ after book update");
+        assert_ne!(
+            decoded_1.checksum, decoded_2.checksum,
+            "checksum must differ after book update"
+        );
         assert_eq!(decoded_2.bid_depth, 1);
         assert_eq!(decoded_2.update_id, 1);
     }
@@ -341,7 +354,7 @@ mod tests {
 
     #[test]
     fn into_inner_returns_publication() {
-        let cp  = ChecksumPublisher::new(NullPublication::default());
+        let cp = ChecksumPublisher::new(NullPublication::default());
         let pub_ = cp.into_inner();
         assert_eq!(pub_.messages_offered, 0);
     }

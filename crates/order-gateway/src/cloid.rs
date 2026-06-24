@@ -35,9 +35,11 @@ impl ClientOrderId {
     pub fn parse_counter(&self) -> Option<u64> {
         let mut parts = self.0.splitn(3, '-');
         let prefix = parts.next()?;
-        let _inst  = parts.next()?;
-        let ctr    = parts.next()?;
-        if prefix != PREFIX { return None; }
+        let _inst = parts.next()?;
+        let ctr = parts.next()?;
+        if prefix != PREFIX {
+            return None;
+        }
         u64::from_str_radix(ctr, 16).ok()
     }
 
@@ -45,8 +47,10 @@ impl ClientOrderId {
     pub fn parse_instance(&self) -> Option<u32> {
         let mut parts = self.0.splitn(3, '-');
         let prefix = parts.next()?;
-        let inst   = parts.next()?;
-        if prefix != PREFIX { return None; }
+        let inst = parts.next()?;
+        if prefix != PREFIX {
+            return None;
+        }
         u32::from_str_radix(inst, 16).ok()
     }
 }
@@ -64,20 +68,26 @@ impl std::fmt::Display for ClientOrderId {
 /// journal (pass the highest counter seen in any recovered `OrderRequested` entry).
 pub struct ClientOrderIdGenerator {
     instance_id: u32,
-    counter:     u64,
+    counter: u64,
 }
 
 impl ClientOrderIdGenerator {
     /// Create a generator starting at counter = 0.
     pub fn new(instance_id: u32) -> Self {
-        Self { instance_id, counter: 0 }
+        Self {
+            instance_id,
+            counter: 0,
+        }
     }
 
     /// Create a generator that resumes after `last_counter`.
     ///
     /// Use during recovery to guarantee no counter is reused even across restarts.
     pub fn with_start_after(instance_id: u32, last_counter: u64) -> Self {
-        Self { instance_id, counter: last_counter.saturating_add(1) }
+        Self {
+            instance_id,
+            counter: last_counter.saturating_add(1),
+        }
     }
 
     /// Issue the next `ClientOrderId` and advance the internal counter.
@@ -116,8 +126,10 @@ mod tests {
         let mut gen = ClientOrderIdGenerator::new(0);
         let cloid = gen.next();
         assert_eq!(
-            cloid.as_str().len(), 24,
-            "cloid must be exactly 24 chars, got: {:?}", cloid.as_str()
+            cloid.as_str().len(),
+            24,
+            "cloid must be exactly 24 chars, got: {:?}",
+            cloid.as_str()
         );
     }
 
@@ -128,7 +140,8 @@ mod tests {
             let cloid = gen.next();
             assert!(
                 cloid.as_str().len() <= 36,
-                "cloid too long: {}", cloid.as_str().len()
+                "cloid too long: {}",
+                cloid.as_str().len()
             );
         }
     }
@@ -141,7 +154,8 @@ mod tests {
             for ch in cloid.as_str().chars() {
                 assert!(
                     ch.is_ascii_hexdigit() || ch == '-',
-                    "invalid char {ch:?} in cloid {:?}", cloid.as_str()
+                    "invalid char {ch:?} in cloid {:?}",
+                    cloid.as_str()
                 );
             }
         }
@@ -155,7 +169,8 @@ mod tests {
             assert_eq!(
                 cloid.parse_counter(),
                 Some(expected),
-                "counter round-trip failed for {:?}", cloid.as_str()
+                "counter round-trip failed for {:?}",
+                cloid.as_str()
             );
         }
     }

@@ -7,13 +7,17 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub struct Counter {
     pub(crate) name: &'static str,
     pub(crate) help: &'static str,
-    value:           AtomicU64,
+    value: AtomicU64,
 }
 
 impl Counter {
     /// Create a new counter initialised to zero.
     pub const fn new(name: &'static str, help: &'static str) -> Self {
-        Self { name, help, value: AtomicU64::new(0) }
+        Self {
+            name,
+            help,
+            value: AtomicU64::new(0),
+        }
     }
 
     /// Increment by one.
@@ -35,9 +39,13 @@ impl Counter {
     }
 
     /// Name used in Prometheus output (without the `_total` suffix).
-    pub fn name(&self) -> &'static str { self.name }
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
     /// Help text used in Prometheus output.
-    pub fn help(&self) -> &'static str { self.help }
+    pub fn help(&self) -> &'static str {
+        self.help
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -64,7 +72,9 @@ mod tests {
     #[test]
     fn multiple_increments_accumulate() {
         let c = Counter::new("test", "help");
-        for _ in 0..10 { c.increment(); }
+        for _ in 0..10 {
+            c.increment();
+        }
         assert_eq!(c.get(), 10);
     }
 

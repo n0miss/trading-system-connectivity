@@ -20,8 +20,8 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-pub const DEGRADE_NS: i64 = 250_000_000;    // 250 ms
-pub const STALE_NS:   i64 = 1_000_000_000;  // 1 s
+pub const DEGRADE_NS: i64 = 250_000_000; // 250 ms
+pub const STALE_NS: i64 = 1_000_000_000; // 1 s
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,8 +50,8 @@ pub struct BboValidator {
     /// Nanosecond timestamp of the first BBO event that disagreed with the
     /// book.  `None` when prices are in sync.
     mismatch_since: Option<i64>,
-    degrade_ns:     i64,
-    stale_ns:       i64,
+    degrade_ns: i64,
+    stale_ns: i64,
 }
 
 impl BboValidator {
@@ -62,7 +62,11 @@ impl BboValidator {
 
     /// Create a validator with custom thresholds (useful for tests).
     pub fn with_thresholds(degrade_ns: i64, stale_ns: i64) -> Self {
-        Self { mismatch_since: None, degrade_ns, stale_ns }
+        Self {
+            mismatch_since: None,
+            degrade_ns,
+            stale_ns,
+        }
     }
 
     // --- Core check ---------------------------------------------------------
@@ -77,11 +81,11 @@ impl BboValidator {
     /// * `bbo_ask_price`   — best ask price from the BBO stream (scaled i64).
     pub fn check(
         &mut self,
-        now_ns:         i64,
+        now_ns: i64,
         book_bid_price: Option<i64>,
         book_ask_price: Option<i64>,
-        bbo_bid_price:  i64,
-        bbo_ask_price:  i64,
+        bbo_bid_price: i64,
+        bbo_ask_price: i64,
     ) -> BboCheckResult {
         // Empty book — no data to compare; treat as OK and reset the timer.
         let (Some(bb), Some(ba)) = (book_bid_price, book_ask_price) else {
@@ -97,13 +101,17 @@ impl BboValidator {
         }
 
         // Mismatch — start or continue the timer.
-        let since       = *self.mismatch_since.get_or_insert(now_ns);
+        let since = *self.mismatch_since.get_or_insert(now_ns);
         let duration_ns = now_ns.saturating_sub(since);
 
         if duration_ns >= self.stale_ns {
-            BboCheckResult::MarkStale { mismatch_ns: duration_ns }
+            BboCheckResult::MarkStale {
+                mismatch_ns: duration_ns,
+            }
         } else if duration_ns >= self.degrade_ns {
-            BboCheckResult::Degrade { mismatch_ns: duration_ns }
+            BboCheckResult::Degrade {
+                mismatch_ns: duration_ns,
+            }
         } else {
             BboCheckResult::Ok
         }
@@ -118,9 +126,15 @@ impl BboValidator {
 
     // --- Accessors ----------------------------------------------------------
 
-    pub fn mismatch_since(&self) -> Option<i64> { self.mismatch_since }
-    pub fn degrade_ns(&self)     -> i64          { self.degrade_ns }
-    pub fn stale_ns(&self)       -> i64          { self.stale_ns }
+    pub fn mismatch_since(&self) -> Option<i64> {
+        self.mismatch_since
+    }
+    pub fn degrade_ns(&self) -> i64 {
+        self.degrade_ns
+    }
+    pub fn stale_ns(&self) -> i64 {
+        self.stale_ns
+    }
 }
 
 impl Default for BboValidator {
@@ -137,7 +151,7 @@ impl Default for BboValidator {
 mod tests {
     use super::*;
 
-    const MS:  i64 = 1_000_000;
+    const MS: i64 = 1_000_000;
     const SEC: i64 = 1_000_000_000;
 
     fn bv() -> BboValidator {
@@ -180,35 +194,26 @@ mod tests {
     #[test]
     fn empty_book_bid_returns_ok() {
         let mut v = bv();
-        assert_eq!(
-            v.check(0, None, Some(101), 100, 101),
-            BboCheckResult::Ok,
-        );
+        assert_eq!(v.check(0, None, Some(101), 100, 101), BboCheckResult::Ok,);
     }
 
     #[test]
     fn empty_book_ask_returns_ok() {
         let mut v = bv();
-        assert_eq!(
-            v.check(0, Some(100), None, 100, 101),
-            BboCheckResult::Ok,
-        );
+        assert_eq!(v.check(0, Some(100), None, 100, 101), BboCheckResult::Ok,);
     }
 
     #[test]
     fn both_none_returns_ok() {
         let mut v = bv();
-        assert_eq!(
-            v.check(0, None, None, 100, 101),
-            BboCheckResult::Ok,
-        );
+        assert_eq!(v.check(0, None, None, 100, 101), BboCheckResult::Ok,);
     }
 
     #[test]
     fn empty_book_clears_existing_mismatch_timer() {
         let mut v = bv();
         v.check(0, Some(100), Some(101), 200, 201); // mismatch starts
-        v.check(100 * MS, None, None, 200, 201);    // book empty — clears timer
+        v.check(100 * MS, None, None, 200, 201); // book empty — clears timer
         assert_eq!(v.mismatch_since(), None);
     }
 
@@ -236,7 +241,12 @@ mod tests {
         let mut v = bv();
         v.check(0, Some(100), Some(101), 200, 201);
         let r = v.check(250 * MS, Some(100), Some(101), 200, 201);
-        assert_eq!(r, BboCheckResult::Degrade { mismatch_ns: 250 * MS });
+        assert_eq!(
+            r,
+            BboCheckResult::Degrade {
+                mismatch_ns: 250 * MS
+            }
+        );
     }
 
     #[test]
@@ -244,7 +254,12 @@ mod tests {
         let mut v = bv();
         v.check(0, Some(100), Some(101), 200, 201);
         let r = v.check(999 * MS, Some(100), Some(101), 200, 201);
-        assert_eq!(r, BboCheckResult::Degrade { mismatch_ns: 999 * MS });
+        assert_eq!(
+            r,
+            BboCheckResult::Degrade {
+                mismatch_ns: 999 * MS
+            }
+        );
     }
 
     #[test]
@@ -273,7 +288,12 @@ mod tests {
         let mut v = bv();
         v.check(0, Some(100), Some(101), 200, 201);
         let r = v.check(2 * SEC, Some(100), Some(101), 200, 201);
-        assert_eq!(r, BboCheckResult::MarkStale { mismatch_ns: 2 * SEC });
+        assert_eq!(
+            r,
+            BboCheckResult::MarkStale {
+                mismatch_ns: 2 * SEC
+            }
+        );
     }
 
     #[test]
@@ -315,7 +335,12 @@ mod tests {
         let mut v = bv();
         v.check(0, Some(100), Some(101), 200, 101); // bid wrong, ask ok
         let r = v.check(250 * MS, Some(100), Some(101), 200, 101);
-        assert_eq!(r, BboCheckResult::Degrade { mismatch_ns: 250 * MS });
+        assert_eq!(
+            r,
+            BboCheckResult::Degrade {
+                mismatch_ns: 250 * MS
+            }
+        );
     }
 
     // --- Ask-only mismatch ---
@@ -325,7 +350,12 @@ mod tests {
         let mut v = bv();
         v.check(0, Some(100), Some(101), 100, 200); // ask wrong, bid ok
         let r = v.check(250 * MS, Some(100), Some(101), 100, 200);
-        assert_eq!(r, BboCheckResult::Degrade { mismatch_ns: 250 * MS });
+        assert_eq!(
+            r,
+            BboCheckResult::Degrade {
+                mismatch_ns: 250 * MS
+            }
+        );
     }
 
     // --- default / accessors ---
@@ -334,7 +364,7 @@ mod tests {
     fn default_matches_new() {
         let v = BboValidator::default();
         assert_eq!(v.degrade_ns(), DEGRADE_NS);
-        assert_eq!(v.stale_ns(),   STALE_NS);
+        assert_eq!(v.stale_ns(), STALE_NS);
         assert_eq!(v.mismatch_since(), None);
     }
 

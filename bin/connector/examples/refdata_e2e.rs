@@ -24,11 +24,11 @@ use connector_refdata::{RefDataPublisher, RefDataService};
 #[derive(Default)]
 struct VenueStats {
     instruments: u32,
-    trading:     u32,
-    added:       u32,
-    updated:     u32,
+    trading: u32,
+    added: u32,
+    updated: u32,
     /// Total Aeron offers across all shards (1–2 messages × N shards per event).
-    offers:      u32,
+    offers: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -36,9 +36,9 @@ struct VenueStats {
 // ---------------------------------------------------------------------------
 
 async fn run_venue(
-    name:        &str,
-    base_url:    &str,
-    venue_id:    VenueId,
+    name: &str,
+    base_url: &str,
+    venue_id: VenueId,
     market_type: MarketType,
 ) -> VenueStats {
     const SHARDS: &[u32] = &[0, 1];
@@ -62,18 +62,21 @@ async fn run_venue(
     stats.instruments = events.len() as u32;
 
     for event in &events {
-        if event.is_added()   { stats.added   += 1; }
-        if event.is_updated() { stats.updated += 1; }
-        if event.definition().is_trading { stats.trading += 1; }
+        if event.is_added() {
+            stats.added += 1;
+        }
+        if event.is_updated() {
+            stats.updated += 1;
+        }
+        if event.definition().is_trading {
+            stats.trading += 1;
+        }
 
         stats.offers += pub_.broadcast(event).expect("broadcast failed");
     }
 
     println!("  Instruments        : {}", stats.instruments);
-    println!(
-        "  Added / Updated    : {} / {}",
-        stats.added, stats.updated,
-    );
+    println!("  Added / Updated    : {} / {}", stats.added, stats.updated,);
     println!(
         "  Trading / Halted   : {} / {}",
         stats.trading,
@@ -97,18 +100,18 @@ async fn run_venue(
     if let Some(event) = events.first() {
         let def = event.definition();
         let mut buf = vec![0u8; 4096];
-        let n       = def.encode_into(&mut buf).expect("encode failed");
+        let n = def.encode_into(&mut buf).expect("encode failed");
         let decoded = InstrumentDefinition::decode(&buf[..n]).expect("decode failed");
 
-        assert_eq!(def.symbol,       decoded.symbol);
-        assert_eq!(def.base_asset,   decoded.base_asset);
-        assert_eq!(def.price_scale,  decoded.price_scale);
-        assert_eq!(def.qty_scale,    decoded.qty_scale);
-        assert_eq!(def.tick_size,    decoded.tick_size);
-        assert_eq!(def.step_size,    decoded.step_size);
-        assert_eq!(def.min_qty,      decoded.min_qty);
+        assert_eq!(def.symbol, decoded.symbol);
+        assert_eq!(def.base_asset, decoded.base_asset);
+        assert_eq!(def.price_scale, decoded.price_scale);
+        assert_eq!(def.qty_scale, decoded.qty_scale);
+        assert_eq!(def.tick_size, decoded.tick_size);
+        assert_eq!(def.step_size, decoded.step_size);
+        assert_eq!(def.min_qty, decoded.min_qty);
         assert_eq!(def.min_notional, decoded.min_notional);
-        assert_eq!(def.is_trading,   decoded.is_trading);
+        assert_eq!(def.is_trading, decoded.is_trading);
 
         println!("  Round-trip check   : {} OK", decoded.symbol);
     }

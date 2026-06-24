@@ -28,20 +28,16 @@ use clap::Parser;
 use tokio::sync::{mpsc, watch};
 
 use binance_spot_adapter::{
-    apply_spot_snapshot,
-    BboCheckResult,
-    check_snapshot, SnapshotCheckResult, SnapshotValidatorConfig, SNAPSHOT_INTERVAL_SECS,
-    CircuitState,
-    ConnectionManager, NormalizeCtx, OverflowReason, PushResult, RawFrame,
-    RecoveryBuffer, ShardEngine, SpotStream, ValidateResult,
-    build_url as ws_build_url, normalize_spot_event, SPOT_WS_BASE,
+    apply_spot_snapshot, build_url as ws_build_url, check_snapshot, normalize_spot_event,
+    BboCheckResult, CircuitState, ConnectionManager, NormalizeCtx, OverflowReason, PushResult,
+    RawFrame, RecoveryBuffer, ShardEngine, SnapshotCheckResult, SnapshotValidatorConfig,
+    SpotStream, ValidateResult, SNAPSHOT_INTERVAL_SECS, SPOT_WS_BASE,
 };
 use connector_aeron::{build_null, Heartbeater, NullPublication, ShardedPublisher};
 use connector_config::{shard_for_symbol, WebSocketConfig};
 use connector_core::{
-    BookRecovered, BookStale, BookStaleReason, FeedState, FeedStatus, GapDetected,
-    Heartbeat, MarketType, MessageHeader, MessageType, NormalizedMessage, VenueId,
-    SCHEMA_VERSION, TS_NONE,
+    BookRecovered, BookStale, BookStaleReason, FeedState, FeedStatus, GapDetected, Heartbeat,
+    MarketType, MessageHeader, MessageType, NormalizedMessage, VenueId, SCHEMA_VERSION, TS_NONE,
 };
 use connector_refdata::RestClient;
 use protocol_json::{parse_spot_message, SpotEvent};
@@ -79,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
     let total_shards = args.shards.max(1);
-    let run_secs     = args.secs;
+    let run_secs = args.secs;
 
     // Fetch exchange info for all symbols at once.
     let rest = RestClient::new("https://api.binance.com");
@@ -103,8 +99,12 @@ async fn main() -> anyhow::Result<()> {
     // Partition instruments by shard.
     let mut shard_map: HashMap<u32, Vec<_>> = HashMap::new();
     for inst in insts {
-        let shard =
-            shard_for_symbol(VenueId::BinanceSpot, MarketType::Spot, &inst.symbol, total_shards);
+        let shard = shard_for_symbol(
+            VenueId::BinanceSpot,
+            MarketType::Spot,
+            &inst.symbol,
+            total_shards,
+        );
         tracing::info!(symbol = %inst.symbol, shard, "assigned to shard");
         shard_map.entry(shard).or_default().push(inst);
     }
@@ -119,12 +119,15 @@ async fn main() -> anyhow::Result<()> {
             engine.add_symbol(inst.clone());
         }
         let publisher = build_null(&[shard_id]);
-        let rest_c    = rest.clone();
-        let shutdown  = shutdown_rx.clone();
+        let rest_c = rest.clone();
+        let shutdown = shutdown_rx.clone();
         join_set.spawn(run_shard(shard_id, engine, rest_c, shutdown, publisher));
     }
 
-    println!("\nRunning for {run_secs}s ({total_shards} shard(s)) — Ctrl-C to stop early\n{:-<80}", "");
+    println!(
+        "\nRunning for {run_secs}s ({total_shards} shard(s)) — Ctrl-C to stop early\n{:-<80}",
+        ""
+    );
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => { tracing::info!("Ctrl-C received"); }
@@ -148,17 +151,22 @@ async fn main() -> anyhow::Result<()> {
 // ---------------------------------------------------------------------------
 
 async fn run_shard(
-    shard_id:      u32,
-    mut engine:    ShardEngine,
-    rest:          RestClient,
-    mut shutdown:  watch::Receiver<bool>,
+    shard_id: u32,
+    mut engine: ShardEngine,
+    rest: RestClient,
+    mut shutdown: watch::Receiver<bool>,
     mut publisher: ShardedPublisher<NullPublication>,
 ) {
     // Build combined-stream WebSocket URL for this shard's symbols.
     let mut streams = Vec::new();
     for (sym, _) in engine.symbols() {
         streams.push(SpotStream::BookTicker.stream_name(sym));
-        streams.push(SpotStream::Depth { update_speed_ms: 100 }.stream_name(sym));
+        streams.push(
+            SpotStream::Depth {
+                update_speed_ms: 100,
+            }
+            .stream_name(sym),
+        );
         streams.push(SpotStream::Trade.stream_name(sym));
     }
     let ws_url = ws_build_url(SPOT_WS_BASE, &streams);
@@ -166,14 +174,14 @@ async fn run_shard(
     tracing::info!(shard_id, symbols = engine.symbol_count(), %ws_url, "shard starting");
 
     let ctx = NormalizeCtx {
-        venue_id:      VenueId::BinanceSpot,
-        market_type:   MarketType::Spot,
-        instance_id:   0,
+        venue_id: VenueId::BinanceSpot,
+        market_type: MarketType::Spot,
+        instance_id: 0,
         connection_id: shard_id,
     };
 
-    let mut seq         = 0u64;
-    let mut encode_buf  = vec![0u8; 8 * 1024];
+    let mut seq = 0u64;
+    let mut encode_buf = vec![0u8; 8 * 1024];
     let mut heartbeater = Heartbeater::new();
 
     // Per-symbol counters are kept separate from protocol state so we can borrow
@@ -184,23 +192,32 @@ async fn run_shard(
         .collect();
 
     let ws_cfg = WebSocketConfig {
-        url:                        SPOT_WS_BASE.into(),
-        api_key:                    None,
-        ping_interval_secs:         20,
+        url: SPOT_WS_BASE.into(),
+        api_key: None,
+        ping_interval_secs: 20,
         max_streams_per_connection: 1024,
-        reconnect_delay_ms:         500,
-        forced_reconnect_secs:      86_400,
+        reconnect_delay_ms: 500,
+        forced_reconnect_secs: 86_400,
     };
 
     let (frame_tx, mut frame_rx) = mpsc::channel::<RawFrame>(1024);
-    let mgr        = ConnectionManager::new(ws_cfg);
+    let mgr = ConnectionManager::new(ws_cfg);
     let mgr_handle = tokio::spawn({
-        let url        = ws_url.clone();
+        let url = ws_url.clone();
         let shutdown_m = shutdown.clone();
-        async move { mgr.run(&url, move |frame| { let _ = frame_tx.try_send(frame); }, shutdown_m).await }
+        async move {
+            mgr.run(
+                &url,
+                move |frame| {
+                    let _ = frame_tx.try_send(frame);
+                },
+                shutdown_m,
+            )
+            .await
+        }
     });
 
-    let mut ticker            = tokio::time::interval(Duration::from_secs(1));
+    let mut ticker = tokio::time::interval(Duration::from_secs(1));
     let mut validation_ticker = tokio::time::interval(Duration::from_secs(SNAPSHOT_INTERVAL_SECS));
     ticker.tick().await;
     validation_ticker.tick().await;
@@ -808,15 +825,15 @@ async fn run_shard(
 
 #[derive(Default)]
 struct SymbolCounters {
-    total_msgs:     u64,
-    msgs_this_sec:  u64,
-    trade_count:    u64,
-    gap_count:      u64,
+    total_msgs: u64,
+    msgs_this_sec: u64,
+    trade_count: u64,
+    gap_count: u64,
     overflow_count: u64,
-    recover_count:  u64,
-    bbo_stale_count:u64,
-    snap_incompat:  u64,
-    bbo:            Option<Bbo>,
+    recover_count: u64,
+    bbo_stale_count: u64,
+    snap_incompat: u64,
+    bbo: Option<Bbo>,
 }
 
 // ---------------------------------------------------------------------------
@@ -832,69 +849,66 @@ fn now_nanos() -> i64 {
 
 fn ctrl_hdr(
     msg_type: MessageType,
-    ctx:      &NormalizeCtx,
-    inst:     &connector_core::InstrumentDefinition,
-    seq:      &mut u64,
-    ts:       i64,
+    ctx: &NormalizeCtx,
+    inst: &connector_core::InstrumentDefinition,
+    seq: &mut u64,
+    ts: i64,
 ) -> MessageHeader {
     *seq += 1;
     MessageHeader {
-        schema_version:    SCHEMA_VERSION,
-        message_type:      msg_type,
-        venue_id:          ctx.venue_id,
-        market_type:       ctx.market_type,
-        instrument_id:     inst.header.instrument_id,
-        connection_id:     ctx.connection_id,
-        instance_id:       ctx.instance_id,
-        sequence_number:   *seq,
+        schema_version: SCHEMA_VERSION,
+        message_type: msg_type,
+        venue_id: ctx.venue_id,
+        market_type: ctx.market_type,
+        instrument_id: inst.header.instrument_id,
+        connection_id: ctx.connection_id,
+        instance_id: ctx.instance_id,
+        sequence_number: *seq,
         exchange_event_ts: TS_NONE,
-        exchange_tx_ts:    TS_NONE,
-        local_recv_ts:     ts,
-        local_publish_ts:  ts,
+        exchange_tx_ts: TS_NONE,
+        local_recv_ts: ts,
+        local_publish_ts: ts,
     }
 }
 
 /// Build a shard-level `MessageHeader` (instrument_id = 0) for messages that
 /// cover the whole shard rather than a single instrument (e.g. `Heartbeat`).
-fn shard_hdr(
-    msg_type: MessageType,
-    ctx:      &NormalizeCtx,
-    seq:      &mut u64,
-    ts:       i64,
-) -> MessageHeader {
+fn shard_hdr(msg_type: MessageType, ctx: &NormalizeCtx, seq: &mut u64, ts: i64) -> MessageHeader {
     *seq += 1;
     MessageHeader {
-        schema_version:    SCHEMA_VERSION,
-        message_type:      msg_type,
-        venue_id:          ctx.venue_id,
-        market_type:       ctx.market_type,
-        instrument_id:     0,
-        connection_id:     ctx.connection_id,
-        instance_id:       ctx.instance_id,
-        sequence_number:   *seq,
+        schema_version: SCHEMA_VERSION,
+        message_type: msg_type,
+        venue_id: ctx.venue_id,
+        market_type: ctx.market_type,
+        instrument_id: 0,
+        connection_id: ctx.connection_id,
+        instance_id: ctx.instance_id,
+        sequence_number: *seq,
         exchange_event_ts: TS_NONE,
-        exchange_tx_ts:    TS_NONE,
-        local_recv_ts:     ts,
-        local_publish_ts:  ts,
+        exchange_tx_ts: TS_NONE,
+        local_recv_ts: ts,
+        local_publish_ts: ts,
     }
 }
 
 fn set_feed_state(
-    new:        FeedState,
-    shard_id:   u32,
-    current:    &mut FeedState,
+    new: FeedState,
+    shard_id: u32,
+    current: &mut FeedState,
     encode_buf: &mut Vec<u8>,
-    publisher:  &mut ShardedPublisher<NullPublication>,
-    ctx:        &NormalizeCtx,
-    inst:       &connector_core::InstrumentDefinition,
-    seq:        &mut u64,
-    ts:         i64,
+    publisher: &mut ShardedPublisher<NullPublication>,
+    ctx: &NormalizeCtx,
+    inst: &connector_core::InstrumentDefinition,
+    seq: &mut u64,
+    ts: i64,
 ) {
-    if *current == new { return; }
+    if *current == new {
+        return;
+    }
     *current = new;
     let msg = FeedStatus {
         header: ctrl_hdr(MessageType::FeedStatus, ctx, inst, seq, ts),
-        state:  new,
+        state: new,
     };
     if let Ok(n) = msg.encode_into(encode_buf) {
         let _ = publisher.offer(shard_id, &encode_buf[..n]);
@@ -903,10 +917,10 @@ fn set_feed_state(
 }
 
 fn push_to_recovery(
-    buf:            &mut RecoveryBuffer,
-    delta:          &connector_core::BookDelta,
-    recv_ts:        i64,
-    encoded_size:   usize,
+    buf: &mut RecoveryBuffer,
+    delta: &connector_core::BookDelta,
+    recv_ts: i64,
+    encoded_size: usize,
     overflow_count: &mut u64,
 ) -> bool {
     match buf.push(delta.clone(), recv_ts, encoded_size) {
@@ -914,9 +928,9 @@ fn push_to_recovery(
         PushResult::Overflow(reason) => {
             *overflow_count += 1;
             let reason_str = match reason {
-                OverflowReason::Age        => "age",
+                OverflowReason::Age => "age",
                 OverflowReason::EventCount => "event_count",
-                OverflowReason::ByteSize   => "byte_size",
+                OverflowReason::ByteSize => "byte_size",
             };
             tracing::error!(reason = reason_str, "recovery buffer overflow — cleared");
             buf.clear();
@@ -926,29 +940,31 @@ fn push_to_recovery(
 }
 
 fn fmt(value: i64, scale: u32) -> String {
-    if scale == 0 { return value.to_string(); }
-    let divisor   = 10_i64.pow(scale);
-    let int_part  = value / divisor;
+    if scale == 0 {
+        return value.to_string();
+    }
+    let divisor = 10_i64.pow(scale);
+    let int_part = value / divisor;
     let frac_part = (value % divisor).abs();
     format!("{int_part}.{frac_part:0>width$}", width = scale as usize)
 }
 
 fn symbol_from_event(event: &SpotEvent) -> Option<&str> {
     match event {
-        SpotEvent::BookTicker(b)  => Some(&b.symbol),
+        SpotEvent::BookTicker(b) => Some(&b.symbol),
         SpotEvent::DepthUpdate(d) => Some(&d.symbol),
-        SpotEvent::Trade(t)       => Some(&t.symbol),
-        SpotEvent::Unknown(_)     => None,
+        SpotEvent::Trade(t) => Some(&t.symbol),
+        SpotEvent::Unknown(_) => None,
     }
 }
 
 struct Bbo {
     bid_price: i64,
-    bid_qty:   i64,
+    bid_qty: i64,
     ask_price: i64,
-    ask_qty:   i64,
-    p_scale:   u32,
-    q_scale:   u32,
+    ask_qty: i64,
+    p_scale: u32,
+    q_scale: u32,
 }
 
 impl std::fmt::Display for Bbo {
@@ -957,9 +973,9 @@ impl std::fmt::Display for Bbo {
             f,
             "BBO bid={}@{} ask={}@{}",
             fmt(self.bid_price, self.p_scale),
-            fmt(self.bid_qty,   self.q_scale),
+            fmt(self.bid_qty, self.q_scale),
             fmt(self.ask_price, self.p_scale),
-            fmt(self.ask_qty,   self.q_scale),
+            fmt(self.ask_qty, self.q_scale),
         )
     }
 }

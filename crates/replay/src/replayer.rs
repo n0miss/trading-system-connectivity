@@ -1,6 +1,5 @@
 /// The core replayer: drives a sequence of [`RecordedFrame`]s according to a
 /// [`ReplayMode`] and returns [`PollResult`]s to the caller.
-
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
@@ -80,9 +79,15 @@ pub enum PollResult {
 }
 
 impl PollResult {
-    pub fn is_ready(&self)   -> bool { matches!(self, Self::Ready(_))    }
-    pub fn is_not_yet(&self) -> bool { matches!(self, Self::NotYet { .. }) }
-    pub fn is_done(&self)    -> bool { matches!(self, Self::Done)         }
+    pub fn is_ready(&self) -> bool {
+        matches!(self, Self::Ready(_))
+    }
+    pub fn is_not_yet(&self) -> bool {
+        matches!(self, Self::NotYet { .. })
+    }
+    pub fn is_done(&self) -> bool {
+        matches!(self, Self::Done)
+    }
 
     pub fn unwrap_event(self) -> ReplayEvent {
         match self {
@@ -94,11 +99,11 @@ impl PollResult {
 
 impl PartialEq for ReplayEvent {
     fn eq(&self, other: &Self) -> bool {
-        self.source_kind    == other.source_kind
-            && self.payload      == other.payload
+        self.source_kind == other.source_kind
+            && self.payload == other.payload
             && self.virtual_ts_ns == other.virtual_ts_ns
             && self.was_corrupted == other.was_corrupted
-            && self.is_duplicate  == other.is_duplicate
+            && self.is_duplicate == other.is_duplicate
     }
 }
 impl Eq for ReplayEvent {}
@@ -138,11 +143,11 @@ impl Eq for ReplayEvent {}
 /// assert_eq!(r.stats().frames_delivered, 2);
 /// ```
 pub struct Replayer {
-    frames:           Vec<RecordedFrame>,
-    cursor:           usize,
-    mode:             ReplayMode,
+    frames: Vec<RecordedFrame>,
+    cursor: usize,
+    mode: ReplayMode,
     /// Real time at which the first frame was emitted (for OriginalTiming/Scaled).
-    start_real_ns:    Option<i64>,
+    start_real_ns: Option<i64>,
     /// `captured_at_ns` of the first frame — the virtual-time origin.
     start_virtual_ns: i64,
     /// Virtual clock for Deterministic mode.
@@ -150,8 +155,8 @@ pub struct Replayer {
     /// Buffered duplicate waiting to be returned on the next poll.
     pending_duplicate: Option<ReplayEvent>,
     /// PRNG for fault injection (seeded from `FaultConfig::seed`).
-    prng:             Prng,
-    pub stats:        ReplayStats,
+    prng: Prng,
+    pub stats: ReplayStats,
 }
 
 impl Replayer {
@@ -160,7 +165,7 @@ impl Replayer {
     /// `frames` must be ordered by `captured_at_ns` for `OriginalTiming` and
     /// `Scaled` modes.  `AsFastAsPossible` and `Deterministic` are order-agnostic.
     pub fn new(frames: Vec<RecordedFrame>, mode: ReplayMode) -> Self {
-        let seed             = mode.fault_config().map(|fc| fc.seed).unwrap_or(0);
+        let seed = mode.fault_config().map(|fc| fc.seed).unwrap_or(0);
         let start_virtual_ns = frames.first().map(|f| f.captured_at_ns).unwrap_or(0);
         Self {
             virtual_clock_ns: start_virtual_ns,
@@ -236,7 +241,10 @@ impl Replayer {
 
             // --- Duplicate ---
             if self.prng.percent_chance(dup_pct) {
-                self.pending_duplicate = Some(ReplayEvent { is_duplicate: true, ..event.clone() });
+                self.pending_duplicate = Some(ReplayEvent {
+                    is_duplicate: true,
+                    ..event.clone()
+                });
             }
 
             self.stats.frames_delivered += 1;
@@ -256,11 +264,11 @@ impl Replayer {
 
     /// Reset to the beginning.  Stats are cleared and timing state is reset.
     pub fn reset(&mut self) {
-        self.cursor            = 0;
-        self.start_real_ns     = None;
-        self.virtual_clock_ns  = self.start_virtual_ns;
+        self.cursor = 0;
+        self.start_real_ns = None;
+        self.virtual_clock_ns = self.start_virtual_ns;
         self.pending_duplicate = None;
-        self.stats             = ReplayStats::default();
+        self.stats = ReplayStats::default();
         let seed = self.mode.fault_config().map(|fc| fc.seed).unwrap_or(0);
         self.prng = Prng::new(seed);
     }
@@ -286,11 +294,15 @@ impl Replayer {
     /// Returns `Some(wait_ns)` if the frame is not yet due, or `None` if ready.
     fn timing_wait_ns(&mut self, now_ns: i64, frame_captured_at: i64) -> Option<i64> {
         // Extract timing variant without holding a borrow across the mutation below.
-        enum T { None, Original, Scaled(u32, u32) }
+        enum T {
+            None,
+            Original,
+            Scaled(u32, u32),
+        }
         let t = match self.mode.base_timing() {
             ReplayMode::AsFastAsPossible => T::None,
-            ReplayMode::Deterministic    => T::None,
-            ReplayMode::OriginalTiming   => T::Original,
+            ReplayMode::Deterministic => T::None,
+            ReplayMode::OriginalTiming => T::Original,
             ReplayMode::Scaled { num, den } => T::Scaled(*num, *den),
             ReplayMode::FaultInjection { .. } => unreachable!("base_timing strips FaultInjection"),
         };
@@ -301,15 +313,23 @@ impl Replayer {
                 let start = *self.start_real_ns.get_or_insert(now_ns);
                 let offset = frame_captured_at.saturating_sub(self.start_virtual_ns);
                 let emit_at = start.saturating_add(offset);
-                if now_ns >= emit_at { None } else { Some(emit_at - now_ns) }
+                if now_ns >= emit_at {
+                    None
+                } else {
+                    Some(emit_at - now_ns)
+                }
             }
             T::Scaled(num, den) => {
                 let start = *self.start_real_ns.get_or_insert(now_ns);
                 let offset = frame_captured_at.saturating_sub(self.start_virtual_ns);
-                let den    = den.max(1) as i64;
+                let den = den.max(1) as i64;
                 let scaled = offset.saturating_mul(num as i64) / den;
                 let emit_at = start.saturating_add(scaled);
-                if now_ns >= emit_at { None } else { Some(emit_at - now_ns) }
+                if now_ns >= emit_at {
+                    None
+                } else {
+                    Some(emit_at - now_ns)
+                }
             }
         }
     }
@@ -336,7 +356,7 @@ impl Replayer {
     fn fault_percents(&self) -> (u8, u8, u8) {
         match self.mode.fault_config() {
             Some(fc) => (fc.drop_percent, fc.corrupt_percent, fc.duplicate_percent),
-            None     => (0, 0, 0),
+            None => (0, 0, 0),
         }
     }
 }
@@ -443,8 +463,8 @@ mod tests {
         // frames[0].captured_at=0, frames[1].captured_at=1000
         let mut r = Replayer::new(frames(3), ReplayMode::OriginalTiming);
         r.next_frame_at(0); // anchors start at t=0; emits frame 0
-        // Frame 1 is scheduled at offset 1000 ns from start (t=0).
-        // now_ns = 500 → not yet.
+                            // Frame 1 is scheduled at offset 1000 ns from start (t=0).
+                            // now_ns = 500 → not yet.
         let v = r.next_frame_at(500);
         assert!(v.is_not_yet(), "expected NotYet, got {v:?}");
         if let PollResult::NotYet { wait_ns } = v {
@@ -456,7 +476,7 @@ mod tests {
     fn second_frame_ready_after_enough_time() {
         let mut r = Replayer::new(frames(3), ReplayMode::OriginalTiming);
         r.next_frame_at(0); // anchor at t=0
-        // Frame 1 needs offset 1000; supply now_ns = 1000
+                            // Frame 1 needs offset 1000; supply now_ns = 1000
         assert!(r.next_frame_at(1000).is_ready());
     }
 
@@ -522,7 +542,10 @@ mod tests {
     fn deterministic_always_ready_regardless_of_now() {
         let mut r = Replayer::new(frames(5), ReplayMode::Deterministic);
         for _ in 0..5 {
-            assert!(r.next_frame_at(0).is_ready(), "all frames should be immediately ready");
+            assert!(
+                r.next_frame_at(0).is_ready(),
+                "all frames should be immediately ready"
+            );
         }
         assert!(r.next_frame_at(0).is_done());
     }
@@ -531,7 +554,7 @@ mod tests {
     fn deterministic_virtual_clock_advances_by_deltas() {
         // frames: captured_at = 0, 1000, 3000, 6000
         let f = vec![
-            RecordedFrame::raw_ws(0,    b"a".to_vec()),
+            RecordedFrame::raw_ws(0, b"a".to_vec()),
             RecordedFrame::raw_ws(1000, b"b".to_vec()),
             RecordedFrame::raw_ws(3000, b"c".to_vec()),
             RecordedFrame::raw_ws(6000, b"d".to_vec()),
@@ -551,9 +574,15 @@ mod tests {
     fn deterministic_two_replays_with_same_frames_produce_same_virtual_clocks() {
         let f = frames(5);
         let mut r1 = Replayer::new(f.clone(), ReplayMode::Deterministic);
-        let mut r2 = Replayer::new(f,         ReplayMode::Deterministic);
-        let ts1: Vec<_> = drain_all(&mut r1).into_iter().map(|e| e.virtual_ts_ns).collect();
-        let ts2: Vec<_> = drain_all(&mut r2).into_iter().map(|e| e.virtual_ts_ns).collect();
+        let mut r2 = Replayer::new(f, ReplayMode::Deterministic);
+        let ts1: Vec<_> = drain_all(&mut r1)
+            .into_iter()
+            .map(|e| e.virtual_ts_ns)
+            .collect();
+        let ts2: Vec<_> = drain_all(&mut r2)
+            .into_iter()
+            .map(|e| e.virtual_ts_ns)
+            .collect();
         assert_eq!(ts1, ts2);
     }
 
@@ -563,9 +592,13 @@ mod tests {
 
     #[test]
     fn drop_100_percent_skips_all_frames() {
-        let fc = FaultConfig { drop_percent: 100, seed: 1, ..Default::default() };
+        let fc = FaultConfig {
+            drop_percent: 100,
+            seed: 1,
+            ..Default::default()
+        };
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::AsFastAsPossible),
+            inner: Box::new(ReplayMode::AsFastAsPossible),
             faults: fc,
         };
         let mut r = Replayer::new(frames(5), mode);
@@ -576,9 +609,13 @@ mod tests {
 
     #[test]
     fn drop_0_percent_keeps_all_frames() {
-        let fc = FaultConfig { drop_percent: 0, seed: 1, ..Default::default() };
+        let fc = FaultConfig {
+            drop_percent: 0,
+            seed: 1,
+            ..Default::default()
+        };
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::AsFastAsPossible),
+            inner: Box::new(ReplayMode::AsFastAsPossible),
             faults: fc,
         };
         let mut r = Replayer::new(frames(5), mode);
@@ -590,9 +627,13 @@ mod tests {
     #[test]
     fn dropped_frames_are_not_in_output() {
         // With seed=1 and drop_percent=100, we should only get Done.
-        let fc = FaultConfig { drop_percent: 100, seed: 1, ..Default::default() };
+        let fc = FaultConfig {
+            drop_percent: 100,
+            seed: 1,
+            ..Default::default()
+        };
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::AsFastAsPossible),
+            inner: Box::new(ReplayMode::AsFastAsPossible),
             faults: fc,
         };
         let mut r = Replayer::new(frames(10), mode);
@@ -600,7 +641,7 @@ mod tests {
         loop {
             match r.next_frame_at(0) {
                 PollResult::Ready(_) => count += 1,
-                PollResult::Done     => break,
+                PollResult::Done => break,
                 PollResult::NotYet { .. } => panic!("unexpected NotYet"),
             }
         }
@@ -613,9 +654,13 @@ mod tests {
 
     #[test]
     fn corrupt_100_percent_flips_bytes_in_all_frames() {
-        let fc = FaultConfig { corrupt_percent: 100, seed: 2, ..Default::default() };
+        let fc = FaultConfig {
+            corrupt_percent: 100,
+            seed: 2,
+            ..Default::default()
+        };
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::AsFastAsPossible),
+            inner: Box::new(ReplayMode::AsFastAsPossible),
             faults: fc,
         };
         let mut r = Replayer::new(frames(5), mode);
@@ -629,22 +674,33 @@ mod tests {
     fn corrupted_payload_differs_from_original() {
         let original = b"original payload".to_vec();
         let f = vec![RecordedFrame::raw_ws(0, original.clone())];
-        let fc = FaultConfig { corrupt_percent: 100, seed: 99, ..Default::default() };
+        let fc = FaultConfig {
+            corrupt_percent: 100,
+            seed: 99,
+            ..Default::default()
+        };
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::AsFastAsPossible),
+            inner: Box::new(ReplayMode::AsFastAsPossible),
             faults: fc,
         };
         let mut r = Replayer::new(f, mode);
         let e = r.next_frame_at(0).unwrap_event();
         assert!(e.was_corrupted);
-        assert_ne!(e.payload, original, "corrupted payload must differ from original");
+        assert_ne!(
+            e.payload, original,
+            "corrupted payload must differ from original"
+        );
     }
 
     #[test]
     fn corrupt_zero_percent_leaves_payloads_unchanged() {
-        let fc = FaultConfig { corrupt_percent: 0, seed: 1, ..Default::default() };
+        let fc = FaultConfig {
+            corrupt_percent: 0,
+            seed: 1,
+            ..Default::default()
+        };
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::AsFastAsPossible),
+            inner: Box::new(ReplayMode::AsFastAsPossible),
             faults: fc,
         };
         let mut r = Replayer::new(frames(5), mode);
@@ -658,45 +714,57 @@ mod tests {
 
     #[test]
     fn duplicate_100_percent_emits_every_frame_twice() {
-        let fc = FaultConfig { duplicate_percent: 100, seed: 3, ..Default::default() };
+        let fc = FaultConfig {
+            duplicate_percent: 100,
+            seed: 3,
+            ..Default::default()
+        };
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::AsFastAsPossible),
+            inner: Box::new(ReplayMode::AsFastAsPossible),
             faults: fc,
         };
         let mut r = Replayer::new(frames(3), mode);
         let events = drain_all(&mut r);
         // 3 originals + 3 duplicates = 6
         assert_eq!(events.len(), 6);
-        assert_eq!(r.stats().frames_delivered,  3);
+        assert_eq!(r.stats().frames_delivered, 3);
         assert_eq!(r.stats().frames_duplicated, 3);
     }
 
     #[test]
     fn duplicate_flag_set_on_duplicate_frames() {
-        let fc = FaultConfig { duplicate_percent: 100, seed: 3, ..Default::default() };
+        let fc = FaultConfig {
+            duplicate_percent: 100,
+            seed: 3,
+            ..Default::default()
+        };
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::AsFastAsPossible),
+            inner: Box::new(ReplayMode::AsFastAsPossible),
             faults: fc,
         };
         let mut r = Replayer::new(frames(2), mode);
         let events = drain_all(&mut r);
         // Originals at indices 0, 2; duplicates at 1, 3.
         assert!(!events[0].is_duplicate);
-        assert!( events[1].is_duplicate);
+        assert!(events[1].is_duplicate);
         assert!(!events[2].is_duplicate);
-        assert!( events[3].is_duplicate);
+        assert!(events[3].is_duplicate);
     }
 
     #[test]
     fn duplicate_payload_matches_original() {
-        let fc = FaultConfig { duplicate_percent: 100, seed: 5, ..Default::default() };
+        let fc = FaultConfig {
+            duplicate_percent: 100,
+            seed: 5,
+            ..Default::default()
+        };
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::AsFastAsPossible),
+            inner: Box::new(ReplayMode::AsFastAsPossible),
             faults: fc,
         };
         let mut r = Replayer::new(frames(1), mode);
         let orig = r.next_frame_at(0).unwrap_event();
-        let dup  = r.next_frame_at(0).unwrap_event();
+        let dup = r.next_frame_at(0).unwrap_event();
         assert_eq!(orig.payload, dup.payload);
     }
 
@@ -708,21 +776,24 @@ mod tests {
     fn fault_injection_over_original_timing_respects_timing() {
         let fc = FaultConfig::default(); // no faults, just wrapping
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::OriginalTiming),
+            inner: Box::new(ReplayMode::OriginalTiming),
             faults: fc,
         };
         let mut r = Replayer::new(frames(2), mode);
         r.next_frame_at(0); // anchor + emit frame 0
-        // Frame 1 at offset 1000 — not ready at now=500
+                            // Frame 1 at offset 1000 — not ready at now=500
         assert!(r.next_frame_at(500).is_not_yet());
         assert!(r.next_frame_at(1000).is_ready());
     }
 
     #[test]
     fn fault_injection_over_deterministic_always_ready() {
-        let fc = FaultConfig { drop_percent: 0, ..Default::default() };
+        let fc = FaultConfig {
+            drop_percent: 0,
+            ..Default::default()
+        };
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::Deterministic),
+            inner: Box::new(ReplayMode::Deterministic),
             faults: fc,
         };
         let mut r = Replayer::new(frames(5), mode);
@@ -756,10 +827,10 @@ mod tests {
     #[test]
     fn reset_replays_frames_from_beginning() {
         let mut r = Replayer::new(frames(3), ReplayMode::AsFastAsPossible);
-        let first_run  = drain_all(&mut r);
+        let first_run = drain_all(&mut r);
         r.reset();
         let second_run = drain_all(&mut r);
-        assert_eq!(first_run.len(),  3);
+        assert_eq!(first_run.len(), 3);
         assert_eq!(second_run.len(), 3);
         for (a, b) in first_run.iter().zip(second_run.iter()) {
             assert_eq!(a.payload, b.payload);
@@ -768,16 +839,29 @@ mod tests {
 
     #[test]
     fn reset_produces_same_fault_sequence_with_same_seed() {
-        let fc = FaultConfig { drop_percent: 30, seed: 42, ..Default::default() };
+        let fc = FaultConfig {
+            drop_percent: 30,
+            seed: 42,
+            ..Default::default()
+        };
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::AsFastAsPossible),
+            inner: Box::new(ReplayMode::AsFastAsPossible),
             faults: fc,
         };
         let mut r = Replayer::new(frames(20), mode);
-        let first_run: Vec<_> = drain_all(&mut r).into_iter().map(|e| e.payload.clone()).collect();
+        let first_run: Vec<_> = drain_all(&mut r)
+            .into_iter()
+            .map(|e| e.payload.clone())
+            .collect();
         r.reset();
-        let second_run: Vec<_> = drain_all(&mut r).into_iter().map(|e| e.payload.clone()).collect();
-        assert_eq!(first_run, second_run, "fault injection with same seed must be fully reproducible");
+        let second_run: Vec<_> = drain_all(&mut r)
+            .into_iter()
+            .map(|e| e.payload.clone())
+            .collect();
+        assert_eq!(
+            first_run, second_run,
+            "fault injection with same seed must be fully reproducible"
+        );
     }
 
     #[test]
@@ -787,7 +871,7 @@ mod tests {
         r.reset();
         // After reset the anchor is gone; re-anchors at new now_ns.
         r.next_frame_at(5000); // anchor at t=5000
-        // Frame 1 offset = 1000; due at 5000+1000 = 6000.
+                               // Frame 1 offset = 1000; due at 5000+1000 = 6000.
         assert!(r.next_frame_at(5500).is_not_yet());
         assert!(r.next_frame_at(6000).is_ready());
     }
@@ -808,14 +892,18 @@ mod tests {
 
     #[test]
     fn is_done_false_while_duplicate_pending() {
-        let fc = FaultConfig { duplicate_percent: 100, seed: 1, ..Default::default() };
+        let fc = FaultConfig {
+            duplicate_percent: 100,
+            seed: 1,
+            ..Default::default()
+        };
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::AsFastAsPossible),
+            inner: Box::new(ReplayMode::AsFastAsPossible),
             faults: fc,
         };
         let mut r = Replayer::new(frames(1), mode);
         r.next_frame_at(0); // emits original + queues duplicate
-        // cursor == 1 == len, but duplicate is pending
+                            // cursor == 1 == len, but duplicate is pending
         assert!(!r.is_done());
         r.next_frame_at(0); // drains duplicate
         assert!(r.is_done());
@@ -834,13 +922,13 @@ mod tests {
             was_corrupted: false,
             is_duplicate: false,
         });
-        assert!( ready.is_ready());
+        assert!(ready.is_ready());
         assert!(!ready.is_not_yet());
         assert!(!ready.is_done());
 
         let not_yet = PollResult::NotYet { wait_ns: 100 };
         assert!(!not_yet.is_ready());
-        assert!( not_yet.is_not_yet());
+        assert!(not_yet.is_not_yet());
         assert!(!not_yet.is_done());
 
         assert!(PollResult::Done.is_done());

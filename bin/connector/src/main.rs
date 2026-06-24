@@ -1,10 +1,10 @@
 use anyhow::Result;
-use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
+use axum::{http::StatusCode, response::IntoResponse, routing::get, Router};
 use clap::Parser;
 use connector_core::{InstrumentDefinition, MarketType, NormalizedMessage, VenueId};
 use connector_metrics::MetricsHandle;
 use connector_refdata::RefDataService;
-use protocol_json::{FuturesEvent, SpotEvent, parse_futures_message, parse_spot_message};
+use protocol_json::{parse_futures_message, parse_spot_message, FuturesEvent, SpotEvent};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,13 +30,13 @@ async fn metrics_handler(
 
 fn parse_venue(venue: &str, market: &str) -> Result<(VenueId, MarketType)> {
     let venue_id = match venue {
-        "binance_spot"    => VenueId::BinanceSpot,
+        "binance_spot" => VenueId::BinanceSpot,
         "binance_futures" => VenueId::BinanceFutures,
         other => anyhow::bail!("unknown venue: {other}"),
     };
     let market_type = match market {
-        "spot"          => MarketType::Spot,
-        "usdm_futures"  => MarketType::UsdmFutures,
+        "spot" => MarketType::Spot,
+        "usdm_futures" => MarketType::UsdmFutures,
         other => anyhow::bail!("unknown market: {other}"),
     };
     Ok((venue_id, market_type))
@@ -46,8 +46,8 @@ fn spot_symbol(event: &SpotEvent) -> Option<&str> {
     match event {
         SpotEvent::BookTicker(bt) => Some(&bt.symbol),
         SpotEvent::DepthUpdate(du) => Some(&du.symbol),
-        SpotEvent::Trade(tr)       => Some(&tr.symbol),
-        SpotEvent::Unknown(_)      => None,
+        SpotEvent::Trade(tr) => Some(&tr.symbol),
+        SpotEvent::Unknown(_) => None,
     }
 }
 
@@ -55,10 +55,10 @@ fn futures_symbol(event: &FuturesEvent) -> Option<&str> {
     match event {
         FuturesEvent::BookTicker(bt) => Some(&bt.symbol),
         FuturesEvent::DepthUpdate(du) => Some(&du.symbol),
-        FuturesEvent::AggTrade(at)   => Some(&at.symbol),
-        FuturesEvent::MarkPrice(mp)  => Some(&mp.symbol),
+        FuturesEvent::AggTrade(at) => Some(&at.symbol),
+        FuturesEvent::MarkPrice(mp) => Some(&mp.symbol),
         FuturesEvent::ForceOrder(fo) => Some(&fo.order.symbol),
-        FuturesEvent::Unknown(_)     => None,
+        FuturesEvent::Unknown(_) => None,
     }
 }
 
@@ -69,7 +69,7 @@ fn futures_symbol(event: &FuturesEvent) -> Option<&str> {
 /// attempts fail, so the connector keeps running for testing without a live
 /// Aeron deployment.
 async fn build_publisher(
-    cfg:      &connector_config::AeronConfig,
+    cfg: &connector_config::AeronConfig,
     shard_id: u32,
     shutdown: watch::Receiver<bool>,
 ) -> connector_aeron::DynShardedPublisher {
@@ -78,7 +78,8 @@ async fn build_publisher(
         &[shard_id],
         Duration::from_millis(cfg.connect_retry_delay_ms),
         shutdown,
-    ).await
+    )
+    .await
 }
 
 /// Encode one normalized message, stamp `local_publish_ts`, and offer it.
@@ -92,23 +93,23 @@ async fn build_publisher(
 /// This blocks the calling thread while reconnecting, but at that point messages
 /// are already being lost, so the delay is acceptable.
 fn publish_one(
-    msg:       &NormalizedMessage,
-    shard_id:  u32,
+    msg: &NormalizedMessage,
+    shard_id: u32,
     publisher: &mut connector_aeron::DynShardedPublisher,
     aeron_cfg: &connector_config::AeronConfig,
-    metrics:   &connector_metrics::ConnectorMetrics,
-    buf:       &mut [u8],
+    metrics: &connector_metrics::ConnectorMetrics,
+    buf: &mut [u8],
 ) {
     let len = match msg.encode_into(buf) {
-        Ok(n)  => n,
-        Err(e) => { warn!("encode error: {e}"); return; }
+        Ok(n) => n,
+        Err(e) => {
+            warn!("encode error: {e}");
+            return;
+        }
     };
-    let hdr        = msg.header();
-    let publish_ts = binance_spot_adapter::record_publish(
-        metrics,
-        hdr.exchange_event_ts,
-        hdr.local_recv_ts,
-    );
+    let hdr = msg.header();
+    let publish_ts =
+        binance_spot_adapter::record_publish(metrics, hdr.exchange_event_ts, hdr.local_recv_ts);
     // Patch local_publish_ts (offset 48, 8 bytes, little-endian).
     buf[48..56].copy_from_slice(&publish_ts.to_le_bytes());
 
@@ -118,7 +119,10 @@ fn publish_one(
     if !offer.is_ok() {
         binance_spot_adapter::record_offer_failure(metrics);
         if matches!(offer, connector_aeron::OfferResult::Closed) {
-            tracing::error!(shard_id, "Aeron publication closed — attempting sync reconnect");
+            tracing::error!(
+                shard_id,
+                "Aeron publication closed — attempting sync reconnect"
+            );
             connector_aeron::reconnect_sync(aeron_cfg, shard_id, publisher);
         }
     }
@@ -151,7 +155,7 @@ async fn main() -> Result<()> {
     );
 
     let (venue_id, market_type) = parse_venue(&cfg.instance.venue, &cfg.instance.market)?;
-    let metrics: MetricsHandle   = Arc::new(connector_metrics::ConnectorMetrics::new());
+    let metrics: MetricsHandle = Arc::new(connector_metrics::ConnectorMetrics::new());
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
     // ── Metrics HTTP server ───────────────────────────────────────────────────
@@ -164,7 +168,7 @@ async fn main() -> Result<()> {
 
     // ── Symbol discovery ──────────────────────────────────────────────────────
     let rest_base_url = match venue_id {
-        VenueId::BinanceSpot    => cfg.rest.spot_base_url.as_str(),
+        VenueId::BinanceSpot => cfg.rest.spot_base_url.as_str(),
         VenueId::BinanceFutures => cfg.rest.futures_base_url.as_str(),
     };
     let mut refdata = RefDataService::new(
@@ -191,14 +195,18 @@ async fn main() -> Result<()> {
     // Filter to only the symbols whose logical shard is owned by this instance.
     // Ownership: shard_for(symbol) % instance.total == instance.id
     let universe: Vec<String> = cfg
-        .filter_owned_symbols(venue_id, market_type, all_symbols.iter().map(String::as_str))
+        .filter_owned_symbols(
+            venue_id,
+            market_type,
+            all_symbols.iter().map(String::as_str),
+        )
         .into_iter()
         .map(str::to_owned)
         .collect();
     info!(
-        instance_id  = cfg.instance.id,
-        total        = cfg.instance.total,
-        owned        = universe.len(),
+        instance_id = cfg.instance.id,
+        total = cfg.instance.total,
+        owned = universe.len(),
         total_shards = cfg.sharding.total_logical_shards,
         "shard assignment complete"
     );
@@ -213,27 +221,40 @@ async fn main() -> Result<()> {
 
     // ── WebSocket connections ─────────────────────────────────────────────────
     let instance_id = cfg.instance.id;
-    let shard_id    = instance_id;
+    let shard_id = instance_id;
     let max_streams = cfg.websocket.max_streams_per_connection as usize;
 
     let streams: Vec<String> = match venue_id {
         VenueId::BinanceSpot => universe
             .iter()
-            .flat_map(|sym| [
-                binance_spot_adapter::SpotStream::BookTicker.stream_name(sym),
-                binance_spot_adapter::SpotStream::Depth { update_speed_ms: 100 }.stream_name(sym),
-                binance_spot_adapter::SpotStream::Trade.stream_name(sym),
-            ])
+            .flat_map(|sym| {
+                [
+                    binance_spot_adapter::SpotStream::BookTicker.stream_name(sym),
+                    binance_spot_adapter::SpotStream::Depth {
+                        update_speed_ms: 100,
+                    }
+                    .stream_name(sym),
+                    binance_spot_adapter::SpotStream::Trade.stream_name(sym),
+                ]
+            })
             .collect(),
         VenueId::BinanceFutures => universe
             .iter()
-            .flat_map(|sym| [
-                binance_futures_adapter::FuturesStream::BookTicker.stream_name(sym),
-                binance_futures_adapter::FuturesStream::Depth { update_speed_ms: 100 }.stream_name(sym),
-                binance_futures_adapter::FuturesStream::AggTrade.stream_name(sym),
-                binance_futures_adapter::FuturesStream::MarkPrice { update_interval_secs: 3 }.stream_name(sym),
-                binance_futures_adapter::FuturesStream::ForceOrder.stream_name(sym),
-            ])
+            .flat_map(|sym| {
+                [
+                    binance_futures_adapter::FuturesStream::BookTicker.stream_name(sym),
+                    binance_futures_adapter::FuturesStream::Depth {
+                        update_speed_ms: 100,
+                    }
+                    .stream_name(sym),
+                    binance_futures_adapter::FuturesStream::AggTrade.stream_name(sym),
+                    binance_futures_adapter::FuturesStream::MarkPrice {
+                        update_interval_secs: 3,
+                    }
+                    .stream_name(sym),
+                    binance_futures_adapter::FuturesStream::ForceOrder.stream_name(sym),
+                ]
+            })
             .collect(),
     };
 
@@ -253,7 +274,14 @@ async fn main() -> Result<()> {
                 let mut def = inst.clone();
                 def.header.local_recv_ts = recv_ts;
                 let nm = NormalizedMessage::InstrumentDefinition(def);
-                publish_one(&nm, shard_id, &mut startup_pub, &cfg.aeron, &metrics, &mut buf);
+                publish_one(
+                    &nm,
+                    shard_id,
+                    &mut startup_pub,
+                    &cfg.aeron,
+                    &metrics,
+                    &mut buf,
+                );
                 count += 1;
             }
         }
@@ -262,13 +290,13 @@ async fn main() -> Result<()> {
 
     // Log subscription breakdown so we can verify all stream types are present.
     {
-        let n_agg   = streams.iter().filter(|s| s.contains("@aggTrade")).count();
-        let n_mark  = streams.iter().filter(|s| s.contains("@markPrice")).count();
+        let n_agg = streams.iter().filter(|s| s.contains("@aggTrade")).count();
+        let n_mark = streams.iter().filter(|s| s.contains("@markPrice")).count();
         let n_force = streams.iter().filter(|s| s.contains("@forceOrder")).count();
         let sample: Vec<_> = streams.iter().take(5).collect();
         info!(
-            total      = streams.len(),
-            agg_trade  = n_agg,
+            total = streams.len(),
+            agg_trade = n_agg,
             mark_price = n_mark,
             force_order = n_force,
             ?sample,
@@ -279,26 +307,27 @@ async fn main() -> Result<()> {
     let mut conn_tasks = Vec::new();
     for (i, chunk) in streams.chunks(max_streams).enumerate() {
         let url = match venue_id {
-            VenueId::BinanceSpot =>
-                binance_spot_adapter::build_url(&cfg.websocket.url, &chunk.to_vec()),
-            VenueId::BinanceFutures =>
-                binance_futures_adapter::build_url(&cfg.websocket.futures_url, &chunk.to_vec()),
+            VenueId::BinanceSpot => {
+                binance_spot_adapter::build_url(&cfg.websocket.url, &chunk.to_vec())
+            }
+            VenueId::BinanceFutures => {
+                binance_futures_adapter::build_url(&cfg.websocket.futures_url, &chunk.to_vec())
+            }
         };
         // Log just the base URL (no query string) so we can verify spot vs futures endpoint.
         let base_url = url.split('?').next().unwrap_or(&url);
         info!(connection = i, streams = chunk.len(), url = %base_url, "starting WebSocket connection");
 
-        let sd      = shutdown_rx.clone();
-        let m       = metrics.clone();
-        let ws      = cfg.websocket.clone();
-        let imap    = inst_map.clone();
+        let sd = shutdown_rx.clone();
+        let m = metrics.clone();
+        let ws = cfg.websocket.clone();
+        let imap = inst_map.clone();
         let conn_id = i as u32;
 
         let aeron_cfg = cfg.aeron.clone();
         let task = match venue_id {
             VenueId::BinanceSpot => tokio::spawn(async move {
-                let mgr = binance_spot_adapter::ConnectionManager::new(ws)
-                    .with_metrics(m.clone());
+                let mgr = binance_spot_adapter::ConnectionManager::new(ws).with_metrics(m.clone());
 
                 let ctx = binance_spot_adapter::NormalizeCtx {
                     venue_id,
@@ -311,33 +340,51 @@ async fn main() -> Result<()> {
                 let mut seq = 0u64;
 
                 // Process each frame inline — no channel hop, no task wakeup.
-                mgr.run(&url, move |frame| {
-                    let event = match parse_spot_message(&frame.payload) {
-                        Ok(e)  => e,
-                        Err(e) => { warn!("spot JSON: {e}"); return; }
-                    };
-                    let symbol = match spot_symbol(&event) {
-                        Some(s) => s,
-                        None    => return,
-                    };
-                    let inst = match imap.get(symbol) {
-                        Some(i) => i,
-                        None    => { warn!(symbol, "unknown instrument"); return; }
-                    };
-                    let msg = match binance_spot_adapter::normalize_spot_event(
-                        &event, inst, &ctx, &mut seq, frame.recv_ts,
-                    ) {
-                        Ok(Some(m)) => m,
-                        Ok(None)    => return,
-                        Err(e)      => { warn!("normalize: {e}"); return; }
-                    };
-                    publish_one(&msg, shard_id, &mut publisher, &aeron_cfg, &m, &mut buf);
-                }, sd).await;
+                mgr.run(
+                    &url,
+                    move |frame| {
+                        let event = match parse_spot_message(&frame.payload) {
+                            Ok(e) => e,
+                            Err(e) => {
+                                warn!("spot JSON: {e}");
+                                return;
+                            }
+                        };
+                        let symbol = match spot_symbol(&event) {
+                            Some(s) => s,
+                            None => return,
+                        };
+                        let inst = match imap.get(symbol) {
+                            Some(i) => i,
+                            None => {
+                                warn!(symbol, "unknown instrument");
+                                return;
+                            }
+                        };
+                        let msg = match binance_spot_adapter::normalize_spot_event(
+                            &event,
+                            inst,
+                            &ctx,
+                            &mut seq,
+                            frame.recv_ts,
+                        ) {
+                            Ok(Some(m)) => m,
+                            Ok(None) => return,
+                            Err(e) => {
+                                warn!("normalize: {e}");
+                                return;
+                            }
+                        };
+                        publish_one(&msg, shard_id, &mut publisher, &aeron_cfg, &m, &mut buf);
+                    },
+                    sd,
+                )
+                .await;
             }),
 
             VenueId::BinanceFutures => tokio::spawn(async move {
-                let mgr = binance_futures_adapter::ConnectionManager::new(ws)
-                    .with_metrics(m.clone());
+                let mgr =
+                    binance_futures_adapter::ConnectionManager::new(ws).with_metrics(m.clone());
 
                 let ctx = binance_futures_adapter::NormalizeCtx {
                     venue_id,
@@ -351,15 +398,15 @@ async fn main() -> Result<()> {
 
                 // Per-type frame counters — logged every LOG_INTERVAL frames.
                 const LOG_INTERVAL: u64 = 5_000;
-                let mut n_frames:     u64 = 0;
-                let mut n_bbo:        u64 = 0;
-                let mut n_depth:      u64 = 0;
-                let mut n_trade:      u64 = 0;
-                let mut n_mark:       u64 = 0;
-                let mut n_liq:        u64 = 0;
-                let mut n_unknown:    u64 = 0;
-                let mut n_parse_err:  u64 = 0;
-                let mut n_no_inst:    u64 = 0;
+                let mut n_frames: u64 = 0;
+                let mut n_bbo: u64 = 0;
+                let mut n_depth: u64 = 0;
+                let mut n_trade: u64 = 0;
+                let mut n_mark: u64 = 0;
+                let mut n_liq: u64 = 0;
+                let mut n_unknown: u64 = 0;
+                let mut n_parse_err: u64 = 0;
+                let mut n_no_inst: u64 = 0;
 
                 // Process each frame inline — no channel hop, no task wakeup.
                 mgr.run(&url, move |frame| {
@@ -441,28 +488,28 @@ async fn main() -> Result<()> {
             .collect();
 
         info!(
-            symbols       = owned_instruments.len(),
+            symbols = owned_instruments.len(),
             interval_secs = cfg.rest.open_interest_poll_secs,
             "starting open interest poller"
         );
 
         let oi_client = connector_refdata::RestClient::new(rest_base_url);
-        let mut oi_poller = connector_refdata::OpenInterestPoller::new(
-            oi_client,
-            owned_instruments,
-            poll_interval,
-        );
+        let mut oi_poller =
+            connector_refdata::OpenInterestPoller::new(oi_client, owned_instruments, poll_interval);
 
-        let sd        = shutdown_rx.clone();
+        let sd = shutdown_rx.clone();
         let aeron_cfg = cfg.aeron.clone();
-        let m         = metrics.clone();
+        let m = metrics.clone();
         let oi_task = tokio::spawn(async move {
             let mut publisher = build_publisher(&aeron_cfg, shard_id, sd.clone()).await;
             let mut buf = vec![0u8; 65_536];
-            oi_poller.run(sd, |msg| {
-                let nm = NormalizedMessage::OpenInterest(msg);
-                publish_one(&nm, shard_id, &mut publisher, &aeron_cfg, &m, &mut buf);
-            }).await.ok();
+            oi_poller
+                .run(sd, |msg| {
+                    let nm = NormalizedMessage::OpenInterest(msg);
+                    publish_one(&nm, shard_id, &mut publisher, &aeron_cfg, &m, &mut buf);
+                })
+                .await
+                .ok();
         });
         conn_tasks.push(oi_task);
     }
@@ -483,7 +530,7 @@ async fn main() -> Result<()> {
         }
     };
     match tokio::time::timeout(Duration::from_secs(5), drain).await {
-        Ok(_)  => info!("all tasks stopped gracefully"),
+        Ok(_) => info!("all tasks stopped gracefully"),
         Err(_) => warn!("graceful shutdown timed out after 5 s"),
     }
 

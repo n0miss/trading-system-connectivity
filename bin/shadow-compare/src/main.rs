@@ -19,7 +19,7 @@ use std::sync::mpsc;
 use clap::Parser;
 use tracing::info;
 
-use shadow_compare::{CompareConfig, Comparator, SHADOW_STREAM_ID_OFFSET};
+use shadow_compare::{Comparator, CompareConfig, SHADOW_STREAM_ID_OFFSET};
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -65,8 +65,8 @@ fn main() {
     let args = Args::parse();
 
     let cfg = CompareConfig {
-        tolerance_bps:      args.tolerance_bps,
-        min_samples:        args.min_samples,
+        tolerance_bps: args.tolerance_bps,
+        min_samples: args.min_samples,
         max_divergence_pct: args.max_divergence_pct,
     };
 
@@ -83,13 +83,13 @@ fn main() {
 
 fn run_demo(cfg: CompareConfig) {
     use connector_core::{
-        BestBidOffer, MessageHeader, MessageType, VenueId, MarketType, SCHEMA_VERSION, TS_NONE,
+        BestBidOffer, MarketType, MessageHeader, MessageType, VenueId, SCHEMA_VERSION, TS_NONE,
     };
 
     info!("=== shadow-compare demo mode ===");
     info!(
         tolerance_bps = cfg.tolerance_bps,
-        min_samples   = cfg.min_samples,
+        min_samples = cfg.min_samples,
         "config"
     );
 
@@ -98,48 +98,50 @@ fn run_demo(cfg: CompareConfig) {
     let mut cmp = Comparator::new(cfg.clone(), active_rx, shadow_rx);
 
     let header = MessageHeader {
-        schema_version:    SCHEMA_VERSION,
-        message_type:      MessageType::BestBidOffer,
-        venue_id:          VenueId::BinanceSpot,
-        market_type:       MarketType::Spot,
-        instrument_id:     1,
-        connection_id:     0,
-        instance_id:       0,
-        sequence_number:   0,
+        schema_version: SCHEMA_VERSION,
+        message_type: MessageType::BestBidOffer,
+        venue_id: VenueId::BinanceSpot,
+        market_type: MarketType::Spot,
+        instrument_id: 1,
+        connection_id: 0,
+        instance_id: 0,
+        sequence_number: 0,
         exchange_event_ts: 0,
-        exchange_tx_ts:    TS_NONE,
-        local_recv_ts:     0,
-        local_publish_ts:  0,
+        exchange_tx_ts: TS_NONE,
+        local_recv_ts: 0,
+        local_publish_ts: 0,
     };
 
-    let send_bbo =
-        |tx: &mpsc::SyncSender<Vec<u8>>, symbol: &str, bid: i64, ask: i64, seq: u64| {
-            let mut h = header;
-            h.sequence_number = seq;
-            let msg = BestBidOffer {
-                header:      h,
-                symbol:      symbol.to_string(),
-                price_scale: 2,
-                qty_scale:   3,
-                bid_price:   bid,
-                bid_qty:     1_000_000,
-                ask_price:   ask,
-                ask_qty:     500_000,
-                update_id:   seq,
-            };
-            let mut buf = vec![0u8; 512];
-            let len = msg.encode_into(&mut buf).unwrap();
-            buf.truncate(len);
-            tx.send(buf).unwrap();
+    let send_bbo = |tx: &mpsc::SyncSender<Vec<u8>>, symbol: &str, bid: i64, ask: i64, seq: u64| {
+        let mut h = header;
+        h.sequence_number = seq;
+        let msg = BestBidOffer {
+            header: h,
+            symbol: symbol.to_string(),
+            price_scale: 2,
+            qty_scale: 3,
+            bid_price: bid,
+            bid_qty: 1_000_000,
+            ask_price: ask,
+            ask_qty: 500_000,
+            update_id: seq,
         };
+        let mut buf = vec![0u8; 512];
+        let len = msg.encode_into(&mut buf).unwrap();
+        buf.truncate(len);
+        tx.send(buf).unwrap();
+    };
 
     // ── Phase 1: matching prices (should accumulate toward Stable) ──────────
-    println!("\n[Phase 1] Sending {} matching BBO pairs...", cfg.min_samples);
+    println!(
+        "\n[Phase 1] Sending {} matching BBO pairs...",
+        cfg.min_samples
+    );
     let prices: &[(&str, i64, i64)] = &[
         ("BTCUSDT", 6_400_000_00, 6_400_100_00),
         ("ETHUSDT", 1_700_000_00, 1_700_100_00),
-        ("BNBUSDT",   600_000_00,   600_100_00),
-        ("SOLUSDT",    70_000_00,    70_100_00),
+        ("BNBUSDT", 600_000_00, 600_100_00),
+        ("SOLUSDT", 70_000_00, 70_100_00),
     ];
     for seq in 0..cfg.min_samples {
         for &(sym, bid, ask) in prices {
@@ -183,8 +185,12 @@ fn print_report(cmp: &Comparator, label: &str) {
     for s in rows {
         println!(
             "    {:10}  samples={:4}  divergences={:2}  div%={:.1}  max_bid={} bps  max_ask={} bps",
-            s.symbol, s.samples, s.divergences, s.divergence_pct(),
-            s.max_bid_diff_bps, s.max_ask_diff_bps
+            s.symbol,
+            s.samples,
+            s.divergences,
+            s.divergence_pct(),
+            s.max_bid_diff_bps,
+            s.max_ask_diff_bps
         );
     }
     println!("  verdict → {:?}", cmp.verdict());
@@ -230,9 +236,9 @@ Exit codes:
 Run `shadow-compare --demo` to test the comparison logic with synthetic data.
 See deploy/runbook.md §5 for the full migration procedure.
 "#,
-        tol    = args.tolerance_bps,
-        min    = args.min_samples,
-        div    = args.max_divergence_pct,
+        tol = args.tolerance_bps,
+        min = args.min_samples,
+        div = args.max_divergence_pct,
         offset = SHADOW_STREAM_ID_OFFSET,
     );
 }

@@ -44,8 +44,8 @@
 /// ```
 mod counter;
 mod histogram;
-mod render;
 mod registry;
+mod render;
 
 pub use counter::Counter;
 pub use histogram::{Histogram, BUCKET_BOUNDS, NUM_BOUNDS, NUM_BUCKETS};

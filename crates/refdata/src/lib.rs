@@ -9,7 +9,9 @@ mod registry;
 pub use client::RestClient;
 pub use error::RefDataError;
 pub use event::RefDataEvent;
-pub use normalizer::{derive_scale, parse_depth_snapshot, parse_exchange_info, parse_scaled, symbol_instrument_id};
+pub use normalizer::{
+    derive_scale, parse_depth_snapshot, parse_exchange_info, parse_scaled, symbol_instrument_id,
+};
 pub use open_interest::OpenInterestPoller;
 pub use publisher::{RefDataPublishError, RefDataPublisher};
 pub use registry::InstrumentRegistry;
@@ -34,31 +36,31 @@ use tracing::{info, warn};
 /// [`InstrumentDefinition`]: connector_core::InstrumentDefinition
 /// [`TradingStatus`]:        connector_core::TradingStatus
 pub struct RefDataService {
-    client:           RestClient,
-    pub registry:     InstrumentRegistry,
+    client: RestClient,
+    pub registry: InstrumentRegistry,
     refresh_interval: Duration,
-    venue_id:         VenueId,
-    market_type:      MarketType,
-    instance_id:      u32,
-    next_seq:         u64,
+    venue_id: VenueId,
+    market_type: MarketType,
+    instance_id: u32,
+    next_seq: u64,
 }
 
 impl RefDataService {
     pub fn new(
-        base_url:         impl Into<String>,
-        venue_id:         VenueId,
-        market_type:      MarketType,
-        instance_id:      u32,
+        base_url: impl Into<String>,
+        venue_id: VenueId,
+        market_type: MarketType,
+        instance_id: u32,
         refresh_interval: Duration,
     ) -> Self {
         Self {
-            client:           RestClient::new(base_url),
-            registry:         InstrumentRegistry::new(),
+            client: RestClient::new(base_url),
+            registry: InstrumentRegistry::new(),
             refresh_interval,
             venue_id,
             market_type,
             instance_id,
-            next_seq:         0,
+            next_seq: 0,
         }
     }
 
@@ -66,8 +68,9 @@ impl RefDataService {
     ///
     /// Returns every [`RefDataEvent`] produced — one per new or changed symbol.
     pub async fn refresh(&mut self) -> Result<Vec<RefDataEvent>, RefDataError> {
-        let seq  = self.next_seq;
-        let defs = self.client
+        let seq = self.next_seq;
+        let defs = self
+            .client
             .fetch_exchange_info(self.venue_id, self.market_type, self.instance_id, seq)
             .await?;
         self.next_seq += defs.len() as u64;

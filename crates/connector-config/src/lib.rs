@@ -18,7 +18,10 @@ pub enum ConfigError {
     ZeroInstances,
 
     #[error("instance.id ({instance_id}) must be less than instance.total ({total_instances})")]
-    InvalidInstanceId { instance_id: u32, total_instances: u32 },
+    InvalidInstanceId {
+        instance_id: u32,
+        total_instances: u32,
+    },
 
     #[error("unknown venue \"{0}\" (expected: binance_spot | binance_futures)")]
     UnknownVenue(String),
@@ -29,9 +32,7 @@ pub enum ConfigError {
     #[error("sharding.total_logical_shards must be at least 1")]
     ZeroShards,
 
-    #[error(
-        "sharding.total_logical_shards ({shards}) must be >= instance.total ({instances})"
-    )]
+    #[error("sharding.total_logical_shards ({shards}) must be >= instance.total ({instances})")]
     InsufficientShards { shards: u32, instances: u32 },
 
     #[error("aeron.mtu {0} is out of range (576..=65535)")]
@@ -48,7 +49,7 @@ pub enum ConfigError {
 #[derive(Debug, Clone, Deserialize)]
 pub struct InstanceConfig {
     /// Zero-based index of this process.
-    pub id:    u32,
+    pub id: u32,
     /// Total number of connector processes for this venue/market.
     pub total: u32,
     /// "binance_spot" | "binance_futures"
@@ -178,15 +179,15 @@ pub struct MetricsConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ConnectorConfig {
-    pub instance:  InstanceConfig,
-    pub sharding:  ShardingConfig,
+    pub instance: InstanceConfig,
+    pub sharding: ShardingConfig,
     #[serde(default)]
-    pub symbols:   SymbolConfig,
-    pub aeron:     AeronConfig,
+    pub symbols: SymbolConfig,
+    pub aeron: AeronConfig,
     pub websocket: WebSocketConfig,
-    pub rest:      RestConfig,
-    pub recovery:  RecoveryConfig,
-    pub metrics:   MetricsConfig,
+    pub rest: RestConfig,
+    pub recovery: RecoveryConfig,
+    pub metrics: MetricsConfig,
 }
 
 impl ConnectorConfig {
@@ -212,18 +213,18 @@ impl ConnectorConfig {
     /// Resolve the venue to the core `VenueId` type.
     pub fn venue_id(&self) -> Result<VenueId, ConfigError> {
         match self.instance.venue.as_str() {
-            "binance_spot"    => Ok(VenueId::BinanceSpot),
+            "binance_spot" => Ok(VenueId::BinanceSpot),
             "binance_futures" => Ok(VenueId::BinanceFutures),
-            other             => Err(ConfigError::UnknownVenue(other.to_owned())),
+            other => Err(ConfigError::UnknownVenue(other.to_owned())),
         }
     }
 
     /// Resolve the market to the core `MarketType` type.
     pub fn market_type(&self) -> Result<MarketType, ConfigError> {
         match self.instance.market.as_str() {
-            "spot"         => Ok(MarketType::Spot),
+            "spot" => Ok(MarketType::Spot),
             "usdm_futures" => Ok(MarketType::UsdmFutures),
-            other          => Err(ConfigError::UnknownMarket(other.to_owned())),
+            other => Err(ConfigError::UnknownMarket(other.to_owned())),
         }
     }
 
@@ -232,8 +233,8 @@ impl ConnectorConfig {
     /// Assignment rule: `shard_id % total_instances == instance_id`.
     pub fn owned_shards(&self) -> Vec<u32> {
         let total = self.sharding.total_logical_shards;
-        let id    = self.instance.id;
-        let n     = self.instance.total;
+        let id = self.instance.id;
+        let n = self.instance.total;
         (0..total).filter(|&s| s % n == id).collect()
     }
 
@@ -255,8 +256,8 @@ impl ConnectorConfig {
     /// full symbol universe.
     pub fn filter_owned_symbols<'a>(
         &self,
-        venue:   VenueId,
-        market:  MarketType,
+        venue: VenueId,
+        market: MarketType,
         symbols: impl IntoIterator<Item = &'a str>,
     ) -> Vec<&'a str> {
         symbols
@@ -272,7 +273,7 @@ impl ConnectorConfig {
         }
         if self.instance.id >= self.instance.total {
             return Err(ConfigError::InvalidInstanceId {
-                instance_id:     self.instance.id,
+                instance_id: self.instance.id,
                 total_instances: self.instance.total,
             });
         }
@@ -285,7 +286,7 @@ impl ConnectorConfig {
         }
         if self.sharding.total_logical_shards < self.instance.total {
             return Err(ConfigError::InsufficientShards {
-                shards:    self.sharding.total_logical_shards,
+                shards: self.sharding.total_logical_shards,
                 instances: self.instance.total,
             });
         }
@@ -304,28 +305,72 @@ impl ConnectorConfig {
 // ---------------------------------------------------------------------------
 
 mod defaults {
-    pub fn total_logical_shards() -> u32  { 16 }
-    pub fn media_driver_dir()     -> String { "/dev/shm/aeron".to_owned() }
-    pub fn ipc_enabled()          -> bool  { true }
-    pub fn mtu()                  -> u32   { 1408 }
-    pub fn term_length_mib()      -> u64   { 64 }
-    pub fn connect_retry_delay_ms() -> u64 { 1_000 }
-    pub fn ping_interval_secs()   -> u32   { 20 }
-    pub fn max_streams_per_connection() -> u32  { 1024 }
-    pub fn reconnect_delay_ms()   -> u64   { 500 }
-    pub fn forced_reconnect_secs() -> u64  { 86_400 }
-    pub fn spot_base_url()        -> String { "https://api.binance.com".to_owned() }
-    pub fn futures_base_url()     -> String { "https://fapi.binance.com".to_owned() }
-    pub fn futures_ws_url()       -> String { "wss://fstream.binance.com:443".to_owned() }
-    pub fn timeout_ms()           -> u64   { 5_000 }
-    pub fn max_retries()          -> u32   { 3 }
-    pub fn open_interest_poll_secs() -> u64 { 60 }
-    pub fn max_buffered_events()  -> u32   { 2_048 }
-    pub fn max_buffered_bytes()   -> u64   { 4 * 1024 * 1024 }  // 4 MiB
-    pub fn max_buffer_age_secs()  -> u32   { 10 }
-    pub fn max_recovery_attempts() -> u32  { 5 }
-    pub fn circuit_break_cooldown_secs() -> u32 { 30 }
-    pub fn prometheus_port()      -> u16   { 9090 }
+    pub fn total_logical_shards() -> u32 {
+        16
+    }
+    pub fn media_driver_dir() -> String {
+        "/dev/shm/aeron".to_owned()
+    }
+    pub fn ipc_enabled() -> bool {
+        true
+    }
+    pub fn mtu() -> u32 {
+        1408
+    }
+    pub fn term_length_mib() -> u64 {
+        64
+    }
+    pub fn connect_retry_delay_ms() -> u64 {
+        1_000
+    }
+    pub fn ping_interval_secs() -> u32 {
+        20
+    }
+    pub fn max_streams_per_connection() -> u32 {
+        1024
+    }
+    pub fn reconnect_delay_ms() -> u64 {
+        500
+    }
+    pub fn forced_reconnect_secs() -> u64 {
+        86_400
+    }
+    pub fn spot_base_url() -> String {
+        "https://api.binance.com".to_owned()
+    }
+    pub fn futures_base_url() -> String {
+        "https://fapi.binance.com".to_owned()
+    }
+    pub fn futures_ws_url() -> String {
+        "wss://fstream.binance.com:443".to_owned()
+    }
+    pub fn timeout_ms() -> u64 {
+        5_000
+    }
+    pub fn max_retries() -> u32 {
+        3
+    }
+    pub fn open_interest_poll_secs() -> u64 {
+        60
+    }
+    pub fn max_buffered_events() -> u32 {
+        2_048
+    }
+    pub fn max_buffered_bytes() -> u64 {
+        4 * 1024 * 1024
+    } // 4 MiB
+    pub fn max_buffer_age_secs() -> u32 {
+        10
+    }
+    pub fn max_recovery_attempts() -> u32 {
+        5
+    }
+    pub fn circuit_break_cooldown_secs() -> u32 {
+        30
+    }
+    pub fn prometheus_port() -> u16 {
+        9090
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -388,14 +433,14 @@ base_url = "https://api.binance.com"
     #[test]
     fn valid_config_loads() {
         let cfg = load(VALID_TOML).unwrap();
-        assert_eq!(cfg.instance.id,    0);
+        assert_eq!(cfg.instance.id, 0);
         assert_eq!(cfg.instance.total, 2);
         assert_eq!(cfg.symbols.universe, vec!["BTCUSDT", "ETHUSDT"]);
         assert_eq!(cfg.sharding.total_logical_shards, 16);
         assert_eq!(cfg.aeron.mtu, 1408);
         assert_eq!(cfg.aeron.term_length_mib, 64);
         assert_eq!(cfg.recovery.max_buffered_events, 2_048);
-        assert_eq!(cfg.recovery.max_buffered_bytes,  4 * 1024 * 1024);
+        assert_eq!(cfg.recovery.max_buffered_bytes, 4 * 1024 * 1024);
         assert_eq!(cfg.recovery.max_recovery_attempts, 5);
         assert_eq!(cfg.recovery.circuit_break_cooldown_secs, 30);
         assert_eq!(cfg.metrics.prometheus_port, 9090);
@@ -404,7 +449,7 @@ base_url = "https://api.binance.com"
     #[test]
     fn venue_and_market_type_resolve() {
         let cfg = load(VALID_TOML).unwrap();
-        assert_eq!(cfg.venue_id().unwrap(),    VenueId::BinanceSpot);
+        assert_eq!(cfg.venue_id().unwrap(), VenueId::BinanceSpot);
         assert_eq!(cfg.market_type().unwrap(), MarketType::Spot);
     }
 
@@ -419,28 +464,32 @@ base_url = "https://api.binance.com"
             )
             .replace("https://api.binance.com", "https://fapi.binance.com");
         let cfg = load(&toml).unwrap();
-        assert_eq!(cfg.venue_id().unwrap(),    VenueId::BinanceFutures);
+        assert_eq!(cfg.venue_id().unwrap(), VenueId::BinanceFutures);
         assert_eq!(cfg.market_type().unwrap(), MarketType::UsdmFutures);
     }
 
     #[test]
     fn shard_assignment_two_instances() {
-        let cfg = load(VALID_TOML).unwrap();  // instance 0 of 2, 16 shards
+        let cfg = load(VALID_TOML).unwrap(); // instance 0 of 2, 16 shards
         let shards = cfg.owned_shards();
         // instance 0 gets shards 0, 2, 4, 6, 8, 10, 12, 14
         assert_eq!(shards, vec![0, 2, 4, 6, 8, 10, 12, 14]);
 
         let toml1 = VALID_TOML.replace("id     = 0", "id     = 1");
-        let cfg1  = load(&toml1).unwrap();
+        let cfg1 = load(&toml1).unwrap();
         assert_eq!(cfg1.owned_shards(), vec![1, 3, 5, 7, 9, 11, 13, 15]);
     }
 
     #[test]
     fn shard_assignment_covers_all_shards() {
-        let cfg   = load(VALID_TOML).unwrap();
+        let cfg = load(VALID_TOML).unwrap();
         let toml1 = VALID_TOML.replace("id     = 0", "id     = 1");
-        let cfg1  = load(&toml1).unwrap();
-        let mut all: Vec<u32> = cfg.owned_shards().into_iter().chain(cfg1.owned_shards()).collect();
+        let cfg1 = load(&toml1).unwrap();
+        let mut all: Vec<u32> = cfg
+            .owned_shards()
+            .into_iter()
+            .chain(cfg1.owned_shards())
+            .collect();
         all.sort_unstable();
         let expected: Vec<u32> = (0..16).collect();
         assert_eq!(all, expected);
@@ -449,7 +498,7 @@ base_url = "https://api.binance.com"
     #[test]
     fn single_instance_owns_all_shards() {
         let toml = VALID_TOML.replace("total  = 2", "total  = 1");
-        let cfg  = load(&toml).unwrap();
+        let cfg = load(&toml).unwrap();
         let expected: Vec<u32> = (0..16).collect();
         assert_eq!(cfg.owned_shards(), expected);
     }
@@ -457,35 +506,35 @@ base_url = "https://api.binance.com"
     #[test]
     fn validate_zero_instances() {
         let toml = VALID_TOML.replace("total  = 2", "total  = 0");
-        let err  = load(&toml).unwrap_err();
+        let err = load(&toml).unwrap_err();
         assert!(matches!(err, ConfigError::ZeroInstances));
     }
 
     #[test]
     fn validate_instance_id_gte_total() {
         let toml = VALID_TOML.replace("id     = 0", "id     = 2");
-        let err  = load(&toml).unwrap_err();
+        let err = load(&toml).unwrap_err();
         assert!(matches!(err, ConfigError::InvalidInstanceId { .. }));
     }
 
     #[test]
     fn validate_unknown_venue() {
         let toml = VALID_TOML.replace("binance_spot", "kraken");
-        let err  = load(&toml).unwrap_err();
+        let err = load(&toml).unwrap_err();
         assert!(matches!(err, ConfigError::UnknownVenue(_)));
     }
 
     #[test]
     fn validate_unknown_market() {
         let toml = VALID_TOML.replace(r#"market = "spot""#, r#"market = "coinm_futures""#);
-        let err  = load(&toml).unwrap_err();
+        let err = load(&toml).unwrap_err();
         assert!(matches!(err, ConfigError::UnknownMarket(_)));
     }
 
     #[test]
     fn validate_zero_shards() {
         let toml = VALID_TOML.replace("total_logical_shards = 16", "total_logical_shards = 0");
-        let err  = load(&toml).unwrap_err();
+        let err = load(&toml).unwrap_err();
         assert!(matches!(err, ConfigError::ZeroShards));
     }
 
@@ -500,28 +549,28 @@ base_url = "https://api.binance.com"
     #[test]
     fn validate_mtu_too_low() {
         let toml = VALID_TOML.replace("mtu              = 1408", "mtu = 100");
-        let err  = load(&toml).unwrap_err();
+        let err = load(&toml).unwrap_err();
         assert!(matches!(err, ConfigError::InvalidMtu(100)));
     }
 
     #[test]
     fn validate_mtu_too_high() {
         let toml = VALID_TOML.replace("mtu              = 1408", "mtu = 70000");
-        let err  = load(&toml).unwrap_err();
+        let err = load(&toml).unwrap_err();
         assert!(matches!(err, ConfigError::InvalidMtu(70000)));
     }
 
     #[test]
     fn validate_term_length_not_power_of_two() {
         let toml = VALID_TOML.replace("term_length_mib  = 64", "term_length_mib = 63");
-        let err  = load(&toml).unwrap_err();
+        let err = load(&toml).unwrap_err();
         assert!(matches!(err, ConfigError::InvalidTermLength(63)));
     }
 
     #[test]
     fn validate_term_length_zero() {
         let toml = VALID_TOML.replace("term_length_mib  = 64", "term_length_mib = 0");
-        let err  = load(&toml).unwrap_err();
+        let err = load(&toml).unwrap_err();
         assert!(matches!(err, ConfigError::InvalidTermLength(0)));
     }
 
@@ -600,20 +649,18 @@ base_url = "https://api.binance.com"
 
     #[test]
     fn filter_owned_symbols_partitions_universe() {
-        let universe = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT",
-                        "DOGEUSDT", "AVAXUSDT", "ADAUSDT", "TRXUSDT", "LINKUSDT"];
+        let universe = [
+            "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT", "DOGEUSDT", "AVAXUSDT",
+            "ADAUSDT", "TRXUSDT", "LINKUSDT",
+        ];
 
         let toml0 = VALID_TOML; // instance 0 of 2
         let toml1 = VALID_TOML.replace("id     = 0", "id     = 1");
         let cfg0 = load(toml0).unwrap();
         let cfg1 = load(&toml1).unwrap();
 
-        let owned0 = cfg0.filter_owned_symbols(
-            VenueId::BinanceSpot, MarketType::Spot, universe,
-        );
-        let owned1 = cfg1.filter_owned_symbols(
-            VenueId::BinanceSpot, MarketType::Spot, universe,
-        );
+        let owned0 = cfg0.filter_owned_symbols(VenueId::BinanceSpot, MarketType::Spot, universe);
+        let owned1 = cfg1.filter_owned_symbols(VenueId::BinanceSpot, MarketType::Spot, universe);
 
         // Non-overlapping.
         for s in &owned0 {
@@ -631,7 +678,7 @@ base_url = "https://api.binance.com"
     #[test]
     fn single_instance_owns_all_symbols() {
         let toml = VALID_TOML.replace("total  = 2", "total  = 1");
-        let cfg  = load(&toml).unwrap();
+        let cfg = load(&toml).unwrap();
         let universe = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
         let owned = cfg.filter_owned_symbols(VenueId::BinanceSpot, MarketType::Spot, universe);
         assert_eq!(owned, universe.as_slice());
@@ -641,7 +688,9 @@ base_url = "https://api.binance.com"
     fn filter_owned_symbols_is_empty_for_empty_universe() {
         let cfg = load(VALID_TOML).unwrap();
         let owned = cfg.filter_owned_symbols(
-            VenueId::BinanceSpot, MarketType::Spot, std::iter::empty::<&str>(),
+            VenueId::BinanceSpot,
+            MarketType::Spot,
+            std::iter::empty::<&str>(),
         );
         assert!(owned.is_empty());
     }

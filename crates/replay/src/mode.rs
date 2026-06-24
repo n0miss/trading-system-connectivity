@@ -27,7 +27,12 @@ pub struct FaultConfig {
 
 impl Default for FaultConfig {
     fn default() -> Self {
-        Self { drop_percent: 0, corrupt_percent: 0, duplicate_percent: 0, seed: 0 }
+        Self {
+            drop_percent: 0,
+            corrupt_percent: 0,
+            duplicate_percent: 0,
+            seed: 0,
+        }
     }
 }
 
@@ -64,10 +69,7 @@ pub enum ReplayMode {
     /// * `num == den` — identical to `OriginalTiming`
     ///
     /// `den` must not be zero; the replayer clamps it to 1.
-    Scaled {
-        num: u32,
-        den: u32,
-    },
+    Scaled { num: u32, den: u32 },
 
     /// Tick-based virtual clock — no wall-clock dependency.
     ///
@@ -94,7 +96,7 @@ pub enum ReplayMode {
     /// };
     /// ```
     FaultInjection {
-        inner:  Box<ReplayMode>,
+        inner: Box<ReplayMode>,
         faults: FaultConfig,
     },
 }
@@ -132,7 +134,13 @@ pub(crate) struct Prng {
 impl Prng {
     pub(crate) fn new(seed: u64) -> Self {
         // xorshift64 must not have a zero state.
-        Self { state: if seed == 0 { 0xDEAD_BEEF_CAFE_F00D } else { seed } }
+        Self {
+            state: if seed == 0 {
+                0xDEAD_BEEF_CAFE_F00D
+            } else {
+                seed
+            },
+        }
     }
 
     pub(crate) fn next(&mut self) -> u64 {
@@ -190,7 +198,7 @@ mod tests {
     #[test]
     fn base_timing_unwraps_fault_injection() {
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::Deterministic),
+            inner: Box::new(ReplayMode::Deterministic),
             faults: FaultConfig::default(),
         };
         assert!(matches!(mode.base_timing(), ReplayMode::Deterministic));
@@ -198,9 +206,12 @@ mod tests {
 
     #[test]
     fn fault_config_present_in_fault_injection_mode() {
-        let fc = FaultConfig { drop_percent: 10, ..Default::default() };
+        let fc = FaultConfig {
+            drop_percent: 10,
+            ..Default::default()
+        };
         let mode = ReplayMode::FaultInjection {
-            inner:  Box::new(ReplayMode::AsFastAsPossible),
+            inner: Box::new(ReplayMode::AsFastAsPossible),
             faults: fc.clone(),
         };
         assert_eq!(mode.fault_config(), Some(&fc));

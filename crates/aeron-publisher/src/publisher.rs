@@ -58,7 +58,9 @@ impl<P: Publication> ShardedPublisher<P> {
     ///
     /// Duplicate shard IDs are silently overwritten.
     pub fn new(shards: impl IntoIterator<Item = (u32, P)>) -> Self {
-        Self { shards: shards.into_iter().collect() }
+        Self {
+            shards: shards.into_iter().collect(),
+        }
     }
 
     /// Offer `bytes` to the publication for `shard_id`.
@@ -67,7 +69,7 @@ impl<P: Publication> ShardedPublisher<P> {
     /// shard. Otherwise returns the [`OfferResult`] from the publication.
     pub fn offer(&mut self, shard_id: u32, bytes: &[u8]) -> Result<OfferResult, PublisherError> {
         match self.shards.get_mut(&shard_id) {
-            None      => Err(PublisherError::UnknownShard(shard_id)),
+            None => Err(PublisherError::UnknownShard(shard_id)),
             Some(pub_) => Ok(pub_.offer(bytes)),
         }
     }
@@ -122,7 +124,9 @@ pub fn build_null_boxed(owned_shards: &[u32]) -> DynShardedPublisher {
 /// Used when no Aeron media driver is available (tests, benchmarks, dev).
 pub fn build_null(owned_shards: &[u32]) -> ShardedPublisher<NullPublication> {
     ShardedPublisher::new(
-        owned_shards.iter().map(|&id| (id, NullPublication::default())),
+        owned_shards
+            .iter()
+            .map(|&id| (id, NullPublication::default())),
     )
 }
 
@@ -140,36 +144,40 @@ pub fn build_aeron(
     cfg: &connector_config::AeronConfig,
     owned_shards: &[u32],
 ) -> Result<DynShardedPublisher, crate::error::PublisherError> {
+    use crate::error::PublisherError;
+    use crate::publication::AeronClientPublication;
     use rusteron_client::{Aeron, AeronContext};
     use std::ffi::CString;
     use std::time::Duration;
-    use crate::error::PublisherError;
-    use crate::publication::AeronClientPublication;
 
-    let context = AeronContext::new()
-        .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
+    let context = AeronContext::new().map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
 
     let dir = CString::new(cfg.media_driver_dir.as_str())
         .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
-    context.set_dir(&dir)
+    context
+        .set_dir(&dir)
         .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
 
-    let aeron = Aeron::new(&context)
-        .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
-    aeron.start()
+    let aeron = Aeron::new(&context).map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
+    aeron
+        .start()
         .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
 
     let channel = channel_from_config(cfg);
-    let channel_cstr = CString::new(channel.as_str())
-        .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
+    let channel_cstr =
+        CString::new(channel.as_str()).map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
 
-    let mut shards: Vec<(u32, Box<dyn Publication + Send>)> = Vec::with_capacity(owned_shards.len());
+    let mut shards: Vec<(u32, Box<dyn Publication + Send>)> =
+        Vec::with_capacity(owned_shards.len());
     for &shard_id in owned_shards {
         let stream_id = shard_stream_id(shard_id);
         let pub_ = aeron
             .add_publication(&channel_cstr, stream_id, Duration::from_secs(5))
             .map_err(|e| PublisherError::AeronConnect(e.to_string()))?;
-        shards.push((shard_id, Box::new(AeronClientPublication::new(pub_, aeron.clone()))));
+        shards.push((
+            shard_id,
+            Box::new(AeronClientPublication::new(pub_, aeron.clone())),
+        ));
     }
 
     Ok(ShardedPublisher::new(shards))
@@ -188,9 +196,9 @@ pub fn build_aeron(
 ///
 /// Without the `aeron` feature this returns a null publisher immediately.
 pub async fn build_aeron_with_retry(
-    cfg:          &connector_config::AeronConfig,
-    shards:       &[u32],
-    retry_delay:  std::time::Duration,
+    cfg: &connector_config::AeronConfig,
+    shards: &[u32],
+    retry_delay: std::time::Duration,
     #[cfg_attr(not(feature = "aeron"), allow(unused_mut))]
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> DynShardedPublisher {
@@ -207,7 +215,7 @@ pub async fn build_aeron_with_retry(
 
             // Run the blocking native call on a dedicated thread so this
             // async task can still poll `shutdown` while it waits.
-            let cfg2    = cfg.clone();
+            let cfg2 = cfg.clone();
             let shards2 = shards.to_vec();
             let connect = tokio::task::spawn_blocking(move || build_aeron(&cfg2, &shards2));
 
@@ -269,8 +277,8 @@ pub async fn build_aeron_with_retry(
 ///
 /// Without the `aeron` feature this is a no-op (the publisher is already null).
 pub fn reconnect_sync(
-    cfg:       &connector_config::AeronConfig,
-    shard_id:  u32,
+    cfg: &connector_config::AeronConfig,
+    shard_id: u32,
     publisher: &mut DynShardedPublisher,
 ) {
     #[cfg(feature = "aeron")]
@@ -309,9 +317,12 @@ pub fn reconnect_sync(
 pub fn build_channel(
     owned_shards: &[u32],
     channel_capacity: usize,
-) -> (ShardedPublisher<ChannelPublication>, HashMap<u32, mpsc::Receiver<Vec<u8>>>) {
+) -> (
+    ShardedPublisher<ChannelPublication>,
+    HashMap<u32, mpsc::Receiver<Vec<u8>>>,
+) {
     let mut publisher_shards = Vec::with_capacity(owned_shards.len());
-    let mut receivers         = HashMap::with_capacity(owned_shards.len());
+    let mut receivers = HashMap::with_capacity(owned_shards.len());
 
     for &shard_id in owned_shards {
         let (pub_, rx) = ChannelPublication::new(channel_capacity);
@@ -355,7 +366,10 @@ mod tests {
 
     #[test]
     fn udp_channel_embeds_endpoint() {
-        assert_eq!(udp_channel("10.0.0.1:40123"), "aeron:udp?endpoint=10.0.0.1:40123");
+        assert_eq!(
+            udp_channel("10.0.0.1:40123"),
+            "aeron:udp?endpoint=10.0.0.1:40123"
+        );
     }
 
     // --- build_null ---
@@ -435,12 +449,12 @@ mod tests {
     #[test]
     fn channel_from_config_ipc_preferred() {
         let cfg = AeronConfig {
-            media_driver_dir:      "/dev/shm/aeron".into(),
-            ipc_enabled:           true,
-            udp_endpoint:          Some("10.0.0.1:9999".into()),
-            mtu:                   1408,
-            term_length_mib:       64,
-            archive_enabled:       false,
+            media_driver_dir: "/dev/shm/aeron".into(),
+            ipc_enabled: true,
+            udp_endpoint: Some("10.0.0.1:9999".into()),
+            mtu: 1408,
+            term_length_mib: 64,
+            archive_enabled: false,
             connect_retry_delay_ms: 1000,
         };
         assert_eq!(channel_from_config(&cfg), "aeron:ipc");
@@ -449,15 +463,18 @@ mod tests {
     #[test]
     fn channel_from_config_udp_when_ipc_disabled() {
         let cfg = AeronConfig {
-            media_driver_dir:      "/dev/shm/aeron".into(),
-            ipc_enabled:           false,
-            udp_endpoint:          Some("10.0.0.2:40123".into()),
-            mtu:                   1408,
-            term_length_mib:       64,
-            archive_enabled:       false,
+            media_driver_dir: "/dev/shm/aeron".into(),
+            ipc_enabled: false,
+            udp_endpoint: Some("10.0.0.2:40123".into()),
+            mtu: 1408,
+            term_length_mib: 64,
+            archive_enabled: false,
             connect_retry_delay_ms: 1000,
         };
-        assert_eq!(channel_from_config(&cfg), "aeron:udp?endpoint=10.0.0.2:40123");
+        assert_eq!(
+            channel_from_config(&cfg),
+            "aeron:udp?endpoint=10.0.0.2:40123"
+        );
     }
 
     // --- build_aeron_with_retry / reconnect_sync ---
@@ -469,12 +486,12 @@ mod tests {
     #[cfg(not(feature = "aeron"))]
     fn no_driver_cfg() -> AeronConfig {
         AeronConfig {
-            media_driver_dir:      "/tmp/aeron-nonexistent-test-dir".into(),
-            ipc_enabled:           true,
-            udp_endpoint:          None,
-            mtu:                   1408,
-            term_length_mib:       64,
-            archive_enabled:       false,
+            media_driver_dir: "/tmp/aeron-nonexistent-test-dir".into(),
+            ipc_enabled: true,
+            udp_endpoint: None,
+            mtu: 1408,
+            term_length_mib: 64,
+            archive_enabled: false,
             connect_retry_delay_ms: 1,
         }
     }

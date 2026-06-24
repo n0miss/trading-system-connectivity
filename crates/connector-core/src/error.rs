@@ -38,5 +38,8 @@ pub enum Error {
 
     // --- structural ---
     #[error("wrong message type in header: got {got:?}, expected {expected:?}")]
-    MessageTypeMismatch { got: MessageType, expected: MessageType },
+    MessageTypeMismatch {
+        got: MessageType,
+        expected: MessageType,
+    },
 }

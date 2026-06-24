@@ -5,19 +5,18 @@
 ///   - 2,048 events
 ///   - 4 MiB cumulative encoded size
 ///   - 10 s age of the oldest buffered event
-
 use std::collections::VecDeque;
 
 use connector_core::BookDelta;
 
 pub const MAX_EVENTS: usize = 2_048;
-pub const MAX_BYTES:  usize = 4 * 1_024 * 1_024;
-pub const MAX_AGE_NS: i64   = 10_000_000_000;
+pub const MAX_BYTES: usize = 4 * 1_024 * 1_024;
+pub const MAX_AGE_NS: i64 = 10_000_000_000;
 
 #[derive(Debug, Clone)]
 pub struct BufferedDelta {
-    pub delta:        BookDelta,
-    pub recv_ts:      i64,
+    pub delta: BookDelta,
+    pub recv_ts: i64,
     pub encoded_size: usize,
 }
 
@@ -36,11 +35,11 @@ pub enum OverflowReason {
 
 #[derive(Debug)]
 pub struct RecoveryBuffer {
-    events:      VecDeque<BufferedDelta>,
+    events: VecDeque<BufferedDelta>,
     total_bytes: usize,
-    max_events:  usize,
-    max_bytes:   usize,
-    max_age_ns:  i64,
+    max_events: usize,
+    max_bytes: usize,
+    max_age_ns: i64,
 }
 
 impl RecoveryBuffer {
@@ -72,7 +71,11 @@ impl RecoveryBuffer {
             return PushResult::Overflow(OverflowReason::ByteSize);
         }
         self.total_bytes += encoded_size;
-        self.events.push_back(BufferedDelta { delta, recv_ts, encoded_size });
+        self.events.push_back(BufferedDelta {
+            delta,
+            recv_ts,
+            encoded_size,
+        });
         PushResult::Accepted
     }
 
@@ -83,7 +86,10 @@ impl RecoveryBuffer {
     pub fn drain_after(&mut self, snapshot_id: u64) -> Vec<BufferedDelta> {
         let events = std::mem::take(&mut self.events);
         self.total_bytes = 0;
-        events.into_iter().filter(|e| e.delta.final_update_id > snapshot_id).collect()
+        events
+            .into_iter()
+            .filter(|e| e.delta.final_update_id > snapshot_id)
+            .collect()
     }
 
     pub fn clear(&mut self) {
@@ -91,49 +97,61 @@ impl RecoveryBuffer {
         self.total_bytes = 0;
     }
 
-    pub fn len(&self)              -> usize       { self.events.len() }
-    pub fn is_empty(&self)         -> bool        { self.events.is_empty() }
-    pub fn total_bytes(&self)      -> usize       { self.total_bytes }
-    pub fn oldest_recv_ts(&self)   -> Option<i64> { self.events.front().map(|e| e.recv_ts) }
-    pub fn events(&self) -> impl Iterator<Item = &BufferedDelta> { self.events.iter() }
+    pub fn len(&self) -> usize {
+        self.events.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+    pub fn total_bytes(&self) -> usize {
+        self.total_bytes
+    }
+    pub fn oldest_recv_ts(&self) -> Option<i64> {
+        self.events.front().map(|e| e.recv_ts)
+    }
+    pub fn events(&self) -> impl Iterator<Item = &BufferedDelta> {
+        self.events.iter()
+    }
 }
 
 impl Default for RecoveryBuffer {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use connector_core::{
-        BookDelta, MarketType, MessageHeader, MessageType, VenueId,
-        SCHEMA_VERSION, TS_NONE, UPDATE_ID_NONE,
+        BookDelta, MarketType, MessageHeader, MessageType, VenueId, SCHEMA_VERSION, TS_NONE,
+        UPDATE_ID_NONE,
     };
 
     fn make_delta(first: u64, final_: u64) -> BookDelta {
         BookDelta {
             header: MessageHeader {
-                schema_version:    SCHEMA_VERSION,
-                message_type:      MessageType::BookDelta,
-                venue_id:          VenueId::BinanceFutures,
-                market_type:       MarketType::UsdmFutures,
-                instrument_id:     1,
-                connection_id:     0,
-                instance_id:       0,
-                sequence_number:   0,
+                schema_version: SCHEMA_VERSION,
+                message_type: MessageType::BookDelta,
+                venue_id: VenueId::BinanceFutures,
+                market_type: MarketType::UsdmFutures,
+                instrument_id: 1,
+                connection_id: 0,
+                instance_id: 0,
+                sequence_number: 0,
                 exchange_event_ts: TS_NONE,
-                exchange_tx_ts:    TS_NONE,
-                local_recv_ts:     TS_NONE,
-                local_publish_ts:  TS_NONE,
+                exchange_tx_ts: TS_NONE,
+                local_recv_ts: TS_NONE,
+                local_publish_ts: TS_NONE,
             },
-            symbol:          "BTCUSDT".to_string(),
-            price_scale:     2,
-            qty_scale:       3,
+            symbol: "BTCUSDT".to_string(),
+            price_scale: 2,
+            qty_scale: 3,
             first_update_id: first,
             final_update_id: final_,
-            prev_update_id:  UPDATE_ID_NONE,
-            bids:            vec![],
-            asks:            vec![],
+            prev_update_id: UPDATE_ID_NONE,
+            bids: vec![],
+            asks: vec![],
         }
     }
 
@@ -160,7 +178,10 @@ mod tests {
         let mut buf = RecoveryBuffer::with_limits(1, MAX_BYTES, 5 * SEC);
         buf.push(make_delta(1, 10), 0, 100);
         // event count would also overflow (len == max_events), but age is checked first
-        assert_eq!(buf.push(make_delta(11, 20), 6 * SEC, 100), PushResult::Overflow(OverflowReason::Age));
+        assert_eq!(
+            buf.push(make_delta(11, 20), 6 * SEC, 100),
+            PushResult::Overflow(OverflowReason::Age)
+        );
     }
 
     #[test]
@@ -168,21 +189,27 @@ mod tests {
         let mut buf = RecoveryBuffer::with_limits(2, MAX_BYTES, MAX_AGE_NS);
         buf.push(make_delta(1, 10), 0, 10);
         buf.push(make_delta(11, 20), 0, 10);
-        assert_eq!(buf.push(make_delta(21, 30), 0, 10), PushResult::Overflow(OverflowReason::EventCount));
+        assert_eq!(
+            buf.push(make_delta(21, 30), 0, 10),
+            PushResult::Overflow(OverflowReason::EventCount)
+        );
     }
 
     #[test]
     fn byte_size_overflow() {
         let mut buf = RecoveryBuffer::with_limits(MAX_EVENTS, 500, MAX_AGE_NS);
         buf.push(make_delta(1, 10), 0, 300);
-        assert_eq!(buf.push(make_delta(11, 20), 0, 300), PushResult::Overflow(OverflowReason::ByteSize));
+        assert_eq!(
+            buf.push(make_delta(11, 20), 0, 300),
+            PushResult::Overflow(OverflowReason::ByteSize)
+        );
         assert_eq!(buf.total_bytes(), 300); // overflow event not counted
     }
 
     #[test]
     fn drain_after_keeps_events_beyond_snapshot() {
         let mut buf = RecoveryBuffer::new();
-        buf.push(make_delta(1,  10), 0, 100); // final 10 ≤ 15 → discard
+        buf.push(make_delta(1, 10), 0, 100); // final 10 ≤ 15 → discard
         buf.push(make_delta(11, 15), 0, 100); // final 15 ≤ 15 → discard
         buf.push(make_delta(16, 20), 0, 100); // final 20 > 15 → keep
         let kept = buf.drain_after(15);

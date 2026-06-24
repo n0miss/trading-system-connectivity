@@ -17,7 +17,6 @@
 ///
 /// `TS_NONE = 0` is the sentinel for "timestamp not available".  Latencies
 /// are only recorded when both source timestamps are non-zero.
-
 use connector_core::TS_NONE;
 use connector_metrics::ConnectorMetrics;
 
@@ -69,19 +68,17 @@ pub(crate) fn now_nanos() -> i64 {
 /// which carries no exchange timestamp).  `wire_latency` and `end_to_end_latency`
 /// are only recorded when `exchange_event_ts != TS_NONE`.
 #[inline]
-pub fn record_publish(
-    m:        &ConnectorMetrics,
-    event_ts: i64,
-    recv_ts:  i64,
-) -> i64 {
+pub fn record_publish(m: &ConnectorMetrics, event_ts: i64, recv_ts: i64) -> i64 {
     let publish_ts = now_nanos();
     m.messages_out.increment();
     if recv_ts != TS_NONE {
-        m.processing_latency.record(publish_ts.saturating_sub(recv_ts));
+        m.processing_latency
+            .record(publish_ts.saturating_sub(recv_ts));
     }
     if event_ts != TS_NONE && recv_ts != TS_NONE {
         m.wire_latency.record(recv_ts.saturating_sub(event_ts));
-        m.end_to_end_latency.record(publish_ts.saturating_sub(event_ts));
+        m.end_to_end_latency
+            .record(publish_ts.saturating_sub(event_ts));
     }
     publish_ts
 }
@@ -125,7 +122,7 @@ mod tests {
     fn record_publish_increments_messages_out() {
         let m = ConnectorMetrics::new();
         let event_ts = nanos_ago(1_000_000); // 1 ms ago
-        let recv_ts  = nanos_ago(100_000);   // 100 µs ago
+        let recv_ts = nanos_ago(100_000); // 100 µs ago
         record_publish(&m, event_ts, recv_ts);
         assert_eq!(m.messages_out.get(), 1);
     }
@@ -134,7 +131,7 @@ mod tests {
     fn record_publish_accumulates_over_multiple_calls() {
         let m = ConnectorMetrics::new();
         let event_ts = nanos_ago(1_000_000);
-        let recv_ts  = nanos_ago(100_000);
+        let recv_ts = nanos_ago(100_000);
         for _ in 0..100 {
             record_publish(&m, event_ts, recv_ts);
         }
@@ -145,12 +142,20 @@ mod tests {
     fn record_publish_records_all_three_latency_hops() {
         let m = ConnectorMetrics::new();
         let event_ts = nanos_ago(1_000_000); // 1 ms ago
-        let recv_ts  = nanos_ago(100_000);   // 100 µs ago
+        let recv_ts = nanos_ago(100_000); // 100 µs ago
         record_publish(&m, event_ts, recv_ts);
 
-        assert_eq!(m.wire_latency.count(),       1, "wire_latency not recorded");
-        assert_eq!(m.processing_latency.count(), 1, "processing_latency not recorded");
-        assert_eq!(m.end_to_end_latency.count(), 1, "end_to_end_latency not recorded");
+        assert_eq!(m.wire_latency.count(), 1, "wire_latency not recorded");
+        assert_eq!(
+            m.processing_latency.count(),
+            1,
+            "processing_latency not recorded"
+        );
+        assert_eq!(
+            m.end_to_end_latency.count(),
+            1,
+            "end_to_end_latency not recorded"
+        );
     }
 
     #[test]
@@ -164,7 +169,7 @@ mod tests {
         // processing_latency is recorded (only needs recv_ts, e.g. bookTicker)
         assert_eq!(m.processing_latency.count(), 1);
         // wire and e2e require a valid exchange timestamp — stay empty
-        assert_eq!(m.wire_latency.count(),       0);
+        assert_eq!(m.wire_latency.count(), 0);
         assert_eq!(m.end_to_end_latency.count(), 0);
     }
 
@@ -175,7 +180,7 @@ mod tests {
         record_publish(&m, event_ts, TS_NONE);
 
         assert_eq!(m.messages_out.get(), 1);
-        assert_eq!(m.wire_latency.count(),       0);
+        assert_eq!(m.wire_latency.count(), 0);
         assert_eq!(m.processing_latency.count(), 0);
         assert_eq!(m.end_to_end_latency.count(), 0);
     }
@@ -194,7 +199,7 @@ mod tests {
         // wire_latency = recv_ts - event_ts = 900 µs → bucket le=1_000_000 (1ms)
         let m = ConnectorMetrics::new();
         let event_ts = nanos_ago(1_000_000); // 1 ms ago
-        let recv_ts  = nanos_ago(100_000);   // 100 µs ago → wire = 900 µs
+        let recv_ts = nanos_ago(100_000); // 100 µs ago → wire = 900 µs
         for _ in 0..100 {
             record_publish(&m, event_ts, recv_ts);
         }
@@ -202,7 +207,10 @@ mod tests {
         let p50 = m.wire_latency.p50().expect("p50 should be Some");
         let p99 = m.wire_latency.p99().expect("p99 should be Some");
         assert_eq!(p50, p99, "all samples are identical so p50 == p99");
-        assert!(p50 <= 1_000_000, "900 µs should land at or below the 1ms bucket: got {p50}");
+        assert!(
+            p50 <= 1_000_000,
+            "900 µs should land at or below the 1ms bucket: got {p50}"
+        );
     }
 
     /// End-to-end demo: simulate 1 000 frames through the hot path and verify
@@ -214,7 +222,7 @@ mod tests {
         // Wire latency ≈ 900 µs, processing ≈ 100 µs (approximation; actual
         // processing_latency depends on real clock, so we only verify it is recorded)
         let event_ts = nanos_ago(1_000_000);
-        let recv_ts  = nanos_ago(100_000);
+        let recv_ts = nanos_ago(100_000);
 
         for _ in 0..1_000 {
             record_publish(&m, event_ts, recv_ts);
@@ -229,7 +237,10 @@ mod tests {
         assert!(p99.is_some(), "p99 must be Some after 1000 samples");
 
         let e2e_p99 = m.end_to_end_latency.p99();
-        assert!(e2e_p99.is_some(), "end-to-end p99 must be Some after 1000 samples");
+        assert!(
+            e2e_p99.is_some(),
+            "end-to-end p99 must be Some after 1000 samples"
+        );
     }
 
     #[test]

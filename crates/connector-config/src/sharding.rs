@@ -16,7 +16,6 @@
 /// ```text
 /// owner_instance_id = logical_shard_id % total_instances
 /// ```
-
 use connector_core::{MarketType, VenueId};
 
 // ---------------------------------------------------------------------------
@@ -43,9 +42,9 @@ const FNV_PRIME: u32 = 16_777_619;
 ///
 /// Panics if `total_shards == 0`.
 pub fn shard_for_symbol(
-    venue:        VenueId,
-    market:       MarketType,
-    symbol:       &str,
+    venue: VenueId,
+    market: MarketType,
+    symbol: &str,
     total_shards: u32,
 ) -> u32 {
     assert!(total_shards > 0, "total_shards must be > 0");
@@ -53,14 +52,14 @@ pub fn shard_for_symbol(
     let mut h = FNV_BASIS;
 
     h ^= venue as u32;
-    h  = h.wrapping_mul(FNV_PRIME);
+    h = h.wrapping_mul(FNV_PRIME);
 
     h ^= market as u32;
-    h  = h.wrapping_mul(FNV_PRIME);
+    h = h.wrapping_mul(FNV_PRIME);
 
     for b in symbol.bytes() {
         h ^= b as u32;
-        h  = h.wrapping_mul(FNV_PRIME);
+        h = h.wrapping_mul(FNV_PRIME);
     }
 
     h % total_shards
@@ -85,8 +84,8 @@ mod tests {
 
     // A handful of symbols used across multiple tests.
     const SYMBOLS: &[&str] = &[
-        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
-        "BNBUSDT", "AVAXUSDT", "ADAUSDT", "TRXUSDT", "LINKUSDT",
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "BNBUSDT", "AVAXUSDT", "ADAUSDT",
+        "TRXUSDT", "LINKUSDT",
     ];
 
     // --- Determinism ---
@@ -105,7 +104,7 @@ mod tests {
         for &s in SYMBOLS {
             assert!(spot_shard(s, 16) < 16);
             assert!(spot_shard(s, 64) < 64);
-            assert!(spot_shard(s, 1)  < 1);
+            assert!(spot_shard(s, 1) < 1);
         }
     }
 
@@ -126,14 +125,22 @@ mod tests {
         // the hash still works but the test needs a different symbol.
         let a = spot_shard("BTCUSDT", 256);
         let b = fut_shard("BTCUSDT", 256);
-        assert_ne!(a, b, "spot and futures BTCUSDT should map to different shards");
+        assert_ne!(
+            a, b,
+            "spot and futures BTCUSDT should map to different shards"
+        );
     }
 
     #[test]
     fn same_venue_different_market_differentiates() {
         // MarketType::Spot=1 vs MarketType::UsdmFutures=2 — hashes must diverge.
-        let a = shard_for_symbol(VenueId::BinanceSpot, MarketType::Spot,        "ETHUSDT", 256);
-        let b = shard_for_symbol(VenueId::BinanceSpot, MarketType::UsdmFutures, "ETHUSDT", 256);
+        let a = shard_for_symbol(VenueId::BinanceSpot, MarketType::Spot, "ETHUSDT", 256);
+        let b = shard_for_symbol(
+            VenueId::BinanceSpot,
+            MarketType::UsdmFutures,
+            "ETHUSDT",
+            256,
+        );
         assert_ne!(a, b);
     }
 
@@ -145,7 +152,11 @@ mod tests {
         // (collisions are possible in theory but extremely unlikely with FNV-1a).
         let shards: Vec<u32> = SYMBOLS.iter().map(|s| spot_shard(s, 1024)).collect();
         let unique: std::collections::HashSet<u32> = shards.iter().copied().collect();
-        assert_eq!(unique.len(), SYMBOLS.len(), "unexpected collision among shards: {shards:?}");
+        assert_eq!(
+            unique.len(),
+            SYMBOLS.len(),
+            "unexpected collision among shards: {shards:?}"
+        );
     }
 
     // --- Distribution ---
@@ -154,7 +165,10 @@ mod tests {
     fn shards_not_all_zero_with_two_shards() {
         // At least one symbol in SYMBOLS must land on shard 1.
         let any_on_one = SYMBOLS.iter().any(|s| spot_shard(s, 2) == 1);
-        assert!(any_on_one, "no symbol landed on shard 1 — distribution problem");
+        assert!(
+            any_on_one,
+            "no symbol landed on shard 1 — distribution problem"
+        );
     }
 
     #[test]
@@ -204,7 +218,10 @@ mod tests {
             let shard = spot_shard(s, 16);
             let inst0 = shard % 2 == 0;
             let inst1 = shard % 2 == 1;
-            assert!(inst0 ^ inst1, "symbol {s} not owned by exactly one instance");
+            assert!(
+                inst0 ^ inst1,
+                "symbol {s} not owned by exactly one instance"
+            );
         }
     }
 

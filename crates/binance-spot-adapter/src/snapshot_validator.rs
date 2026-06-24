@@ -17,7 +17,6 @@
 /// This matches what [`connector_order_book::OrderBook::bids`] /
 /// [`connector_order_book::OrderBook::asks`] and Binance REST depth responses
 /// produce.
-
 use connector_core::{BookSnapshot, PriceLevel};
 
 // ---------------------------------------------------------------------------
@@ -53,8 +52,8 @@ pub struct SnapshotValidatorConfig {
 impl Default for SnapshotValidatorConfig {
     fn default() -> Self {
         Self {
-            check_levels:    CHECK_LEVELS,
-            max_mismatched:  MAX_MISMATCHED,
+            check_levels: CHECK_LEVELS,
+            max_mismatched: MAX_MISMATCHED,
             price_tolerance: PRICE_TOLERANCE,
         }
     }
@@ -86,8 +85,8 @@ pub enum SnapshotCheckResult {
 pub fn check_snapshot(
     book_bids: impl Iterator<Item = PriceLevel>,
     book_asks: impl Iterator<Item = PriceLevel>,
-    snapshot:  &BookSnapshot,
-    cfg:       &SnapshotValidatorConfig,
+    snapshot: &BookSnapshot,
+    cfg: &SnapshotValidatorConfig,
 ) -> SnapshotCheckResult {
     let bid_mismatches = count_price_mismatches(
         book_bids,
@@ -135,8 +134,7 @@ fn count_price_mismatches(
 #[cfg(test)]
 mod tests {
     use connector_core::{
-        MarketType, MessageHeader, MessageType, PriceLevel, VenueId,
-        SCHEMA_VERSION, TS_NONE,
+        MarketType, MessageHeader, MessageType, PriceLevel, VenueId, SCHEMA_VERSION, TS_NONE,
     };
 
     use super::*;
@@ -145,22 +143,22 @@ mod tests {
     fn snap(update_id: u64, bids: Vec<PriceLevel>, asks: Vec<PriceLevel>) -> BookSnapshot {
         BookSnapshot {
             header: MessageHeader {
-                schema_version:    SCHEMA_VERSION,
-                message_type:      MessageType::BookSnapshot,
-                venue_id:          VenueId::BinanceSpot,
-                market_type:       MarketType::Spot,
-                instrument_id:     0,
-                connection_id:     0,
-                instance_id:       0,
-                sequence_number:   0,
+                schema_version: SCHEMA_VERSION,
+                message_type: MessageType::BookSnapshot,
+                venue_id: VenueId::BinanceSpot,
+                market_type: MarketType::Spot,
+                instrument_id: 0,
+                connection_id: 0,
+                instance_id: 0,
+                sequence_number: 0,
                 exchange_event_ts: TS_NONE,
-                exchange_tx_ts:    TS_NONE,
-                local_recv_ts:     0,
-                local_publish_ts:  0,
+                exchange_tx_ts: TS_NONE,
+                local_recv_ts: 0,
+                local_publish_ts: 0,
             },
-            symbol:      "BTCUSDT".into(),
+            symbol: "BTCUSDT".into(),
             price_scale: 2,
-            qty_scale:   3,
+            qty_scale: 3,
             update_id,
             bids,
             asks,
@@ -175,10 +173,16 @@ mod tests {
         SnapshotValidatorConfig::default()
     }
 
-    fn cfg_with(check_levels: usize, max_mismatched: usize, price_tolerance: i64)
-        -> SnapshotValidatorConfig
-    {
-        SnapshotValidatorConfig { check_levels, max_mismatched, price_tolerance }
+    fn cfg_with(
+        check_levels: usize,
+        max_mismatched: usize,
+        price_tolerance: i64,
+    ) -> SnapshotValidatorConfig {
+        SnapshotValidatorConfig {
+            check_levels,
+            max_mismatched,
+            price_tolerance,
+        }
     }
 
     // --- Defaults ---
@@ -186,8 +190,8 @@ mod tests {
     #[test]
     fn default_config_has_spec_values() {
         let c = SnapshotValidatorConfig::default();
-        assert_eq!(c.check_levels,    CHECK_LEVELS);
-        assert_eq!(c.max_mismatched,  MAX_MISMATCHED);
+        assert_eq!(c.check_levels, CHECK_LEVELS);
+        assert_eq!(c.max_mismatched, MAX_MISMATCHED);
         assert_eq!(c.price_tolerance, PRICE_TOLERANCE);
     }
 
@@ -197,7 +201,7 @@ mod tests {
     fn identical_levels_return_compatible() {
         let bids = vec![lvl(100, 10), lvl(99, 5), lvl(98, 3)];
         let asks = vec![lvl(101, 8), lvl(102, 4), lvl(103, 2)];
-        let s    = snap(1, bids.clone(), asks.clone());
+        let s = snap(1, bids.clone(), asks.clone());
         assert_eq!(
             check_snapshot(bids.into_iter(), asks.into_iter(), &s, &cfg()),
             SnapshotCheckResult::Compatible,
@@ -208,7 +212,7 @@ mod tests {
     fn single_level_match_is_compatible() {
         let bids = vec![lvl(100, 10)];
         let asks = vec![lvl(101, 8)];
-        let s    = snap(1, bids.clone(), asks.clone());
+        let s = snap(1, bids.clone(), asks.clone());
         assert_eq!(
             check_snapshot(bids.into_iter(), asks.into_iter(), &s, &cfg()),
             SnapshotCheckResult::Compatible,
@@ -232,7 +236,7 @@ mod tests {
     fn empty_snapshot_returns_compatible() {
         let bids = vec![lvl(100, 10)];
         let asks = vec![lvl(101, 8)];
-        let s    = snap(1, vec![], vec![]);
+        let s = snap(1, vec![], vec![]);
         assert_eq!(
             check_snapshot(bids.into_iter(), asks.into_iter(), &s, &cfg()),
             SnapshotCheckResult::Compatible,
@@ -252,7 +256,7 @@ mod tests {
             SnapshotCheckResult::Incompatible {
                 bid_mismatches: 1,
                 ask_mismatches: 0,
-                snapshot_id:    1,
+                snapshot_id: 1,
             },
         );
     }
@@ -270,7 +274,7 @@ mod tests {
             SnapshotCheckResult::Incompatible {
                 bid_mismatches: 0,
                 ask_mismatches: 1,
-                snapshot_id:    1,
+                snapshot_id: 1,
             },
         );
     }
@@ -284,7 +288,7 @@ mod tests {
         let s = snap(
             7,
             vec![lvl(200, 10), lvl(198, 5)],
-            vec![lvl(201, 8),  lvl(202, 4)],
+            vec![lvl(201, 8), lvl(202, 4)],
         );
         let r = check_snapshot(book_bids.into_iter(), book_asks.into_iter(), &s, &cfg());
         assert_eq!(
@@ -292,7 +296,7 @@ mod tests {
             SnapshotCheckResult::Incompatible {
                 bid_mismatches: 2,
                 ask_mismatches: 2,
-                snapshot_id:    7,
+                snapshot_id: 7,
             },
         );
     }
@@ -302,8 +306,22 @@ mod tests {
     #[test]
     fn only_top_n_levels_are_compared() {
         // 5 levels total; first 5 (=check_levels) match, 6th differs
-        let book_bids = vec![lvl(100,1), lvl(99,1), lvl(98,1), lvl(97,1), lvl(96,1), lvl(50,1)];
-        let snap_bids = vec![lvl(100,1), lvl(99,1), lvl(98,1), lvl(97,1), lvl(96,1), lvl(99,1)];
+        let book_bids = vec![
+            lvl(100, 1),
+            lvl(99, 1),
+            lvl(98, 1),
+            lvl(97, 1),
+            lvl(96, 1),
+            lvl(50, 1),
+        ];
+        let snap_bids = vec![
+            lvl(100, 1),
+            lvl(99, 1),
+            lvl(98, 1),
+            lvl(97, 1),
+            lvl(96, 1),
+            lvl(99, 1),
+        ];
         let book_asks = vec![lvl(101, 1)];
         let snap_asks = vec![lvl(101, 1)];
         let s = snap(1, snap_bids, snap_asks);
@@ -351,7 +369,13 @@ mod tests {
         let s = snap(1, vec![lvl(103, 10)], vec![lvl(103, 8)]);
         let c = cfg_with(5, 0, 2);
         let r = check_snapshot(book_bids.into_iter(), book_asks.into_iter(), &s, &c);
-        assert!(matches!(r, SnapshotCheckResult::Incompatible { bid_mismatches: 1, .. }));
+        assert!(matches!(
+            r,
+            SnapshotCheckResult::Incompatible {
+                bid_mismatches: 1,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -374,7 +398,11 @@ mod tests {
         let book_bids = vec![lvl(100, 1), lvl(99, 1)];
         let book_asks = vec![lvl(101, 1), lvl(102, 1)];
         // First bid matches, second doesn't.
-        let s = snap(1, vec![lvl(100, 1), lvl(50, 1)], vec![lvl(101, 1), lvl(102, 1)]);
+        let s = snap(
+            1,
+            vec![lvl(100, 1), lvl(50, 1)],
+            vec![lvl(101, 1), lvl(102, 1)],
+        );
         let c = cfg_with(5, 1, 0); // allow 1 mismatch
         assert_eq!(
             check_snapshot(book_bids.into_iter(), book_asks.into_iter(), &s, &c),
@@ -386,12 +414,19 @@ mod tests {
     fn two_mismatches_exceeding_max_returns_incompatible() {
         let book_bids = vec![lvl(100, 1), lvl(99, 1)];
         let book_asks = vec![lvl(101, 1), lvl(102, 1)];
-        let s = snap(1, vec![lvl(50, 1), lvl(49, 1)], vec![lvl(101, 1), lvl(102, 1)]);
+        let s = snap(
+            1,
+            vec![lvl(50, 1), lvl(49, 1)],
+            vec![lvl(101, 1), lvl(102, 1)],
+        );
         let c = cfg_with(5, 1, 0); // allow 1 mismatch, but 2 diverge
         let r = check_snapshot(book_bids.into_iter(), book_asks.into_iter(), &s, &c);
         assert!(matches!(
             r,
-            SnapshotCheckResult::Incompatible { bid_mismatches: 2, .. }
+            SnapshotCheckResult::Incompatible {
+                bid_mismatches: 2,
+                ..
+            }
         ));
     }
 

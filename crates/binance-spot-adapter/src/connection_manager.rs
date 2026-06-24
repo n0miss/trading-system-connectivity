@@ -58,13 +58,16 @@ enum DisconnectReason {
 ///
 /// [`with_metrics`]: ConnectionManager::with_metrics
 pub struct ConnectionManager {
-    config:  WebSocketConfig,
+    config: WebSocketConfig,
     metrics: Option<Arc<ConnectorMetrics>>,
 }
 
 impl ConnectionManager {
     pub fn new(config: WebSocketConfig) -> Self {
-        Self { config, metrics: None }
+        Self {
+            config,
+            metrics: None,
+        }
     }
 
     /// Attach a metrics registry.  Returns `self` for builder-style chaining.
@@ -97,22 +100,34 @@ impl ConnectionManager {
             }
 
             let base_url = url.split('?').next().unwrap_or(url);
-            info!(url = base_url, reconnect_count, "connecting to Binance WebSocket");
+            info!(
+                url = base_url,
+                reconnect_count, "connecting to Binance WebSocket"
+            );
 
             let result = connect_and_run(
-                url, &self.config, &mut on_frame, &mut shutdown, self.metrics.as_deref(),
-            ).await;
+                url,
+                &self.config,
+                &mut on_frame,
+                &mut shutdown,
+                self.metrics.as_deref(),
+            )
+            .await;
 
             match result {
                 Ok(DisconnectReason::Shutdown) => break,
                 Ok(DisconnectReason::ForcedRotation) => {
                     info!("24h rotation — reconnecting immediately");
                     reconnect_count += 1;
-                    if let Some(m) = &self.metrics { m.reconnects.increment(); }
+                    if let Some(m) = &self.metrics {
+                        m.reconnects.increment();
+                    }
                 }
                 Ok(DisconnectReason::PeerClosed) | Err(_) => {
                     reconnect_count += 1;
-                    if let Some(m) = &self.metrics { m.reconnects.increment(); }
+                    if let Some(m) = &self.metrics {
+                        m.reconnects.increment();
+                    }
                     let delay = backoff_delay(reconnect_count, self.config.reconnect_delay_ms);
                     warn!(
                         reconnect_count,
@@ -137,21 +152,21 @@ impl ConnectionManager {
 
 /// Establish one WebSocket session and drive it until it ends for any reason.
 async fn connect_and_run<F: FnMut(RawFrame)>(
-    url:      &str,
-    config:   &WebSocketConfig,
+    url: &str,
+    config: &WebSocketConfig,
     on_frame: &mut F,
     shutdown: &mut watch::Receiver<bool>,
-    metrics:  Option<&ConnectorMetrics>,
+    metrics: Option<&ConnectorMetrics>,
 ) -> Result<DisconnectReason, AdapterError> {
-    let mut request = url
-        .into_client_request()
-        .map_err(|e| { warn!("failed to build request: {e}"); AdapterError::WebSocket(e) })?;
+    let mut request = url.into_client_request().map_err(|e| {
+        warn!("failed to build request: {e}");
+        AdapterError::WebSocket(e)
+    })?;
     if let Some(key) = &config.api_key {
         if let Ok(value) = HeaderValue::from_str(key) {
-            request.headers_mut().insert(
-                HeaderName::from_static("x-mbx-apikey"),
-                value,
-            );
+            request
+                .headers_mut()
+                .insert(HeaderName::from_static("x-mbx-apikey"), value);
         } else {
             warn!("api_key contains non-ASCII characters — X-MBX-APIKEY header skipped");
         }
@@ -190,10 +205,8 @@ async fn connect_and_run<F: FnMut(RawFrame)>(
 
     // Proactive pings start after the first full interval (not immediately).
     let ping_dur = Duration::from_secs(config.ping_interval_secs as u64);
-    let mut ping_interval = tokio::time::interval_at(
-        tokio::time::Instant::now() + ping_dur,
-        ping_dur,
-    );
+    let mut ping_interval =
+        tokio::time::interval_at(tokio::time::Instant::now() + ping_dur, ping_dur);
     ping_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     let rotation = tokio::time::sleep(Duration::from_secs(config.forced_reconnect_secs));
@@ -333,7 +346,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn integration_connect_and_receive_bbticker() {
-        use crate::stream::{SpotStream, build_url};
+        use crate::stream::{build_url, SpotStream};
         use connector_config::WebSocketConfig;
 
         let config = WebSocketConfig {

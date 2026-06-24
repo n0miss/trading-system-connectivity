@@ -30,27 +30,23 @@ use anyhow::Context;
 use tokio::sync::{mpsc, watch};
 
 use binance_futures_adapter::{
-    apply_futures_snapshot,
-    CircuitState,
-    ConnectionManager, FuturesShardEngine, FuturesStream, NormalizeCtx,
-    OverflowReason, PushResult, RawFrame,
-    ValidateResult, ValidationState,
-    FUTURES_WS_BASE, build_url, normalize_futures_event,
+    apply_futures_snapshot, build_url, normalize_futures_event, CircuitState, ConnectionManager,
+    FuturesShardEngine, FuturesStream, NormalizeCtx, OverflowReason, PushResult, RawFrame,
+    ValidateResult, ValidationState, FUTURES_WS_BASE,
 };
 use connector_aeron::{build_null, Heartbeater, NullPublication, ShardedPublisher};
 use connector_config::{shard_for_symbol, WebSocketConfig};
 use connector_core::{
-    BookRecovered, BookStale, BookStaleReason, FeedState, FeedStatus, GapDetected,
-    Heartbeat, MarketType, MessageHeader, MessageType, NormalizedMessage, VenueId,
-    SCHEMA_VERSION, TS_NONE,
+    BookRecovered, BookStale, BookStaleReason, FeedState, FeedStatus, GapDetected, Heartbeat,
+    MarketType, MessageHeader, MessageType, NormalizedMessage, VenueId, SCHEMA_VERSION, TS_NONE,
 };
 use connector_refdata::RestClient;
 use protocol_json::{parse_futures_message, FuturesEvent};
 
-const SYMBOLS:          &[&str] = &["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"];
-const TOTAL_SHARDS:     u32     = 2;
-const RUN_SECS:         u64     = 30;
-const FUTURES_REST_URL: &str    = "https://fapi.binance.com";
+const SYMBOLS: &[&str] = &["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"];
+const TOTAL_SHARDS: u32 = 2;
+const RUN_SECS: u64 = 30;
+const FUTURES_REST_URL: &str = "https://fapi.binance.com";
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -65,7 +61,10 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let rest = RestClient::new(FUTURES_REST_URL);
-    tracing::info!("fetching futures exchange info for {} symbols", SYMBOLS.len());
+    tracing::info!(
+        "fetching futures exchange info for {} symbols",
+        SYMBOLS.len()
+    );
 
     let all_defs = rest
         .fetch_exchange_info(VenueId::BinanceFutures, MarketType::UsdmFutures, 0, 0)
@@ -86,7 +85,10 @@ async fn main() -> anyhow::Result<()> {
     let mut shard_insts: Vec<Vec<_>> = vec![vec![]; TOTAL_SHARDS as usize];
     for inst in insts {
         let shard = shard_for_symbol(
-            VenueId::BinanceFutures, MarketType::UsdmFutures, &inst.symbol, TOTAL_SHARDS,
+            VenueId::BinanceFutures,
+            MarketType::UsdmFutures,
+            &inst.symbol,
+            TOTAL_SHARDS,
         );
         shard_insts[shard as usize].push(inst);
     }
@@ -95,7 +97,9 @@ async fn main() -> anyhow::Result<()> {
     let mut join_set = tokio::task::JoinSet::new();
 
     for (shard_id, insts) in shard_insts.into_iter().enumerate() {
-        if insts.is_empty() { continue; }
+        if insts.is_empty() {
+            continue;
+        }
 
         let shard_id = shard_id as u32;
         let mut engine = FuturesShardEngine::new(shard_id);
@@ -103,7 +107,7 @@ async fn main() -> anyhow::Result<()> {
             engine.add_symbol(inst);
         }
 
-        let rest_clone    = rest.clone();
+        let rest_clone = rest.clone();
         let shutdown_shard = shutdown_rx.clone();
         let publisher = build_null(&[shard_id]);
 
@@ -121,7 +125,9 @@ async fn main() -> anyhow::Result<()> {
     let _ = shutdown_tx.send(true);
 
     while let Some(res) = join_set.join_next().await {
-        if let Err(e) = res { tracing::error!("shard task panicked: {e}"); }
+        if let Err(e) = res {
+            tracing::error!("shard task panicked: {e}");
+        }
     }
     tracing::info!("all shards stopped");
     Ok(())
@@ -132,42 +138,64 @@ async fn main() -> anyhow::Result<()> {
 // ---------------------------------------------------------------------------
 
 struct SymbolCounters {
-    bbo:          u64,
-    book_deltas:  u64,
-    trades:       u64,
-    mark_prices:  u64,
+    bbo: u64,
+    book_deltas: u64,
+    trades: u64,
+    mark_prices: u64,
     funding_rates: u64,
     liquidations: u64,
-    gaps:         u64,
-    recoveries:   u64,
+    gaps: u64,
+    recoveries: u64,
 }
 
-impl Default for SymbolCounters { fn default() -> Self { Self { bbo:0, book_deltas:0, trades:0, mark_prices:0, funding_rates:0, liquidations:0, gaps:0, recoveries:0 } } }
+impl Default for SymbolCounters {
+    fn default() -> Self {
+        Self {
+            bbo: 0,
+            book_deltas: 0,
+            trades: 0,
+            mark_prices: 0,
+            funding_rates: 0,
+            liquidations: 0,
+            gaps: 0,
+            recoveries: 0,
+        }
+    }
+}
 
 async fn run_shard(
-    shard_id:  u32,
+    shard_id: u32,
     mut engine: FuturesShardEngine,
-    rest:      RestClient,
+    rest: RestClient,
     mut shutdown: watch::Receiver<bool>,
     mut publisher: ShardedPublisher<NullPublication>,
 ) {
     let ctx = NormalizeCtx {
-        venue_id:      VenueId::BinanceFutures,
-        market_type:   MarketType::UsdmFutures,
-        instance_id:   0,
+        venue_id: VenueId::BinanceFutures,
+        market_type: MarketType::UsdmFutures,
+        instance_id: 0,
         connection_id: shard_id,
     };
 
     // Build combined-stream URL for all symbols in this shard.
-    let streams: Vec<String> = engine.symbol_names().flat_map(|sym| {
-        [
-            FuturesStream::BookTicker.stream_name(sym),
-            FuturesStream::Depth { update_speed_ms: 100 }.stream_name(sym),
-            FuturesStream::AggTrade.stream_name(sym),
-            FuturesStream::MarkPrice { update_interval_secs: 1 }.stream_name(sym),
-            FuturesStream::ForceOrder.stream_name(sym),
-        ]
-    }).collect();
+    let streams: Vec<String> = engine
+        .symbol_names()
+        .flat_map(|sym| {
+            [
+                FuturesStream::BookTicker.stream_name(sym),
+                FuturesStream::Depth {
+                    update_speed_ms: 100,
+                }
+                .stream_name(sym),
+                FuturesStream::AggTrade.stream_name(sym),
+                FuturesStream::MarkPrice {
+                    update_interval_secs: 1,
+                }
+                .stream_name(sym),
+                FuturesStream::ForceOrder.stream_name(sym),
+            ]
+        })
+        .collect();
 
     let ws_url = build_url(FUTURES_WS_BASE, &streams);
     tracing::info!(shard_id, symbols = engine.symbol_count(), %ws_url, "shard connecting");
@@ -186,20 +214,32 @@ async fn run_shard(
     let shutdown_ws = shutdown.clone();
     let ws_url_clone = ws_url.clone();
     tokio::spawn(async move {
-        mgr.run(&ws_url_clone, move |frame| { let _ = frame_tx.try_send(frame); }, shutdown_ws).await;
+        mgr.run(
+            &ws_url_clone,
+            move |frame| {
+                let _ = frame_tx.try_send(frame);
+            },
+            shutdown_ws,
+        )
+        .await;
     });
 
-    let mut seq         = 0u64;
+    let mut seq = 0u64;
     let mut heartbeater = Heartbeater::new();
-    let mut encode_buf  = vec![0u8; 64_000];
+    let mut encode_buf = vec![0u8; 64_000];
     let mut counters: HashMap<String, SymbolCounters> = engine
         .symbol_names()
         .map(|s| (s.to_string(), SymbolCounters::default()))
         .collect();
 
     set_feed_state(
-        shard_id, FeedState::Connecting, &ctx, &mut seq, now_nanos(),
-        &mut encode_buf, &mut publisher,
+        shard_id,
+        FeedState::Connecting,
+        &ctx,
+        &mut seq,
+        now_nanos(),
+        &mut encode_buf,
+        &mut publisher,
     );
 
     loop {
@@ -429,15 +469,16 @@ async fn run_shard(
     for sym in syms {
         let c = &counters[sym];
         tracing::info!(
-            shard_id, sym,
-            bbo          = c.bbo,
-            book_deltas  = c.book_deltas,
-            trades       = c.trades,
-            mark_prices  = c.mark_prices,
+            shard_id,
+            sym,
+            bbo = c.bbo,
+            book_deltas = c.book_deltas,
+            trades = c.trades,
+            mark_prices = c.mark_prices,
             funding_rates = c.funding_rates,
             liquidations = c.liquidations,
-            gaps         = c.gaps,
-            recoveries   = c.recoveries,
+            gaps = c.gaps,
+            recoveries = c.recoveries,
             "symbol stats",
         );
     }
@@ -450,12 +491,12 @@ async fn run_shard(
 
 fn symbol_from_futures_event(event: &FuturesEvent) -> Option<&str> {
     match event {
-        FuturesEvent::BookTicker(bt)  => Some(&bt.symbol),
+        FuturesEvent::BookTicker(bt) => Some(&bt.symbol),
         FuturesEvent::DepthUpdate(du) => Some(&du.symbol),
-        FuturesEvent::AggTrade(at)    => Some(&at.symbol),
-        FuturesEvent::MarkPrice(mp)   => Some(&mp.symbol),
-        FuturesEvent::ForceOrder(fo)  => Some(&fo.order.symbol),
-        FuturesEvent::Unknown(_)      => None,
+        FuturesEvent::AggTrade(at) => Some(&at.symbol),
+        FuturesEvent::MarkPrice(mp) => Some(&mp.symbol),
+        FuturesEvent::ForceOrder(fo) => Some(&fo.order.symbol),
+        FuturesEvent::Unknown(_) => None,
     }
 }
 
@@ -463,61 +504,56 @@ fn symbol_from_futures_event(event: &FuturesEvent) -> Option<&str> {
 // Message helpers
 // ---------------------------------------------------------------------------
 
-fn shard_hdr(
-    msg_type: MessageType,
-    ctx:      &NormalizeCtx,
-    seq:      &mut u64,
-    ts:       i64,
-) -> MessageHeader {
+fn shard_hdr(msg_type: MessageType, ctx: &NormalizeCtx, seq: &mut u64, ts: i64) -> MessageHeader {
     *seq += 1;
     MessageHeader {
-        schema_version:   SCHEMA_VERSION,
-        message_type:     msg_type,
-        venue_id:         ctx.venue_id,
-        market_type:      ctx.market_type,
-        instrument_id:    0,
-        connection_id:    ctx.connection_id,
-        instance_id:      ctx.instance_id,
-        sequence_number:  *seq,
+        schema_version: SCHEMA_VERSION,
+        message_type: msg_type,
+        venue_id: ctx.venue_id,
+        market_type: ctx.market_type,
+        instrument_id: 0,
+        connection_id: ctx.connection_id,
+        instance_id: ctx.instance_id,
+        sequence_number: *seq,
         exchange_event_ts: TS_NONE,
-        exchange_tx_ts:    TS_NONE,
-        local_recv_ts:     ts,
-        local_publish_ts:  ts,
+        exchange_tx_ts: TS_NONE,
+        local_recv_ts: ts,
+        local_publish_ts: ts,
     }
 }
 
 fn inst_hdr(
-    msg_type:  MessageType,
-    inst:      &connector_core::InstrumentDefinition,
-    ctx:       &NormalizeCtx,
-    seq:       &mut u64,
-    recv_ts:   i64,
+    msg_type: MessageType,
+    inst: &connector_core::InstrumentDefinition,
+    ctx: &NormalizeCtx,
+    seq: &mut u64,
+    recv_ts: i64,
 ) -> MessageHeader {
     *seq += 1;
     MessageHeader {
-        schema_version:   SCHEMA_VERSION,
-        message_type:     msg_type,
-        venue_id:         ctx.venue_id,
-        market_type:      ctx.market_type,
-        instrument_id:    inst.header.instrument_id,
-        connection_id:    ctx.connection_id,
-        instance_id:      ctx.instance_id,
-        sequence_number:  *seq,
+        schema_version: SCHEMA_VERSION,
+        message_type: msg_type,
+        venue_id: ctx.venue_id,
+        market_type: ctx.market_type,
+        instrument_id: inst.header.instrument_id,
+        connection_id: ctx.connection_id,
+        instance_id: ctx.instance_id,
+        sequence_number: *seq,
         exchange_event_ts: TS_NONE,
-        exchange_tx_ts:    TS_NONE,
-        local_recv_ts:     recv_ts,
-        local_publish_ts:  recv_ts,
+        exchange_tx_ts: TS_NONE,
+        local_recv_ts: recv_ts,
+        local_publish_ts: recv_ts,
     }
 }
 
 fn set_feed_state(
     shard_id: u32,
-    state:    FeedState,
-    ctx:      &NormalizeCtx,
-    seq:      &mut u64,
-    ts:       i64,
-    buf:      &mut Vec<u8>,
-    pub_:     &mut ShardedPublisher<NullPublication>,
+    state: FeedState,
+    ctx: &NormalizeCtx,
+    seq: &mut u64,
+    ts: i64,
+    buf: &mut Vec<u8>,
+    pub_: &mut ShardedPublisher<NullPublication>,
 ) {
     let fs = FeedStatus {
         header: shard_hdr(MessageType::FeedStatus, ctx, seq, ts),
@@ -529,20 +565,20 @@ fn set_feed_state(
 }
 
 fn publish_gap_detected(
-    shard_id:  u32,
-    inst:      &connector_core::InstrumentDefinition,
-    expected:  u64,
-    actual:    u64,
+    shard_id: u32,
+    inst: &connector_core::InstrumentDefinition,
+    expected: u64,
+    actual: u64,
     _last_valid: u64,
-    ctx:       &NormalizeCtx,
-    seq:       &mut u64,
-    ts:        i64,
-    buf:       &mut Vec<u8>,
-    pub_:      &mut ShardedPublisher<NullPublication>,
+    ctx: &NormalizeCtx,
+    seq: &mut u64,
+    ts: i64,
+    buf: &mut Vec<u8>,
+    pub_: &mut ShardedPublisher<NullPublication>,
 ) {
     let gd = GapDetected {
-        header:             inst_hdr(MessageType::GapDetected, inst, ctx, seq, ts),
-        symbol:             inst.symbol.clone(),
+        header: inst_hdr(MessageType::GapDetected, inst, ctx, seq, ts),
+        symbol: inst.symbol.clone(),
         expected_update_id: expected,
         received_update_id: actual,
     };
@@ -553,13 +589,13 @@ fn publish_gap_detected(
 
 fn publish_book_stale(
     shard_id: u32,
-    inst:     &connector_core::InstrumentDefinition,
-    reason:   BookStaleReason,
-    ctx:      &NormalizeCtx,
-    seq:      &mut u64,
-    ts:       i64,
-    buf:      &mut Vec<u8>,
-    pub_:     &mut ShardedPublisher<NullPublication>,
+    inst: &connector_core::InstrumentDefinition,
+    reason: BookStaleReason,
+    ctx: &NormalizeCtx,
+    seq: &mut u64,
+    ts: i64,
+    buf: &mut Vec<u8>,
+    pub_: &mut ShardedPublisher<NullPublication>,
 ) {
     let bs = BookStale {
         header: inst_hdr(MessageType::BookStale, inst, ctx, seq, ts),
@@ -572,18 +608,18 @@ fn publish_book_stale(
 }
 
 fn publish_book_recovered(
-    shard_id:    u32,
-    inst:        &connector_core::InstrumentDefinition,
+    shard_id: u32,
+    inst: &connector_core::InstrumentDefinition,
     snapshot_id: u64,
-    ctx:         &NormalizeCtx,
-    seq:         &mut u64,
-    ts:          i64,
-    buf:         &mut Vec<u8>,
-    pub_:        &mut ShardedPublisher<NullPublication>,
+    ctx: &NormalizeCtx,
+    seq: &mut u64,
+    ts: i64,
+    buf: &mut Vec<u8>,
+    pub_: &mut ShardedPublisher<NullPublication>,
 ) {
     let br = BookRecovered {
-        header:             inst_hdr(MessageType::BookRecovered, inst, ctx, seq, ts),
-        symbol:             inst.symbol.clone(),
+        header: inst_hdr(MessageType::BookRecovered, inst, ctx, seq, ts),
+        symbol: inst.symbol.clone(),
         snapshot_update_id: snapshot_id,
     };
     if let Ok(n) = br.encode_into(buf) {

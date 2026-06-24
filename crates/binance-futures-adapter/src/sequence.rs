@@ -102,7 +102,9 @@ pub struct FuturesSequenceValidator {
 
 impl FuturesSequenceValidator {
     pub fn new() -> Self {
-        Self { state: ValidationState::AwaitingSnapshot }
+        Self {
+            state: ValidationState::AwaitingSnapshot,
+        }
     }
 
     /// Call after applying a REST depth snapshot with `last_update_id`.
@@ -110,7 +112,9 @@ impl FuturesSequenceValidator {
     /// Transitions to [`ValidationState::Bridging`] so the next delta can
     /// bridge from the snapshot into the live stream.
     pub fn on_snapshot(&mut self, last_update_id: u64) {
-        self.state = ValidationState::Bridging { snapshot_id: last_update_id };
+        self.state = ValidationState::Bridging {
+            snapshot_id: last_update_id,
+        };
     }
 
     /// Validate an incoming depth delta.
@@ -136,7 +140,7 @@ impl FuturesSequenceValidator {
                     self.state = ValidationState::Stale { last_valid };
                     ValidateResult::Gap {
                         expected_pu: last_valid,
-                        actual_pu:   prev_final,
+                        actual_pu: prev_final,
                         last_valid,
                     }
                 }
@@ -152,11 +156,13 @@ impl FuturesSequenceValidator {
                     ValidateResult::Discard
                 } else {
                     // pu > last_final: event skips ahead — gap.
-                    self.state = ValidationState::Stale { last_valid: last_final };
+                    self.state = ValidationState::Stale {
+                        last_valid: last_final,
+                    };
                     ValidateResult::Gap {
                         expected_pu: last_final,
-                        actual_pu:   prev_final,
-                        last_valid:  last_final,
+                        actual_pu: prev_final,
+                        last_valid: last_final,
                     }
                 }
             }
@@ -177,10 +183,10 @@ impl FuturesSequenceValidator {
     /// Last accepted final-update-id, or `None` in `AwaitingSnapshot`.
     pub fn last_valid_id(&self) -> Option<u64> {
         match self.state {
-            ValidationState::AwaitingSnapshot        => None,
+            ValidationState::AwaitingSnapshot => None,
             ValidationState::Bridging { snapshot_id } => Some(snapshot_id),
-            ValidationState::Active   { last_final  } => Some(last_final),
-            ValidationState::Stale    { last_valid  } => Some(last_valid),
+            ValidationState::Active { last_final } => Some(last_final),
+            ValidationState::Stale { last_valid } => Some(last_valid),
         }
     }
 }
@@ -287,7 +293,11 @@ mod tests {
         let r = v.validate(103, 107, 102);
         assert_eq!(
             r,
-            ValidateResult::Gap { expected_pu: 100, actual_pu: 102, last_valid: 100 },
+            ValidateResult::Gap {
+                expected_pu: 100,
+                actual_pu: 102,
+                last_valid: 100
+            },
         );
         assert_eq!(v.state(), ValidationState::Stale { last_valid: 100 });
     }
@@ -299,7 +309,7 @@ mod tests {
         let mut v = FuturesSequenceValidator::new();
         v.on_snapshot(10);
         v.validate(11, 20, 10); // bridge → Active { last_final: 20 }
-        // Next event: pu == 20 == last_final
+                                // Next event: pu == 20 == last_final
         assert_eq!(v.validate(21, 30, 20), ValidateResult::Apply);
         assert_eq!(v.state(), ValidationState::Active { last_final: 30 });
     }
@@ -308,7 +318,7 @@ mod tests {
     fn active_chain_of_three_events_all_apply() {
         let mut v = FuturesSequenceValidator::new();
         v.on_snapshot(0);
-        assert_eq!(v.validate(1, 10, 0),  ValidateResult::Apply); // bridge
+        assert_eq!(v.validate(1, 10, 0), ValidateResult::Apply); // bridge
         assert_eq!(v.validate(11, 25, 10), ValidateResult::Apply);
         assert_eq!(v.validate(26, 40, 25), ValidateResult::Apply);
         assert_eq!(v.state(), ValidationState::Active { last_final: 40 });
@@ -320,7 +330,7 @@ mod tests {
         let mut v = FuturesSequenceValidator::new();
         v.on_snapshot(100);
         v.validate(101, 200, 100); // bridge → Active { last_final: 200 }
-        // Next event skips U from 201 to 300 — valid because pu == 200
+                                   // Next event skips U from 201 to 300 — valid because pu == 200
         assert_eq!(v.validate(300, 500, 200), ValidateResult::Apply);
     }
 
@@ -331,11 +341,15 @@ mod tests {
         let mut v = FuturesSequenceValidator::new();
         v.on_snapshot(10);
         v.validate(11, 20, 10); // → Active { last_final: 20 }
-        // pu == 25 > 20 → gap
+                                // pu == 25 > 20 → gap
         let r = v.validate(26, 35, 25);
         assert_eq!(
             r,
-            ValidateResult::Gap { expected_pu: 20, actual_pu: 25, last_valid: 20 },
+            ValidateResult::Gap {
+                expected_pu: 20,
+                actual_pu: 25,
+                last_valid: 20
+            },
         );
         assert_eq!(v.state(), ValidationState::Stale { last_valid: 20 });
     }
@@ -347,7 +361,7 @@ mod tests {
         let mut v = FuturesSequenceValidator::new();
         v.on_snapshot(10);
         v.validate(11, 20, 10); // → Active { last_final: 20 }
-        // pu == 15 < 20 → old event
+                                // pu == 15 < 20 → old event
         assert_eq!(v.validate(16, 22, 15), ValidateResult::Discard);
         // State must not change
         assert_eq!(v.state(), ValidationState::Active { last_final: 20 });

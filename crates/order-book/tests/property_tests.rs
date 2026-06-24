@@ -16,8 +16,8 @@
 use std::collections::HashSet;
 
 use connector_core::{
-    BookDelta, BookSnapshot, MarketType, MessageHeader, MessageType, PriceLevel,
-    VenueId, SCHEMA_VERSION, TS_NONE, UPDATE_ID_NONE,
+    BookDelta, BookSnapshot, MarketType, MessageHeader, MessageType, PriceLevel, VenueId,
+    SCHEMA_VERSION, TS_NONE, UPDATE_ID_NONE,
 };
 use connector_order_book::{harness::SyntheticHarness, OrderBook};
 use proptest::prelude::*;
@@ -32,9 +32,15 @@ use proptest::prelude::*;
 
 const MID: i64 = 100_000;
 
-fn bid_price() -> impl Strategy<Value = i64> { 1i64..MID }
-fn ask_price() -> impl Strategy<Value = i64> { (MID + 1)..=200_000i64 }
-fn pos_qty()   -> impl Strategy<Value = i64> { 1i64..=10_000i64 }
+fn bid_price() -> impl Strategy<Value = i64> {
+    1i64..MID
+}
+fn ask_price() -> impl Strategy<Value = i64> {
+    (MID + 1)..=200_000i64
+}
+fn pos_qty() -> impl Strategy<Value = i64> {
+    1i64..=10_000i64
+}
 
 fn bid_level() -> impl Strategy<Value = PriceLevel> {
     (bid_price(), pos_qty()).prop_map(|(price, qty)| PriceLevel { price, qty })
@@ -66,25 +72,25 @@ fn nonempty_ask_levels(max: usize) -> impl Strategy<Value = Vec<PriceLevel>> {
 
 fn hdr(msg_type: MessageType) -> MessageHeader {
     MessageHeader {
-        schema_version:    SCHEMA_VERSION,
-        message_type:      msg_type,
-        venue_id:          VenueId::BinanceSpot,
-        market_type:       MarketType::Spot,
-        instrument_id:     0,
-        connection_id:     0,
-        instance_id:       0,
-        sequence_number:   0,
+        schema_version: SCHEMA_VERSION,
+        message_type: msg_type,
+        venue_id: VenueId::BinanceSpot,
+        market_type: MarketType::Spot,
+        instrument_id: 0,
+        connection_id: 0,
+        instance_id: 0,
+        sequence_number: 0,
         exchange_event_ts: TS_NONE,
-        exchange_tx_ts:    TS_NONE,
-        local_recv_ts:     TS_NONE,
-        local_publish_ts:  TS_NONE,
+        exchange_tx_ts: TS_NONE,
+        local_recv_ts: TS_NONE,
+        local_publish_ts: TS_NONE,
     }
 }
 
 fn snap(bids: Vec<PriceLevel>, asks: Vec<PriceLevel>, uid: u64) -> BookSnapshot {
     BookSnapshot {
-        header:    hdr(MessageType::BookSnapshot),
-        symbol:    "T".into(),
+        header: hdr(MessageType::BookSnapshot),
+        symbol: "T".into(),
         update_id: uid,
         bids,
         asks,
@@ -93,11 +99,11 @@ fn snap(bids: Vec<PriceLevel>, asks: Vec<PriceLevel>, uid: u64) -> BookSnapshot 
 
 fn delta(bids: Vec<PriceLevel>, asks: Vec<PriceLevel>, uid: u64) -> BookDelta {
     BookDelta {
-        header:          hdr(MessageType::BookDelta),
-        symbol:          "T".into(),
+        header: hdr(MessageType::BookDelta),
+        symbol: "T".into(),
         first_update_id: uid,
         final_update_id: uid,
-        prev_update_id:  UPDATE_ID_NONE,
+        prev_update_id: UPDATE_ID_NONE,
         bids,
         asks,
     }

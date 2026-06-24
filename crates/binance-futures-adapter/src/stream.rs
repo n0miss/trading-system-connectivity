@@ -36,7 +36,9 @@ impl FuturesStream {
                 format!("{sym}@depth@{update_speed_ms}ms")
             }
             Self::AggTrade => format!("{sym}@aggTrade"),
-            Self::MarkPrice { update_interval_secs } => {
+            Self::MarkPrice {
+                update_interval_secs,
+            } => {
                 if *update_interval_secs == 1 {
                     format!("{sym}@markPrice@1s")
                 } else {
@@ -66,14 +68,23 @@ mod tests {
 
     #[test]
     fn stream_name_book_ticker() {
-        assert_eq!(FuturesStream::BookTicker.stream_name("BTCUSDT"), "btcusdt@bookTicker");
-        assert_eq!(FuturesStream::BookTicker.stream_name("btcusdt"), "btcusdt@bookTicker");
+        assert_eq!(
+            FuturesStream::BookTicker.stream_name("BTCUSDT"),
+            "btcusdt@bookTicker"
+        );
+        assert_eq!(
+            FuturesStream::BookTicker.stream_name("btcusdt"),
+            "btcusdt@bookTicker"
+        );
     }
 
     #[test]
     fn stream_name_depth_100ms() {
         assert_eq!(
-            FuturesStream::Depth { update_speed_ms: 100 }.stream_name("ETHUSDT"),
+            FuturesStream::Depth {
+                update_speed_ms: 100
+            }
+            .stream_name("ETHUSDT"),
             "ethusdt@depth@100ms",
         );
     }
@@ -81,24 +92,36 @@ mod tests {
     #[test]
     fn stream_name_depth_500ms() {
         assert_eq!(
-            FuturesStream::Depth { update_speed_ms: 500 }.stream_name("SOLUSDT"),
+            FuturesStream::Depth {
+                update_speed_ms: 500
+            }
+            .stream_name("SOLUSDT"),
             "solusdt@depth@500ms",
         );
     }
 
     #[test]
     fn stream_name_agg_trade() {
-        assert_eq!(FuturesStream::AggTrade.stream_name("BNBUSDT"), "bnbusdt@aggTrade");
+        assert_eq!(
+            FuturesStream::AggTrade.stream_name("BNBUSDT"),
+            "bnbusdt@aggTrade"
+        );
     }
 
     #[test]
     fn stream_name_mark_price_default() {
         assert_eq!(
-            FuturesStream::MarkPrice { update_interval_secs: 3 }.stream_name("BTCUSDT"),
+            FuturesStream::MarkPrice {
+                update_interval_secs: 3
+            }
+            .stream_name("BTCUSDT"),
             "btcusdt@markPrice",
         );
         assert_eq!(
-            FuturesStream::MarkPrice { update_interval_secs: 0 }.stream_name("BTCUSDT"),
+            FuturesStream::MarkPrice {
+                update_interval_secs: 0
+            }
+            .stream_name("BTCUSDT"),
             "btcusdt@markPrice",
         );
     }
@@ -106,28 +129,37 @@ mod tests {
     #[test]
     fn stream_name_mark_price_one_second() {
         assert_eq!(
-            FuturesStream::MarkPrice { update_interval_secs: 1 }.stream_name("ETHUSDT"),
+            FuturesStream::MarkPrice {
+                update_interval_secs: 1
+            }
+            .stream_name("ETHUSDT"),
             "ethusdt@markPrice@1s",
         );
     }
 
     #[test]
     fn stream_name_force_order() {
-        assert_eq!(FuturesStream::ForceOrder.stream_name("BTCUSDT"), "btcusdt@forceOrder");
+        assert_eq!(
+            FuturesStream::ForceOrder.stream_name("BTCUSDT"),
+            "btcusdt@forceOrder"
+        );
     }
 
     #[test]
     fn stream_name_lowercases_symbol() {
-        assert_eq!(FuturesStream::AggTrade.stream_name("SOLUSDT"), "solusdt@aggTrade");
-        assert_eq!(FuturesStream::ForceOrder.stream_name("XRPUSDT"), "xrpusdt@forceOrder");
+        assert_eq!(
+            FuturesStream::AggTrade.stream_name("SOLUSDT"),
+            "solusdt@aggTrade"
+        );
+        assert_eq!(
+            FuturesStream::ForceOrder.stream_name("XRPUSDT"),
+            "xrpusdt@forceOrder"
+        );
     }
 
     #[test]
     fn build_url_single_stream() {
-        let url = build_url(
-            FUTURES_WS_BASE,
-            &["btcusdt@bookTicker".to_string()],
-        );
+        let url = build_url(FUTURES_WS_BASE, &["btcusdt@bookTicker".to_string()]);
         assert_eq!(
             url,
             "wss://fstream.binance.com:443/stream?streams=btcusdt@bookTicker",

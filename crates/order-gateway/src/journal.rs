@@ -25,12 +25,12 @@ use std::io::{BufWriter, Write};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 enum EntryTag {
-    OrderRequested    = 1,
+    OrderRequested = 1,
     OrderAcknowledged = 2,
-    OrderFilled       = 3,
-    OrderCancelled    = 4,
-    OrderRejected     = 5,
-    OrderExpired      = 6,
+    OrderFilled = 3,
+    OrderCancelled = 4,
+    OrderRejected = 5,
+    OrderExpired = 6,
 }
 
 impl TryFrom<u8> for EntryTag {
@@ -57,57 +57,57 @@ impl TryFrom<u8> for EntryTag {
 pub enum JournalEntry {
     OrderRequested {
         timestamp_ns: i64,
-        cloid:        ClientOrderId,
-        request:      OrderRequest,
+        cloid: ClientOrderId,
+        request: OrderRequest,
     },
     OrderAcknowledged {
         timestamp_ns: i64,
-        cloid:        ClientOrderId,
-        exchange_id:  u64,
+        cloid: ClientOrderId,
+        exchange_id: u64,
     },
     OrderFilled {
         timestamp_ns: i64,
-        cloid:        ClientOrderId,
-        fill_qty:     i64,
-        fill_price:   i64,
+        cloid: ClientOrderId,
+        fill_qty: i64,
+        fill_price: i64,
         /// `true` when this fill completes the order (qty fully matched).
-        is_final:     bool,
+        is_final: bool,
     },
     OrderCancelled {
         timestamp_ns: i64,
-        cloid:        ClientOrderId,
+        cloid: ClientOrderId,
     },
     OrderRejected {
         timestamp_ns: i64,
-        cloid:        ClientOrderId,
-        reason:       String,
+        cloid: ClientOrderId,
+        reason: String,
     },
     OrderExpired {
         timestamp_ns: i64,
-        cloid:        ClientOrderId,
+        cloid: ClientOrderId,
     },
 }
 
 impl JournalEntry {
     pub fn timestamp_ns(&self) -> i64 {
         match self {
-            Self::OrderRequested    { timestamp_ns, .. } => *timestamp_ns,
+            Self::OrderRequested { timestamp_ns, .. } => *timestamp_ns,
             Self::OrderAcknowledged { timestamp_ns, .. } => *timestamp_ns,
-            Self::OrderFilled       { timestamp_ns, .. } => *timestamp_ns,
-            Self::OrderCancelled    { timestamp_ns, .. } => *timestamp_ns,
-            Self::OrderRejected     { timestamp_ns, .. } => *timestamp_ns,
-            Self::OrderExpired      { timestamp_ns, .. } => *timestamp_ns,
+            Self::OrderFilled { timestamp_ns, .. } => *timestamp_ns,
+            Self::OrderCancelled { timestamp_ns, .. } => *timestamp_ns,
+            Self::OrderRejected { timestamp_ns, .. } => *timestamp_ns,
+            Self::OrderExpired { timestamp_ns, .. } => *timestamp_ns,
         }
     }
 
     pub fn cloid(&self) -> &ClientOrderId {
         match self {
-            Self::OrderRequested    { cloid, .. } => cloid,
+            Self::OrderRequested { cloid, .. } => cloid,
             Self::OrderAcknowledged { cloid, .. } => cloid,
-            Self::OrderFilled       { cloid, .. } => cloid,
-            Self::OrderCancelled    { cloid, .. } => cloid,
-            Self::OrderRejected     { cloid, .. } => cloid,
-            Self::OrderExpired      { cloid, .. } => cloid,
+            Self::OrderFilled { cloid, .. } => cloid,
+            Self::OrderCancelled { cloid, .. } => cloid,
+            Self::OrderRejected { cloid, .. } => cloid,
+            Self::OrderExpired { cloid, .. } => cloid,
         }
     }
 }
@@ -122,7 +122,9 @@ struct Encoder {
 
 impl Encoder {
     fn new() -> Self {
-        Self { buf: Vec::with_capacity(64) }
+        Self {
+            buf: Vec::with_capacity(64),
+        }
     }
 
     fn u8(&mut self, v: u8) {
@@ -181,7 +183,10 @@ impl<'a> Decoder<'a> {
 
     fn need(&self, n: usize) -> Result<(), Error> {
         if self.remaining() < n {
-            Err(Error::BufferTooShort { needed: self.pos + n, have: self.buf.len() })
+            Err(Error::BufferTooShort {
+                needed: self.pos + n,
+                have: self.buf.len(),
+            })
         } else {
             Ok(())
         }
@@ -222,8 +227,12 @@ impl<'a> Decoder<'a> {
     fn str_u8(&mut self) -> Result<String, Error> {
         let len = self.u8()? as usize;
         self.need(len)?;
-        let s = std::str::from_utf8(&self.buf[self.pos..self.pos + len])
-            .map_err(|e| Error::JournalCorrupt { offset: self.pos, reason: e.to_string() })?;
+        let s = std::str::from_utf8(&self.buf[self.pos..self.pos + len]).map_err(|e| {
+            Error::JournalCorrupt {
+                offset: self.pos,
+                reason: e.to_string(),
+            }
+        })?;
         self.pos += len;
         Ok(s.to_string())
     }
@@ -231,8 +240,12 @@ impl<'a> Decoder<'a> {
     fn str_u16(&mut self) -> Result<String, Error> {
         let len = self.u16()? as usize;
         self.need(len)?;
-        let s = std::str::from_utf8(&self.buf[self.pos..self.pos + len])
-            .map_err(|e| Error::JournalCorrupt { offset: self.pos, reason: e.to_string() })?;
+        let s = std::str::from_utf8(&self.buf[self.pos..self.pos + len]).map_err(|e| {
+            Error::JournalCorrupt {
+                offset: self.pos,
+                reason: e.to_string(),
+            }
+        })?;
         self.pos += len;
         Ok(s.to_string())
     }
@@ -249,7 +262,11 @@ impl<'a> Decoder<'a> {
 
 fn encode_entry(entry: &JournalEntry) -> Vec<u8> {
     let (tag, payload) = match entry {
-        JournalEntry::OrderRequested { timestamp_ns: _, cloid, request } => {
+        JournalEntry::OrderRequested {
+            timestamp_ns: _,
+            cloid,
+            request,
+        } => {
             let mut enc = Encoder::new();
             enc.str_u8(cloid.as_str());
             enc.str_u8(&request.symbol);
@@ -259,19 +276,32 @@ fn encode_entry(entry: &JournalEntry) -> Vec<u8> {
             enc.i64(request.qty);
             match request.limit_price {
                 None => enc.u8(0),
-                Some(p) => { enc.u8(1); enc.i64(p); }
+                Some(p) => {
+                    enc.u8(1);
+                    enc.i64(p);
+                }
             }
             (EntryTag::OrderRequested, enc.finish())
         }
 
-        JournalEntry::OrderAcknowledged { timestamp_ns: _, cloid, exchange_id } => {
+        JournalEntry::OrderAcknowledged {
+            timestamp_ns: _,
+            cloid,
+            exchange_id,
+        } => {
             let mut enc = Encoder::new();
             enc.str_u8(cloid.as_str());
             enc.u64(*exchange_id);
             (EntryTag::OrderAcknowledged, enc.finish())
         }
 
-        JournalEntry::OrderFilled { timestamp_ns: _, cloid, fill_qty, fill_price, is_final } => {
+        JournalEntry::OrderFilled {
+            timestamp_ns: _,
+            cloid,
+            fill_qty,
+            fill_price,
+            is_final,
+        } => {
             let mut enc = Encoder::new();
             enc.str_u8(cloid.as_str());
             enc.i64(*fill_qty);
@@ -280,20 +310,30 @@ fn encode_entry(entry: &JournalEntry) -> Vec<u8> {
             (EntryTag::OrderFilled, enc.finish())
         }
 
-        JournalEntry::OrderCancelled { timestamp_ns: _, cloid } => {
+        JournalEntry::OrderCancelled {
+            timestamp_ns: _,
+            cloid,
+        } => {
             let mut enc = Encoder::new();
             enc.str_u8(cloid.as_str());
             (EntryTag::OrderCancelled, enc.finish())
         }
 
-        JournalEntry::OrderRejected { timestamp_ns: _, cloid, reason } => {
+        JournalEntry::OrderRejected {
+            timestamp_ns: _,
+            cloid,
+            reason,
+        } => {
             let mut enc = Encoder::new();
             enc.str_u8(cloid.as_str());
             enc.str_u16(reason);
             (EntryTag::OrderRejected, enc.finish())
         }
 
-        JournalEntry::OrderExpired { timestamp_ns: _, cloid } => {
+        JournalEntry::OrderExpired {
+            timestamp_ns: _,
+            cloid,
+        } => {
             let mut enc = Encoder::new();
             enc.str_u8(cloid.as_str());
             (EntryTag::OrderExpired, enc.finish())
@@ -314,7 +354,7 @@ fn encode_entry(entry: &JournalEntry) -> Vec<u8> {
 fn decode_one(buf: &[u8], offset: usize) -> Result<(JournalEntry, usize), Error> {
     let mut dec = Decoder { buf, pos: offset };
 
-    let tag_byte    = dec.u8()?;
+    let tag_byte = dec.u8()?;
     let timestamp_ns = dec.i64()?;
     let payload_len = dec.u16()? as usize;
 
@@ -337,51 +377,89 @@ fn decode_one(buf: &[u8], offset: usize) -> Result<(JournalEntry, usize), Error>
 
     let entry = match tag {
         EntryTag::OrderRequested => {
-            let cloid       = pdec.cloid()?;
-            let symbol      = pdec.str_u8()?;
-            let side        = OrderSide::try_from(pdec.u8()?)
-                .map_err(|v| Error::JournalCorrupt { offset, reason: format!("bad side {v}") })?;
-            let order_type  = OrderType::try_from(pdec.u8()?)
-                .map_err(|v| Error::JournalCorrupt { offset, reason: format!("bad order_type {v}") })?;
-            let tif         = TimeInForce::try_from(pdec.u8()?)
-                .map_err(|v| Error::JournalCorrupt { offset, reason: format!("bad tif {v}") })?;
-            let qty         = pdec.i64()?;
-            let limit_price = if pdec.u8()? != 0 { Some(pdec.i64()?) } else { None };
+            let cloid = pdec.cloid()?;
+            let symbol = pdec.str_u8()?;
+            let side = OrderSide::try_from(pdec.u8()?).map_err(|v| Error::JournalCorrupt {
+                offset,
+                reason: format!("bad side {v}"),
+            })?;
+            let order_type =
+                OrderType::try_from(pdec.u8()?).map_err(|v| Error::JournalCorrupt {
+                    offset,
+                    reason: format!("bad order_type {v}"),
+                })?;
+            let tif = TimeInForce::try_from(pdec.u8()?).map_err(|v| Error::JournalCorrupt {
+                offset,
+                reason: format!("bad tif {v}"),
+            })?;
+            let qty = pdec.i64()?;
+            let limit_price = if pdec.u8()? != 0 {
+                Some(pdec.i64()?)
+            } else {
+                None
+            };
             JournalEntry::OrderRequested {
                 timestamp_ns,
                 cloid,
-                request: OrderRequest { symbol, side, order_type, qty, limit_price, time_in_force: tif },
+                request: OrderRequest {
+                    symbol,
+                    side,
+                    order_type,
+                    qty,
+                    limit_price,
+                    time_in_force: tif,
+                },
             }
         }
 
         EntryTag::OrderAcknowledged => {
-            let cloid       = pdec.cloid()?;
+            let cloid = pdec.cloid()?;
             let exchange_id = pdec.u64()?;
-            JournalEntry::OrderAcknowledged { timestamp_ns, cloid, exchange_id }
+            JournalEntry::OrderAcknowledged {
+                timestamp_ns,
+                cloid,
+                exchange_id,
+            }
         }
 
         EntryTag::OrderFilled => {
-            let cloid      = pdec.cloid()?;
-            let fill_qty   = pdec.i64()?;
+            let cloid = pdec.cloid()?;
+            let fill_qty = pdec.i64()?;
             let fill_price = pdec.i64()?;
-            let is_final   = pdec.bool()?;
-            JournalEntry::OrderFilled { timestamp_ns, cloid, fill_qty, fill_price, is_final }
+            let is_final = pdec.bool()?;
+            JournalEntry::OrderFilled {
+                timestamp_ns,
+                cloid,
+                fill_qty,
+                fill_price,
+                is_final,
+            }
         }
 
         EntryTag::OrderCancelled => {
             let cloid = pdec.cloid()?;
-            JournalEntry::OrderCancelled { timestamp_ns, cloid }
+            JournalEntry::OrderCancelled {
+                timestamp_ns,
+                cloid,
+            }
         }
 
         EntryTag::OrderRejected => {
-            let cloid  = pdec.cloid()?;
+            let cloid = pdec.cloid()?;
             let reason = pdec.str_u16()?;
-            JournalEntry::OrderRejected { timestamp_ns, cloid, reason }
+            JournalEntry::OrderRejected {
+                timestamp_ns,
+                cloid,
+                reason,
+            }
         }
 
         EntryTag::OrderExpired => {
             let cloid = pdec.cloid()?;
-            JournalEntry::OrderExpired { timestamp_ns, cloid }
+            JournalEntry::OrderExpired {
+                timestamp_ns,
+                cloid,
+            }
         }
     };
 
@@ -436,12 +514,19 @@ impl Journal {
             .append(true)
             .open(path)?;
 
-        Ok((recovered, Self { writer: JournalWriter::File(BufWriter::new(file)) }))
+        Ok((
+            recovered,
+            Self {
+                writer: JournalWriter::File(BufWriter::new(file)),
+            },
+        ))
     }
 
     /// Create an in-memory journal (no persistence).  Use in tests.
     pub fn in_memory() -> Self {
-        Self { writer: JournalWriter::Memory(Vec::new()) }
+        Self {
+            writer: JournalWriter::Memory(Vec::new()),
+        }
     }
 
     /// Encode `entry` and write it to the journal immediately.
@@ -470,7 +555,7 @@ impl Journal {
     pub fn read_all_in_memory(&self) -> Result<Vec<JournalEntry>, Error> {
         match &self.writer {
             JournalWriter::Memory(buf) => decode_all(buf),
-            JournalWriter::File(_)    => panic!("read_all_in_memory called on file journal"),
+            JournalWriter::File(_) => panic!("read_all_in_memory called on file journal"),
         }
     }
 }
@@ -486,22 +571,22 @@ mod tests {
 
     fn limit_request() -> OrderRequest {
         OrderRequest {
-            symbol:        "ETHUSDT".into(),
-            side:          OrderSide::Buy,
-            order_type:    OrderType::Limit,
-            qty:           500,
-            limit_price:   Some(3_000_000),
+            symbol: "ETHUSDT".into(),
+            side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+            qty: 500,
+            limit_price: Some(3_000_000),
             time_in_force: TimeInForce::GoodTillCancel,
         }
     }
 
     fn market_request() -> OrderRequest {
         OrderRequest {
-            symbol:        "BTCUSDT".into(),
-            side:          OrderSide::Sell,
-            order_type:    OrderType::Market,
-            qty:           10,
-            limit_price:   None,
+            symbol: "BTCUSDT".into(),
+            side: OrderSide::Sell,
+            order_type: OrderType::Market,
+            qty: 10,
+            limit_price: None,
             time_in_force: TimeInForce::ImmediateOrCancel,
         }
     }
@@ -518,8 +603,8 @@ mod tests {
     fn order_requested_limit_round_trips() {
         let original = JournalEntry::OrderRequested {
             timestamp_ns: 123_456_789,
-            cloid:        cloid(),
-            request:      limit_request(),
+            cloid: cloid(),
+            request: limit_request(),
         };
         let recovered = write_read(&[original.clone()]);
         assert_eq!(recovered.len(), 1);
@@ -530,8 +615,8 @@ mod tests {
     fn order_requested_market_round_trips() {
         let original = JournalEntry::OrderRequested {
             timestamp_ns: 0,
-            cloid:        cloid(),
-            request:      market_request(),
+            cloid: cloid(),
+            request: market_request(),
         };
         let recovered = write_read(&[original.clone()]);
         assert_eq!(recovered[0], original);
@@ -541,8 +626,8 @@ mod tests {
     fn order_acknowledged_round_trips() {
         let original = JournalEntry::OrderAcknowledged {
             timestamp_ns: 999,
-            cloid:        cloid(),
-            exchange_id:  0xdeadbeef_cafebabe,
+            cloid: cloid(),
+            exchange_id: 0xdeadbeef_cafebabe,
         };
         let recovered = write_read(&[original.clone()]);
         assert_eq!(recovered[0], original);
@@ -552,10 +637,10 @@ mod tests {
     fn order_filled_partial_round_trips() {
         let original = JournalEntry::OrderFilled {
             timestamp_ns: 1_000_000,
-            cloid:        cloid(),
-            fill_qty:     50,
-            fill_price:   99_500,
-            is_final:     false,
+            cloid: cloid(),
+            fill_qty: 50,
+            fill_price: 99_500,
+            is_final: false,
         };
         let recovered = write_read(&[original.clone()]);
         assert_eq!(recovered[0], original);
@@ -565,10 +650,10 @@ mod tests {
     fn order_filled_final_round_trips() {
         let original = JournalEntry::OrderFilled {
             timestamp_ns: 2_000_000,
-            cloid:        cloid(),
-            fill_qty:     100,
-            fill_price:   99_900,
-            is_final:     true,
+            cloid: cloid(),
+            fill_qty: 100,
+            fill_price: 99_900,
+            is_final: true,
         };
         let recovered = write_read(&[original.clone()]);
         assert_eq!(recovered[0], original);
@@ -578,7 +663,7 @@ mod tests {
     fn order_cancelled_round_trips() {
         let original = JournalEntry::OrderCancelled {
             timestamp_ns: 5_000,
-            cloid:        cloid(),
+            cloid: cloid(),
         };
         let recovered = write_read(&[original.clone()]);
         assert_eq!(recovered[0], original);
@@ -588,8 +673,8 @@ mod tests {
     fn order_rejected_round_trips() {
         let original = JournalEntry::OrderRejected {
             timestamp_ns: 7_000,
-            cloid:        cloid(),
-            reason:       "MIN_NOTIONAL filter violated".into(),
+            cloid: cloid(),
+            reason: "MIN_NOTIONAL filter violated".into(),
         };
         let recovered = write_read(&[original.clone()]);
         assert_eq!(recovered[0], original);
@@ -599,7 +684,7 @@ mod tests {
     fn order_expired_round_trips() {
         let original = JournalEntry::OrderExpired {
             timestamp_ns: 8_000,
-            cloid:        cloid(),
+            cloid: cloid(),
         };
         let recovered = write_read(&[original.clone()]);
         assert_eq!(recovered[0], original);
@@ -612,11 +697,33 @@ mod tests {
         let c2 = gen.next();
 
         let entries = vec![
-            JournalEntry::OrderRequested { timestamp_ns: 1, cloid: c1.clone(), request: limit_request() },
-            JournalEntry::OrderAcknowledged { timestamp_ns: 2, cloid: c1.clone(), exchange_id: 100 },
-            JournalEntry::OrderFilled { timestamp_ns: 3, cloid: c1.clone(), fill_qty: 500, fill_price: 3_001_000, is_final: true },
-            JournalEntry::OrderRequested { timestamp_ns: 4, cloid: c2.clone(), request: market_request() },
-            JournalEntry::OrderRejected { timestamp_ns: 5, cloid: c2.clone(), reason: "INSUFFICIENT_FUNDS".into() },
+            JournalEntry::OrderRequested {
+                timestamp_ns: 1,
+                cloid: c1.clone(),
+                request: limit_request(),
+            },
+            JournalEntry::OrderAcknowledged {
+                timestamp_ns: 2,
+                cloid: c1.clone(),
+                exchange_id: 100,
+            },
+            JournalEntry::OrderFilled {
+                timestamp_ns: 3,
+                cloid: c1.clone(),
+                fill_qty: 500,
+                fill_price: 3_001_000,
+                is_final: true,
+            },
+            JournalEntry::OrderRequested {
+                timestamp_ns: 4,
+                cloid: c2.clone(),
+                request: market_request(),
+            },
+            JournalEntry::OrderRejected {
+                timestamp_ns: 5,
+                cloid: c2.clone(),
+                reason: "INSUFFICIENT_FUNDS".into(),
+            },
         ];
 
         let recovered = write_read(&entries);
@@ -633,7 +740,10 @@ mod tests {
     #[test]
     fn timestamp_is_preserved() {
         let ts: i64 = 1_700_000_000_000_000_000;
-        let entry = JournalEntry::OrderExpired { timestamp_ns: ts, cloid: cloid() };
+        let entry = JournalEntry::OrderExpired {
+            timestamp_ns: ts,
+            cloid: cloid(),
+        };
         let recovered = write_read(&[entry]);
         assert_eq!(recovered[0].timestamp_ns(), ts);
     }
@@ -641,14 +751,21 @@ mod tests {
     #[test]
     fn cloid_accessor_is_consistent() {
         let c = cloid();
-        let entry = JournalEntry::OrderCancelled { timestamp_ns: 0, cloid: c.clone() };
+        let entry = JournalEntry::OrderCancelled {
+            timestamp_ns: 0,
+            cloid: c.clone(),
+        };
         let recovered = write_read(&[entry]);
         assert_eq!(recovered[0].cloid(), &c);
     }
 
     #[test]
     fn all_tif_variants_round_trip() {
-        for tif in [TimeInForce::GoodTillCancel, TimeInForce::ImmediateOrCancel, TimeInForce::FillOrKill] {
+        for tif in [
+            TimeInForce::GoodTillCancel,
+            TimeInForce::ImmediateOrCancel,
+            TimeInForce::FillOrKill,
+        ] {
             let entry = JournalEntry::OrderRequested {
                 timestamp_ns: 0,
                 cloid: cloid(),

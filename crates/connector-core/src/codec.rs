@@ -14,7 +14,10 @@ impl<'a> Encoder<'a> {
     #[inline]
     fn need(&self, n: usize) -> Result<(), Error> {
         if self.buf.len().saturating_sub(self.pos) < n {
-            Err(Error::BufferTooShort { needed: self.pos + n, have: self.buf.len() })
+            Err(Error::BufferTooShort {
+                needed: self.pos + n,
+                have: self.buf.len(),
+            })
         } else {
             Ok(())
         }
@@ -63,7 +66,10 @@ impl<'a> Encoder<'a> {
     pub fn put_str(&mut self, s: &str) -> Result<(), Error> {
         let b = s.as_bytes();
         if b.len() > u16::MAX as usize {
-            return Err(Error::StringTooLong { len: b.len(), max: u16::MAX as usize });
+            return Err(Error::StringTooLong {
+                len: b.len(),
+                max: u16::MAX as usize,
+            });
         }
         self.put_u16(b.len() as u16)?;
         self.need(b.len())?;
@@ -91,7 +97,10 @@ impl<'a> Decoder<'a> {
     #[inline]
     fn need(&self, n: usize) -> Result<(), Error> {
         if self.buf.len().saturating_sub(self.pos) < n {
-            Err(Error::BufferTooShort { needed: self.pos + n, have: self.buf.len() })
+            Err(Error::BufferTooShort {
+                needed: self.pos + n,
+                have: self.buf.len(),
+            })
         } else {
             Ok(())
         }

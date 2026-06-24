@@ -9,7 +9,10 @@ pub enum RefDataError {
     Json(#[from] serde_json::Error),
 
     #[error("missing required filter \"{filter}\" for symbol \"{symbol}\"")]
-    MissingFilter { symbol: String, filter: &'static str },
+    MissingFilter {
+        symbol: String,
+        filter: &'static str,
+    },
 
     #[error("invalid numeric string \"{value}\" for field \"{field}\"")]
     InvalidNumeric { value: String, field: &'static str },

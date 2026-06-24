@@ -28,8 +28,8 @@ pub mod template;
 pub use aggressorside::AggressorSide;
 pub use decimal::Decimal64;
 pub use decoders::{
-    decode_bbo, decode_depth_diff, decode_depth_snapshot, decode_message, decode_trade,
-    BboEvent, DepthDiffEvent, DepthLevel, DepthSnapshotEvent, SbeMessage, TradeEvent,
+    decode_bbo, decode_depth_diff, decode_depth_snapshot, decode_message, decode_trade, BboEvent,
+    DepthDiffEvent, DepthLevel, DepthSnapshotEvent, SbeMessage, TradeEvent,
 };
 pub use error::SbeError;
 pub use header::{SbeHeader, SBE_HEADER_SIZE, SPOT_SCHEMA_ID, SPOT_SCHEMA_VERSION_MAX};
@@ -108,7 +108,13 @@ mod tests {
     fn check_spot_schema_wrong_schema_id_errors() {
         let buf = make_frame(58, 0, 1, 0); // schema_id=1 (not Spot)
         let err = check_spot_schema(&buf).unwrap_err();
-        assert!(matches!(err, SbeError::SchemaMismatch { expected: 3, actual: 1 }));
+        assert!(matches!(
+            err,
+            SbeError::SchemaMismatch {
+                expected: 3,
+                actual: 1
+            }
+        ));
     }
 
     #[test]

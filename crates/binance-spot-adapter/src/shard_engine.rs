@@ -3,7 +3,6 @@
 /// `ShardEngine` owns the `SymbolState` for every symbol assigned to
 /// one logical shard.  It is the single source of mutable per-symbol
 /// state inside a shard task.
-
 use std::collections::HashMap;
 
 use connector_core::InstrumentDefinition;
@@ -12,19 +11,24 @@ use crate::symbol_state::SymbolState;
 
 pub struct ShardEngine {
     shard_id: u32,
-    symbols:  HashMap<String, SymbolState>,
+    symbols: HashMap<String, SymbolState>,
 }
 
 impl ShardEngine {
     pub fn new(shard_id: u32) -> Self {
-        Self { shard_id, symbols: HashMap::new() }
+        Self {
+            shard_id,
+            symbols: HashMap::new(),
+        }
     }
 
     /// Add `inst` to the engine.  No-op if the symbol is already registered
     /// (original state is preserved).
     pub fn add_symbol(&mut self, inst: InstrumentDefinition) {
         let key = inst.symbol.clone();
-        self.symbols.entry(key).or_insert_with(|| SymbolState::new(inst));
+        self.symbols
+            .entry(key)
+            .or_insert_with(|| SymbolState::new(inst));
     }
 
     pub fn get(&self, symbol: &str) -> Option<&SymbolState> {
@@ -43,9 +47,15 @@ impl ShardEngine {
         self.symbols.remove(symbol)
     }
 
-    pub fn shard_id(&self) -> u32 { self.shard_id }
-    pub fn symbol_count(&self) -> usize { self.symbols.len() }
-    pub fn is_empty(&self) -> bool { self.symbols.is_empty() }
+    pub fn shard_id(&self) -> u32 {
+        self.shard_id
+    }
+    pub fn symbol_count(&self) -> usize {
+        self.symbols.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.symbols.is_empty()
+    }
 
     pub fn symbols(&self) -> impl Iterator<Item = (&str, &SymbolState)> {
         self.symbols.iter().map(|(k, v)| (k.as_str(), v))
@@ -68,37 +78,36 @@ impl ShardEngine {
 mod tests {
     use super::*;
     use connector_core::{
-        BookStaleReason, MarketType, MessageHeader, MessageType, VenueId,
-        SCHEMA_VERSION, TS_NONE,
+        BookStaleReason, MarketType, MessageHeader, MessageType, VenueId, SCHEMA_VERSION, TS_NONE,
     };
 
     fn test_inst(symbol: &str) -> InstrumentDefinition {
         InstrumentDefinition {
             header: MessageHeader {
-                schema_version:    SCHEMA_VERSION,
-                message_type:      MessageType::InstrumentDefinition,
-                venue_id:          VenueId::BinanceSpot,
-                market_type:       MarketType::Spot,
-                instrument_id:     0,
-                connection_id:     0,
-                instance_id:       0,
-                sequence_number:   0,
+                schema_version: SCHEMA_VERSION,
+                message_type: MessageType::InstrumentDefinition,
+                venue_id: VenueId::BinanceSpot,
+                market_type: MarketType::Spot,
+                instrument_id: 0,
+                connection_id: 0,
+                instance_id: 0,
+                sequence_number: 0,
                 exchange_event_ts: TS_NONE,
-                exchange_tx_ts:    TS_NONE,
-                local_recv_ts:     0,
-                local_publish_ts:  0,
+                exchange_tx_ts: TS_NONE,
+                local_recv_ts: 0,
+                local_publish_ts: 0,
             },
-            symbol:        symbol.to_string(),
-            base_asset:    "BTC".into(),
-            quote_asset:   "USDT".into(),
-            price_scale:   2,
-            qty_scale:     5,
-            tick_size:     1,
-            step_size:     1,
-            min_qty:       1,
-            min_notional:  0,
+            symbol: symbol.to_string(),
+            base_asset: "BTC".into(),
+            quote_asset: "USDT".into(),
+            price_scale: 2,
+            qty_scale: 5,
+            tick_size: 1,
+            step_size: 1,
+            min_qty: 1,
+            min_notional: 0,
             contract_size: 0,
-            is_trading:    true,
+            is_trading: true,
         }
     }
 
@@ -154,7 +163,10 @@ mod tests {
             .book
             .mark_stale(BookStaleReason::SequenceGap);
         eng.add_symbol(test_inst("BTCUSDT")); // should not replace
-        assert!(eng.get("BTCUSDT").unwrap().is_stale(), "original should be preserved");
+        assert!(
+            eng.get("BTCUSDT").unwrap().is_stale(),
+            "original should be preserved"
+        );
     }
 
     #[test]

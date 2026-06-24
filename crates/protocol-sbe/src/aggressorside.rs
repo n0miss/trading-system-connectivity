@@ -32,8 +32,8 @@ impl AggressorSide {
     /// Wire value corresponding to this variant.
     pub fn as_u8(self) -> u8 {
         match self {
-            Self::Sell    => 0,
-            Self::Buy     => 1,
+            Self::Sell => 0,
+            Self::Buy => 1,
             Self::Unknown => 255,
         }
     }
@@ -69,7 +69,11 @@ mod tests {
 
     #[test]
     fn as_u8_round_trips() {
-        for side in [AggressorSide::Sell, AggressorSide::Buy, AggressorSide::Unknown] {
+        for side in [
+            AggressorSide::Sell,
+            AggressorSide::Buy,
+            AggressorSide::Unknown,
+        ] {
             assert_eq!(AggressorSide::from_u8(side.as_u8()), side);
         }
     }

@@ -34,25 +34,41 @@ const SBE_BASE: &str = "wss://stream-sbe.binance.com";
 
 struct Args {
     symbol: String,
-    count:  usize,
-    secs:   u64,
+    count: usize,
+    secs: u64,
 }
 
 fn parse_args() -> Args {
     let mut symbol = "BTCUSDT".to_string();
-    let mut count  = 20usize;
-    let mut secs   = 30u64;
+    let mut count = 20usize;
+    let mut secs = 30u64;
 
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
         match flag.as_str() {
-            "--symbol" => { if let Some(v) = it.next() { symbol = v; } }
-            "--count"  => { if let Some(v) = it.next() { count  = v.parse().unwrap_or(count); } }
-            "--secs"   => { if let Some(v) = it.next() { secs   = v.parse().unwrap_or(secs);  } }
+            "--symbol" => {
+                if let Some(v) = it.next() {
+                    symbol = v;
+                }
+            }
+            "--count" => {
+                if let Some(v) = it.next() {
+                    count = v.parse().unwrap_or(count);
+                }
+            }
+            "--secs" => {
+                if let Some(v) = it.next() {
+                    secs = v.parse().unwrap_or(secs);
+                }
+            }
             _ => {}
         }
     }
-    Args { symbol, count, secs }
+    Args {
+        symbol,
+        count,
+        secs,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -62,13 +78,14 @@ fn parse_args() -> Args {
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env()
-            .add_directive("sbe_smoke=info".parse().unwrap()))
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("sbe_smoke=info".parse().unwrap()),
+        )
         .with_target(false)
         .init();
 
     let args = parse_args();
-    let sym  = args.symbol.to_lowercase();
+    let sym = args.symbol.to_lowercase();
 
     let api_key = match std::env::var("BINANCE_API_KEY") {
         Ok(k) if !k.is_empty() => {
@@ -76,7 +93,9 @@ async fn main() -> std::process::ExitCode {
             Some(k)
         }
         _ => {
-            warn!("BINANCE_API_KEY not set — connection will likely be rejected (SBE requires auth)");
+            warn!(
+                "BINANCE_API_KEY not set — connection will likely be rejected (SBE requires auth)"
+            );
             None
         }
     };
@@ -91,12 +110,12 @@ async fn main() -> std::process::ExitCode {
     info!(%url, "connecting to Binance SBE endpoint");
 
     let config = WebSocketConfig {
-        url:                    SBE_BASE.to_string(),
+        url: SBE_BASE.to_string(),
         api_key,
-        ping_interval_secs:     20,
+        ping_interval_secs: 20,
         max_streams_per_connection: 1024,
-        reconnect_delay_ms:     500,
-        forced_reconnect_secs:  86_400,
+        reconnect_delay_ms: 500,
+        forced_reconnect_secs: 86_400,
     };
 
     let (tx, mut rx) = mpsc::channel::<RawFrame>(256);
@@ -104,16 +123,23 @@ async fn main() -> std::process::ExitCode {
 
     let mgr = ConnectionManager::new(config);
     let mgr_task = tokio::spawn(async move {
-        mgr.run(&url, move |frame| { let _ = tx.try_send(frame); }, shutdown_rx).await;
+        mgr.run(
+            &url,
+            move |frame| {
+                let _ = tx.try_send(frame);
+            },
+            shutdown_rx,
+        )
+        .await;
     });
 
     let deadline = tokio::time::sleep(Duration::from_secs(args.secs));
     tokio::pin!(deadline);
 
-    let mut total      = 0usize;
-    let mut sbe_count  = 0usize;
-    let mut json_count = 0usize;  // text frames (control messages from exchange)
-    let mut err_count  = 0usize;
+    let mut total = 0usize;
+    let mut sbe_count = 0usize;
+    let mut json_count = 0usize; // text frames (control messages from exchange)
+    let mut err_count = 0usize;
 
     loop {
         tokio::select! {
@@ -160,8 +186,8 @@ async fn main() -> std::process::ExitCode {
 
     info!(
         total,
-        sbe   = sbe_count,
-        json  = json_count,
+        sbe = sbe_count,
+        json = json_count,
         errors = err_count,
         "done",
     );

@@ -5,7 +5,6 @@
 ///
 /// All price and quantity fields are left as raw strings; the normalizer
 /// (§5.22) applies per-instrument scale factors to produce scaled `i64` values.
-
 use serde::Deserialize;
 
 use crate::error::JsonError;
@@ -267,11 +266,11 @@ fn stream_kind(stream: &str) -> StreamKind {
     let kind = stream.splitn(3, '@').nth(1).unwrap_or("");
     match kind {
         "bookTicker" => StreamKind::BookTicker,
-        "depth"      => StreamKind::DepthUpdate,
-        "aggTrade"   => StreamKind::AggTrade,
-        "markPrice"  => StreamKind::MarkPrice,
+        "depth" => StreamKind::DepthUpdate,
+        "aggTrade" => StreamKind::AggTrade,
+        "markPrice" => StreamKind::MarkPrice,
         "forceOrder" => StreamKind::ForceOrder,
-        _            => StreamKind::Unknown,
+        _ => StreamKind::Unknown,
     }
 }
 
@@ -401,13 +400,15 @@ mod tests {
     #[test]
     fn parse_book_ticker() {
         let event = parse_futures_message(BOOK_TICKER_MSG).unwrap();
-        let FuturesEvent::BookTicker(bt) = event else { panic!("wrong variant") };
+        let FuturesEvent::BookTicker(bt) = event else {
+            panic!("wrong variant")
+        };
         assert_eq!(bt.update_id, 400_900_217);
-        assert_eq!(bt.symbol,    "BTCUSDT");
+        assert_eq!(bt.symbol, "BTCUSDT");
         assert_eq!(bt.bid_price, "96500.00");
-        assert_eq!(bt.bid_qty,   "1.23");
+        assert_eq!(bt.bid_qty, "1.23");
         assert_eq!(bt.ask_price, "96501.00");
-        assert_eq!(bt.ask_qty,   "0.50");
+        assert_eq!(bt.ask_qty, "0.50");
     }
 
     // --- depth update ---
@@ -415,20 +416,22 @@ mod tests {
     #[test]
     fn parse_depth_update() {
         let event = parse_futures_message(DEPTH_UPDATE_MSG).unwrap();
-        let FuturesEvent::DepthUpdate(d) = event else { panic!("wrong variant") };
-        assert_eq!(d.symbol,               "BTCUSDT");
-        assert_eq!(d.first_update_id,      50_000_001);
-        assert_eq!(d.last_update_id,       50_000_005);
+        let FuturesEvent::DepthUpdate(d) = event else {
+            panic!("wrong variant")
+        };
+        assert_eq!(d.symbol, "BTCUSDT");
+        assert_eq!(d.first_update_id, 50_000_001);
+        assert_eq!(d.last_update_id, 50_000_005);
         assert_eq!(d.prev_final_update_id, 50_000_000);
-        assert_eq!(d.event_time_ms,        1_748_000_000_000);
-        assert_eq!(d.transaction_time_ms,  1_748_000_000_001);
+        assert_eq!(d.event_time_ms, 1_748_000_000_000);
+        assert_eq!(d.transaction_time_ms, 1_748_000_000_001);
     }
 
     #[test]
     fn depth_update_bids_and_asks_parsed() {
-        let FuturesEvent::DepthUpdate(d) =
-            parse_futures_message(DEPTH_UPDATE_MSG).unwrap()
-        else { panic!("wrong variant") };
+        let FuturesEvent::DepthUpdate(d) = parse_futures_message(DEPTH_UPDATE_MSG).unwrap() else {
+            panic!("wrong variant")
+        };
         assert_eq!(d.bids.len(), 2);
         assert_eq!(d.asks.len(), 1);
         assert_eq!(d.bids[0], ["96500.00".to_string(), "2.50".to_string()]);
@@ -448,22 +451,25 @@ mod tests {
     #[test]
     fn parse_agg_trade_seller_aggressor() {
         let event = parse_futures_message(AGG_TRADE_MSG).unwrap();
-        let FuturesEvent::AggTrade(t) = event else { panic!("wrong variant") };
-        assert_eq!(t.symbol,         "BTCUSDT");
-        assert_eq!(t.agg_trade_id,   26_129);
-        assert_eq!(t.price,          "96500.50");
-        assert_eq!(t.qty,            "0.01500000");
+        let FuturesEvent::AggTrade(t) = event else {
+            panic!("wrong variant")
+        };
+        assert_eq!(t.symbol, "BTCUSDT");
+        assert_eq!(t.agg_trade_id, 26_129);
+        assert_eq!(t.price, "96500.50");
+        assert_eq!(t.qty, "0.01500000");
         assert_eq!(t.first_trade_id, 100);
-        assert_eq!(t.last_trade_id,  105);
-        assert_eq!(t.trade_time_ms,  1_748_000_000_000);
+        assert_eq!(t.last_trade_id, 105);
+        assert_eq!(t.trade_time_ms, 1_748_000_000_000);
         assert!(!t.is_buyer_maker);
     }
 
     #[test]
     fn parse_agg_trade_buyer_maker() {
-        let FuturesEvent::AggTrade(t) =
-            parse_futures_message(AGG_TRADE_BUYER_MAKER_MSG).unwrap()
-        else { panic!("wrong variant") };
+        let FuturesEvent::AggTrade(t) = parse_futures_message(AGG_TRADE_BUYER_MAKER_MSG).unwrap()
+        else {
+            panic!("wrong variant")
+        };
         assert!(t.is_buyer_maker);
         assert_eq!(t.symbol, "ETHUSDT");
     }
@@ -473,20 +479,24 @@ mod tests {
     #[test]
     fn parse_mark_price() {
         let event = parse_futures_message(MARK_PRICE_MSG).unwrap();
-        let FuturesEvent::MarkPrice(m) = event else { panic!("wrong variant") };
-        assert_eq!(m.symbol,               "BTCUSDT");
-        assert_eq!(m.mark_price,           "96500.50");
-        assert_eq!(m.index_price,          "96501.00");
-        assert_eq!(m.funding_rate,         "0.00010000");
+        let FuturesEvent::MarkPrice(m) = event else {
+            panic!("wrong variant")
+        };
+        assert_eq!(m.symbol, "BTCUSDT");
+        assert_eq!(m.mark_price, "96500.50");
+        assert_eq!(m.index_price, "96501.00");
+        assert_eq!(m.funding_rate, "0.00010000");
         assert_eq!(m.next_funding_time_ms, 1_749_600_000_000);
-        assert_eq!(m.event_time_ms,        1_748_000_000_000);
+        assert_eq!(m.event_time_ms, 1_748_000_000_000);
     }
 
     #[test]
     fn mark_price_1s_suffix_dispatches_correctly() {
         let event = parse_futures_message(MARK_PRICE_1S_MSG).unwrap();
-        let FuturesEvent::MarkPrice(m) = event else { panic!("wrong variant") };
-        assert_eq!(m.symbol,     "BTCUSDT");
+        let FuturesEvent::MarkPrice(m) = event else {
+            panic!("wrong variant")
+        };
+        assert_eq!(m.symbol, "BTCUSDT");
         assert_eq!(m.mark_price, "96502.00");
     }
 
@@ -496,8 +506,9 @@ mod tests {
             "e":"markPriceUpdate","E":1748000000000,"s":"BTCUSDT",
             "p":"96500.50","r":"0.00010000","T":1749600000000
         }}"#;
-        let FuturesEvent::MarkPrice(m) = parse_futures_message(msg).unwrap()
-        else { panic!() };
+        let FuturesEvent::MarkPrice(m) = parse_futures_message(msg).unwrap() else {
+            panic!()
+        };
         assert_eq!(m.index_price, "");
     }
 
@@ -506,24 +517,27 @@ mod tests {
     #[test]
     fn parse_force_order() {
         let event = parse_futures_message(FORCE_ORDER_MSG).unwrap();
-        let FuturesEvent::ForceOrder(fo) = event else { panic!("wrong variant") };
-        assert_eq!(fo.event_time_ms,       1_748_000_000_000);
-        assert_eq!(fo.order.symbol,        "BTCUSDT");
-        assert_eq!(fo.order.side,          "SELL");
-        assert_eq!(fo.order.price,         "9910");
-        assert_eq!(fo.order.avg_price,     "9910");
-        assert_eq!(fo.order.qty,           "0.014");
+        let FuturesEvent::ForceOrder(fo) = event else {
+            panic!("wrong variant")
+        };
+        assert_eq!(fo.event_time_ms, 1_748_000_000_000);
+        assert_eq!(fo.order.symbol, "BTCUSDT");
+        assert_eq!(fo.order.side, "SELL");
+        assert_eq!(fo.order.price, "9910");
+        assert_eq!(fo.order.avg_price, "9910");
+        assert_eq!(fo.order.qty, "0.014");
         assert_eq!(fo.order.last_filled_qty, "0.014");
-        assert_eq!(fo.order.trade_time_ms,   1_748_000_000_000);
+        assert_eq!(fo.order.trade_time_ms, 1_748_000_000_000);
     }
 
     // --- unknown / error ---
 
     #[test]
     fn unknown_stream_type_returns_unknown_variant() {
-        let FuturesEvent::Unknown(stream) =
-            parse_futures_message(UNKNOWN_STREAM_MSG).unwrap()
-        else { panic!("expected Unknown variant") };
+        let FuturesEvent::Unknown(stream) = parse_futures_message(UNKNOWN_STREAM_MSG).unwrap()
+        else {
+            panic!("expected Unknown variant")
+        };
         assert_eq!(stream, "btcusdt@kline_1m");
     }
 

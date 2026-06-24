@@ -8,7 +8,6 @@
 /// `bookTicker` the way Spot does.
 ///
 /// [`FuturesShardEngine`]: crate::shard_engine::FuturesShardEngine
-
 use connector_core::{FeedState, InstrumentDefinition};
 use connector_order_book::OrderBook;
 
@@ -17,12 +16,12 @@ use crate::recovery_buffer::RecoveryBuffer;
 use crate::sequence::FuturesSequenceValidator;
 
 pub struct FuturesSymbolState {
-    pub inst:         InstrumentDefinition,
-    pub book:         OrderBook,
-    pub validator:    FuturesSequenceValidator,
+    pub inst: InstrumentDefinition,
+    pub book: OrderBook,
+    pub validator: FuturesSequenceValidator,
     pub recovery_buf: RecoveryBuffer,
-    pub circuit:      CircuitBreaker,
-    pub feed_state:   FeedState,
+    pub circuit: CircuitBreaker,
+    pub feed_state: FeedState,
 }
 
 impl FuturesSymbolState {
@@ -30,14 +29,18 @@ impl FuturesSymbolState {
         let book = OrderBook::new(&inst.symbol);
         Self {
             book,
-            validator:    FuturesSequenceValidator::new(),
+            validator: FuturesSequenceValidator::new(),
             recovery_buf: RecoveryBuffer::new(),
-            circuit:      CircuitBreaker::new(),
-            feed_state:   FeedState::Connecting,
+            circuit: CircuitBreaker::new(),
+            feed_state: FeedState::Connecting,
             inst,
         }
     }
 
-    pub fn symbol(&self)   -> &str  { &self.inst.symbol }
-    pub fn is_stale(&self) -> bool  { self.book.is_stale() }
+    pub fn symbol(&self) -> &str {
+        &self.inst.symbol
+    }
+    pub fn is_stale(&self) -> bool {
+        self.book.is_stale()
+    }
 }

@@ -46,7 +46,11 @@ pub struct RecordedFrame {
 
 impl RecordedFrame {
     pub fn new(captured_at_ns: i64, payload: Vec<u8>, source_kind: SourceKind) -> Self {
-        Self { captured_at_ns, payload, source_kind }
+        Self {
+            captured_at_ns,
+            payload,
+            source_kind,
+        }
     }
 
     /// Convenience constructor for raw WS payloads.

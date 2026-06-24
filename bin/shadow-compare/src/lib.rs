@@ -53,7 +53,11 @@ pub struct CompareConfig {
 
 impl Default for CompareConfig {
     fn default() -> Self {
-        Self { tolerance_bps: 1, min_samples: 60, max_divergence_pct: 0.0 }
+        Self {
+            tolerance_bps: 1,
+            min_samples: 60,
+            max_divergence_pct: 0.0,
+        }
     }
 }
 
@@ -64,9 +68,9 @@ impl Default for CompareConfig {
 /// Cumulative comparison statistics for one symbol.
 #[derive(Debug, Clone, Default)]
 pub struct SymbolStats {
-    pub symbol:           String,
-    pub samples:          u64,
-    pub divergences:      u64,
+    pub symbol: String,
+    pub samples: u64,
+    pub divergences: u64,
     pub max_bid_diff_bps: i64,
     pub max_ask_diff_bps: i64,
 }
@@ -74,7 +78,11 @@ pub struct SymbolStats {
 impl SymbolStats {
     /// Percentage of samples that exceeded the tolerance.
     pub fn divergence_pct(&self) -> f64 {
-        if self.samples == 0 { 0.0 } else { self.divergences as f64 / self.samples as f64 * 100.0 }
+        if self.samples == 0 {
+            0.0
+        } else {
+            self.divergences as f64 / self.samples as f64 * 100.0
+        }
     }
 
     pub fn is_acceptable(&self, cfg: &CompareConfig) -> bool {
@@ -94,17 +102,22 @@ pub enum Verdict {
     /// Shadow matches active within tolerance across all symbols.
     Stable,
     /// At least one symbol exceeds the divergence threshold.
-    Diverging { worst_symbol: String, worst_diff_bps: i64 },
+    Diverging {
+        worst_symbol: String,
+        worst_diff_bps: i64,
+    },
 }
 
 impl Verdict {
-    pub fn is_stable(&self) -> bool { matches!(self, Self::Stable) }
+    pub fn is_stable(&self) -> bool {
+        matches!(self, Self::Stable)
+    }
 
     /// Process exit code: 0 = stable, 1 = diverging, 2 = insufficient data.
     pub fn exit_code(&self) -> i32 {
         match self {
-            Self::Stable             => 0,
-            Self::Diverging { .. }  => 1,
+            Self::Stable => 0,
+            Self::Diverging { .. } => 1,
             Self::InsufficientData { .. } => 2,
         }
     }
@@ -116,19 +129,19 @@ impl Verdict {
 
 /// Compares BBO frames from two connector output streams (active vs shadow).
 pub struct Comparator {
-    config:     CompareConfig,
-    active_rx:  Receiver<Vec<u8>>,
-    shadow_rx:  Receiver<Vec<u8>>,
+    config: CompareConfig,
+    active_rx: Receiver<Vec<u8>>,
+    shadow_rx: Receiver<Vec<u8>>,
     active_bbo: HashMap<String, (i64, i64)>,
     shadow_bbo: HashMap<String, (i64, i64)>,
     /// Symbols updated this tick (either side); cleared after compare_pending.
-    pending:    HashSet<String>,
-    stats:      HashMap<String, SymbolStats>,
+    pending: HashSet<String>,
+    stats: HashMap<String, SymbolStats>,
 }
 
 impl Comparator {
     pub fn new(
-        config:    CompareConfig,
+        config: CompareConfig,
         active_rx: Receiver<Vec<u8>>,
         shadow_rx: Receiver<Vec<u8>>,
     ) -> Self {
@@ -138,8 +151,8 @@ impl Comparator {
             shadow_rx,
             active_bbo: HashMap::new(),
             shadow_bbo: HashMap::new(),
-            pending:    HashSet::new(),
-            stats:      HashMap::new(),
+            pending: HashSet::new(),
+            stats: HashMap::new(),
         }
     }
 
@@ -158,7 +171,8 @@ impl Comparator {
                     if let Ok(NormalizedMessage::BestBidOffer(bbo)) =
                         NormalizedMessage::from_bytes(&buf)
                     {
-                        self.active_bbo.insert(bbo.symbol.clone(), (bbo.bid_price, bbo.ask_price));
+                        self.active_bbo
+                            .insert(bbo.symbol.clone(), (bbo.bid_price, bbo.ask_price));
                         self.pending.insert(bbo.symbol);
                     }
                 }
@@ -174,7 +188,8 @@ impl Comparator {
                     if let Ok(NormalizedMessage::BestBidOffer(bbo)) =
                         NormalizedMessage::from_bytes(&buf)
                     {
-                        self.shadow_bbo.insert(bbo.symbol.clone(), (bbo.bid_price, bbo.ask_price));
+                        self.shadow_bbo
+                            .insert(bbo.symbol.clone(), (bbo.bid_price, bbo.ask_price));
                         self.pending.insert(bbo.symbol);
                     }
                 }
@@ -196,16 +211,26 @@ impl Comparator {
             let (ab, aa) = self.active_bbo[&symbol];
             let (sb, sa) = self.shadow_bbo[&symbol];
 
-            let bid_diff_bps = if ab != 0 { ((ab - sb).abs() * 10_000) / ab } else { 0 };
-            let ask_diff_bps = if aa != 0 { ((aa - sa).abs() * 10_000) / aa } else { 0 };
+            let bid_diff_bps = if ab != 0 {
+                ((ab - sb).abs() * 10_000) / ab
+            } else {
+                0
+            };
+            let ask_diff_bps = if aa != 0 {
+                ((aa - sa).abs() * 10_000) / aa
+            } else {
+                0
+            };
 
-            let stats = self.stats.entry(symbol.clone()).or_insert_with(|| SymbolStats {
-                symbol: symbol.clone(),
-                ..Default::default()
-            });
+            let stats = self
+                .stats
+                .entry(symbol.clone())
+                .or_insert_with(|| SymbolStats {
+                    symbol: symbol.clone(),
+                    ..Default::default()
+                });
             stats.samples += 1;
-            if bid_diff_bps > self.config.tolerance_bps
-                || ask_diff_bps > self.config.tolerance_bps
+            if bid_diff_bps > self.config.tolerance_bps || ask_diff_bps > self.config.tolerance_bps
             {
                 stats.divergences += 1;
             }
@@ -218,10 +243,13 @@ impl Comparator {
     pub fn verdict(&self) -> Verdict {
         let total: u64 = self.stats.values().map(|s| s.samples).sum();
         if total < self.config.min_samples {
-            return Verdict::InsufficientData { samples: total, required: self.config.min_samples };
+            return Verdict::InsufficientData {
+                samples: total,
+                required: self.config.min_samples,
+            };
         }
 
-        let mut worst_symbol  = String::new();
+        let mut worst_symbol = String::new();
         let mut worst_diff_bps = 0i64;
 
         for stats in self.stats.values() {
@@ -229,13 +257,16 @@ impl Comparator {
                 let diff = stats.max_bid_diff_bps.max(stats.max_ask_diff_bps);
                 if diff > worst_diff_bps {
                     worst_diff_bps = diff;
-                    worst_symbol   = stats.symbol.clone();
+                    worst_symbol = stats.symbol.clone();
                 }
             }
         }
 
         if !worst_symbol.is_empty() {
-            Verdict::Diverging { worst_symbol, worst_diff_bps }
+            Verdict::Diverging {
+                worst_symbol,
+                worst_diff_bps,
+            }
         } else {
             Verdict::Stable
         }
@@ -260,7 +291,7 @@ mod tests {
     use std::sync::mpsc;
 
     use connector_core::{
-        BestBidOffer, MessageHeader, MessageType, VenueId, MarketType, SCHEMA_VERSION, TS_NONE,
+        BestBidOffer, MarketType, MessageHeader, MessageType, VenueId, SCHEMA_VERSION, TS_NONE,
     };
 
     use super::*;
@@ -269,32 +300,32 @@ mod tests {
 
     fn bbo_header() -> MessageHeader {
         MessageHeader {
-            schema_version:    SCHEMA_VERSION,
-            message_type:      MessageType::BestBidOffer,
-            venue_id:          VenueId::BinanceSpot,
-            market_type:       MarketType::Spot,
-            instrument_id:     1,
-            connection_id:     0,
-            instance_id:       0,
-            sequence_number:   1,
+            schema_version: SCHEMA_VERSION,
+            message_type: MessageType::BestBidOffer,
+            venue_id: VenueId::BinanceSpot,
+            market_type: MarketType::Spot,
+            instrument_id: 1,
+            connection_id: 0,
+            instance_id: 0,
+            sequence_number: 1,
             exchange_event_ts: 0,
-            exchange_tx_ts:    TS_NONE,
-            local_recv_ts:     0,
-            local_publish_ts:  0,
+            exchange_tx_ts: TS_NONE,
+            local_recv_ts: 0,
+            local_publish_ts: 0,
         }
     }
 
     fn encode_bbo(symbol: &str, bid: i64, ask: i64) -> Vec<u8> {
         let msg = BestBidOffer {
-            header:      bbo_header(),
-            symbol:      symbol.to_string(),
+            header: bbo_header(),
+            symbol: symbol.to_string(),
             price_scale: 2,
-            qty_scale:   3,
-            bid_price:   bid,
-            bid_qty:     1_000_000,
-            ask_price:   ask,
-            ask_qty:     1_000_000,
-            update_id:   0,
+            qty_scale: 3,
+            bid_price: bid,
+            bid_qty: 1_000_000,
+            ask_price: ask,
+            ask_qty: 1_000_000,
+            update_id: 0,
         };
         let mut buf = vec![0u8; 512];
         let len = msg.encode_into(&mut buf).unwrap();
@@ -302,7 +333,9 @@ mod tests {
         buf
     }
 
-    fn make_comparator(cfg: CompareConfig) -> (
+    fn make_comparator(
+        cfg: CompareConfig,
+    ) -> (
         Comparator,
         mpsc::SyncSender<Vec<u8>>,
         mpsc::SyncSender<Vec<u8>>,
@@ -317,20 +350,37 @@ mod tests {
 
     #[test]
     fn insufficient_data_before_min_samples() {
-        let (mut cmp, atx, stx) = make_comparator(CompareConfig { min_samples: 10, ..Default::default() });
-        atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100)).unwrap();
-        stx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100)).unwrap();
+        let (mut cmp, atx, stx) = make_comparator(CompareConfig {
+            min_samples: 10,
+            ..Default::default()
+        });
+        atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100))
+            .unwrap();
+        stx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100))
+            .unwrap();
         cmp.tick();
-        assert!(matches!(cmp.verdict(), Verdict::InsufficientData { samples: 1, required: 10 }));
+        assert!(matches!(
+            cmp.verdict(),
+            Verdict::InsufficientData {
+                samples: 1,
+                required: 10
+            }
+        ));
     }
 
     #[test]
     fn stable_after_min_samples_with_matching_prices() {
-        let cfg = CompareConfig { min_samples: 5, tolerance_bps: 1, ..Default::default() };
+        let cfg = CompareConfig {
+            min_samples: 5,
+            tolerance_bps: 1,
+            ..Default::default()
+        };
         let (mut cmp, atx, stx) = make_comparator(cfg);
         for _ in 0..5 {
-            atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100)).unwrap();
-            stx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100)).unwrap();
+            atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100))
+                .unwrap();
+            stx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100))
+                .unwrap();
             cmp.tick();
         }
         assert_eq!(cmp.verdict(), Verdict::Stable);
@@ -339,11 +389,17 @@ mod tests {
 
     #[test]
     fn diverging_when_price_exceeds_tolerance() {
-        let cfg = CompareConfig { min_samples: 1, tolerance_bps: 1, max_divergence_pct: 0.0 };
+        let cfg = CompareConfig {
+            min_samples: 1,
+            tolerance_bps: 1,
+            max_divergence_pct: 0.0,
+        };
         let (mut cmp, atx, stx) = make_comparator(cfg);
         // Active: bid 5_000_000 — Shadow: bid 5_001_000 → 2 bps difference
-        atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100)).unwrap();
-        stx.send(encode_bbo("BTCUSDT", 5_001_000, 5_001_100)).unwrap();
+        atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100))
+            .unwrap();
+        stx.send(encode_bbo("BTCUSDT", 5_001_000, 5_001_100))
+            .unwrap();
         cmp.tick();
         assert!(matches!(cmp.verdict(), Verdict::Diverging { .. }));
         assert_eq!(cmp.verdict().exit_code(), 1);
@@ -352,10 +408,16 @@ mod tests {
     #[test]
     fn within_tolerance_is_not_a_divergence() {
         // 1 bps tolerance; difference = 0 bps
-        let cfg = CompareConfig { min_samples: 1, tolerance_bps: 5, max_divergence_pct: 0.0 };
+        let cfg = CompareConfig {
+            min_samples: 1,
+            tolerance_bps: 5,
+            max_divergence_pct: 0.0,
+        };
         let (mut cmp, atx, stx) = make_comparator(cfg);
-        atx.send(encode_bbo("ETHUSDT", 1_000_000, 1_001_000)).unwrap();
-        stx.send(encode_bbo("ETHUSDT", 1_000_000, 1_001_000)).unwrap();
+        atx.send(encode_bbo("ETHUSDT", 1_000_000, 1_001_000))
+            .unwrap();
+        stx.send(encode_bbo("ETHUSDT", 1_000_000, 1_001_000))
+            .unwrap();
         cmp.tick();
         assert_eq!(cmp.verdict(), Verdict::Stable);
     }
@@ -363,7 +425,11 @@ mod tests {
     #[test]
     fn one_divergence_within_allowed_pct_is_stable() {
         // Allow up to 20% of samples to diverge
-        let cfg = CompareConfig { min_samples: 5, tolerance_bps: 1, max_divergence_pct: 20.0 };
+        let cfg = CompareConfig {
+            min_samples: 5,
+            tolerance_bps: 1,
+            max_divergence_pct: 20.0,
+        };
         let (mut cmp, atx, stx) = make_comparator(cfg);
 
         // 4 matching ticks
@@ -383,7 +449,11 @@ mod tests {
     #[test]
     fn divergence_rate_above_limit_triggers_diverging() {
         // Only 10% allowed; we inject 50%
-        let cfg = CompareConfig { min_samples: 2, tolerance_bps: 1, max_divergence_pct: 10.0 };
+        let cfg = CompareConfig {
+            min_samples: 2,
+            tolerance_bps: 1,
+            max_divergence_pct: 10.0,
+        };
         let (mut cmp, atx, stx) = make_comparator(cfg);
 
         atx.send(encode_bbo("SOLUSDT", 70_000, 70_100)).unwrap();
@@ -399,25 +469,40 @@ mod tests {
 
     #[test]
     fn no_comparison_until_both_sides_have_seen_the_symbol() {
-        let cfg = CompareConfig { min_samples: 1, ..Default::default() };
+        let cfg = CompareConfig {
+            min_samples: 1,
+            ..Default::default()
+        };
         let (mut cmp, atx, _stx) = make_comparator(cfg);
-        atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100)).unwrap();
+        atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100))
+            .unwrap();
         cmp.tick();
         // shadow hasn't sent anything → total_samples should still be 0
         assert_eq!(cmp.total_samples(), 0);
-        assert!(matches!(cmp.verdict(), Verdict::InsufficientData { samples: 0, .. }));
+        assert!(matches!(
+            cmp.verdict(),
+            Verdict::InsufficientData { samples: 0, .. }
+        ));
     }
 
     #[test]
     fn multiple_symbols_tracked_independently() {
-        let cfg = CompareConfig { min_samples: 2, tolerance_bps: 1, max_divergence_pct: 0.0 };
+        let cfg = CompareConfig {
+            min_samples: 2,
+            tolerance_bps: 1,
+            max_divergence_pct: 0.0,
+        };
         let (mut cmp, atx, stx) = make_comparator(cfg);
 
         for _ in 0..2 {
-            atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100)).unwrap();
-            atx.send(encode_bbo("ETHUSDT", 1_000_000, 1_000_100)).unwrap();
-            stx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100)).unwrap();
-            stx.send(encode_bbo("ETHUSDT", 1_000_000, 1_000_100)).unwrap();
+            atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100))
+                .unwrap();
+            atx.send(encode_bbo("ETHUSDT", 1_000_000, 1_000_100))
+                .unwrap();
+            stx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100))
+                .unwrap();
+            stx.send(encode_bbo("ETHUSDT", 1_000_000, 1_000_100))
+                .unwrap();
             cmp.tick();
         }
         assert_eq!(cmp.stats().len(), 2);
@@ -426,13 +511,21 @@ mod tests {
 
     #[test]
     fn only_diverging_symbol_is_named_in_verdict() {
-        let cfg = CompareConfig { min_samples: 1, tolerance_bps: 1, max_divergence_pct: 0.0 };
+        let cfg = CompareConfig {
+            min_samples: 1,
+            tolerance_bps: 1,
+            max_divergence_pct: 0.0,
+        };
         let (mut cmp, atx, stx) = make_comparator(cfg);
 
-        atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100)).unwrap();
-        stx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100)).unwrap(); // matches
-        atx.send(encode_bbo("ETHUSDT", 1_000_000, 1_000_100)).unwrap();
-        stx.send(encode_bbo("ETHUSDT", 1_200_000, 1_200_100)).unwrap(); // diverges (20%)
+        atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100))
+            .unwrap();
+        stx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100))
+            .unwrap(); // matches
+        atx.send(encode_bbo("ETHUSDT", 1_000_000, 1_000_100))
+            .unwrap();
+        stx.send(encode_bbo("ETHUSDT", 1_200_000, 1_200_100))
+            .unwrap(); // diverges (20%)
         cmp.tick();
 
         match cmp.verdict() {
@@ -445,17 +538,25 @@ mod tests {
 
     #[test]
     fn max_diff_bps_accumulated_in_stats() {
-        let cfg = CompareConfig { min_samples: 2, tolerance_bps: 100, max_divergence_pct: 100.0 };
+        let cfg = CompareConfig {
+            min_samples: 2,
+            tolerance_bps: 100,
+            max_divergence_pct: 100.0,
+        };
         let (mut cmp, atx, stx) = make_comparator(cfg);
 
         // First tick: 10 bps diff
-        atx.send(encode_bbo("BTCUSDT", 10_000_000, 10_001_000)).unwrap();
-        stx.send(encode_bbo("BTCUSDT", 10_010_000, 10_011_000)).unwrap(); // 10 bps on bid
+        atx.send(encode_bbo("BTCUSDT", 10_000_000, 10_001_000))
+            .unwrap();
+        stx.send(encode_bbo("BTCUSDT", 10_010_000, 10_011_000))
+            .unwrap(); // 10 bps on bid
         cmp.tick();
 
         // Second tick: 5 bps diff
-        atx.send(encode_bbo("BTCUSDT", 10_000_000, 10_001_000)).unwrap();
-        stx.send(encode_bbo("BTCUSDT", 10_005_000, 10_006_000)).unwrap(); // 5 bps on bid
+        atx.send(encode_bbo("BTCUSDT", 10_000_000, 10_001_000))
+            .unwrap();
+        stx.send(encode_bbo("BTCUSDT", 10_005_000, 10_006_000))
+            .unwrap(); // 5 bps on bid
         cmp.tick();
 
         let stats = &cmp.stats()["BTCUSDT"];
@@ -465,11 +566,16 @@ mod tests {
 
     #[test]
     fn disconnected_channel_drains_remaining_and_stops() {
-        let cfg = CompareConfig { min_samples: 1, ..Default::default() };
+        let cfg = CompareConfig {
+            min_samples: 1,
+            ..Default::default()
+        };
         let (mut cmp, atx, stx) = make_comparator(cfg);
 
-        atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100)).unwrap();
-        stx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100)).unwrap();
+        atx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100))
+            .unwrap();
+        stx.send(encode_bbo("BTCUSDT", 5_000_000, 5_000_100))
+            .unwrap();
         drop(atx);
         drop(stx);
 
@@ -485,7 +591,21 @@ mod tests {
     #[test]
     fn verdict_exit_codes() {
         assert_eq!(Verdict::Stable.exit_code(), 0);
-        assert_eq!(Verdict::Diverging { worst_symbol: "X".into(), worst_diff_bps: 10 }.exit_code(), 1);
-        assert_eq!(Verdict::InsufficientData { samples: 0, required: 60 }.exit_code(), 2);
+        assert_eq!(
+            Verdict::Diverging {
+                worst_symbol: "X".into(),
+                worst_diff_bps: 10
+            }
+            .exit_code(),
+            1
+        );
+        assert_eq!(
+            Verdict::InsufficientData {
+                samples: 0,
+                required: 60
+            }
+            .exit_code(),
+            2
+        );
     }
 }

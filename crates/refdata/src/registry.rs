@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use connector_core::InstrumentDefinition;
 
-use crate::event::{RefDataEvent, business_fields_differ, make_trading_status};
+use crate::event::{business_fields_differ, make_trading_status, RefDataEvent};
 
 /// In-memory store of all known instrument definitions.
 ///
@@ -14,14 +14,14 @@ use crate::event::{RefDataEvent, business_fields_differ, make_trading_status};
 pub struct InstrumentRegistry {
     instruments: HashMap<String, InstrumentDefinition>,
     /// Monotonically increasing counter for `TradingStatus` sequence numbers.
-    next_seq:    u64,
+    next_seq: u64,
 }
 
 impl InstrumentRegistry {
     pub fn new() -> Self {
         Self {
             instruments: HashMap::new(),
-            next_seq:    0,
+            next_seq: 0,
         }
     }
 
@@ -40,7 +40,10 @@ impl InstrumentRegistry {
         match self.instruments.get(&def.symbol) {
             None => {
                 let status = make_trading_status(&def, seq);
-                let ev = RefDataEvent::Added { def: def.clone(), status };
+                let ev = RefDataEvent::Added {
+                    def: def.clone(),
+                    status,
+                };
                 self.instruments.insert(def.symbol.clone(), def);
                 Some(ev)
             }
@@ -53,7 +56,11 @@ impl InstrumentRegistry {
                     };
                     let old = prev.clone();
                     self.instruments.insert(def.symbol.clone(), def.clone());
-                    Some(RefDataEvent::Updated { old, new: def, status })
+                    Some(RefDataEvent::Updated {
+                        old,
+                        new: def,
+                        status,
+                    })
                 } else {
                     None
                 }
@@ -108,8 +115,13 @@ mod tests {
 
     fn btc_def(is_trading: bool) -> InstrumentDefinition {
         let mut defs = parse_exchange_info(
-            SPOT_JSON_FOR_TESTS, VenueId::BinanceSpot, MarketType::Spot, 1, 0,
-        ).unwrap();
+            SPOT_JSON_FOR_TESTS,
+            VenueId::BinanceSpot,
+            MarketType::Spot,
+            1,
+            0,
+        )
+        .unwrap();
         let pos = defs.iter().position(|d| d.symbol == "BTCUSDT").unwrap();
         let btc = defs.remove(pos);
         InstrumentDefinition { is_trading, ..btc }
@@ -181,7 +193,10 @@ mod tests {
 
         let event = reg.upsert(changed).unwrap();
         assert!(event.is_updated());
-        assert!(event.trading_status().is_none(), "is_trading did not change");
+        assert!(
+            event.trading_status().is_none(),
+            "is_trading did not change"
+        );
         assert!(!event.trading_changed());
     }
 
@@ -232,14 +247,23 @@ mod tests {
     #[test]
     fn apply_batch_emits_added_event_per_new_symbol() {
         let defs = parse_exchange_info(
-            SPOT_JSON_FOR_TESTS, VenueId::BinanceSpot, MarketType::Spot, 1, 0,
-        ).unwrap();
+            SPOT_JSON_FOR_TESTS,
+            VenueId::BinanceSpot,
+            MarketType::Spot,
+            1,
+            0,
+        )
+        .unwrap();
         let count = defs.len();
 
         let mut reg = make_registry();
         let events = reg.apply_batch(defs.clone());
 
-        assert_eq!(events.len(), count, "every new symbol produces an Added event");
+        assert_eq!(
+            events.len(),
+            count,
+            "every new symbol produces an Added event"
+        );
         assert_eq!(reg.len(), count);
         assert!(events.iter().all(|e| e.is_added()));
     }
@@ -247,8 +271,13 @@ mod tests {
     #[test]
     fn apply_batch_second_pass_with_same_data_emits_no_events() {
         let defs = parse_exchange_info(
-            SPOT_JSON_FOR_TESTS, VenueId::BinanceSpot, MarketType::Spot, 1, 0,
-        ).unwrap();
+            SPOT_JSON_FOR_TESTS,
+            VenueId::BinanceSpot,
+            MarketType::Spot,
+            1,
+            0,
+        )
+        .unwrap();
 
         let mut reg = make_registry();
         reg.apply_batch(defs.clone());
@@ -288,7 +317,7 @@ mod tests {
         let event = reg.upsert(btc_def(true)).unwrap();
         let ts = event.trading_status().unwrap();
         // btc_def uses VenueId::BinanceSpot, MarketType::Spot, instance_id=1
-        assert_eq!(ts.header.venue_id,    VenueId::BinanceSpot);
+        assert_eq!(ts.header.venue_id, VenueId::BinanceSpot);
         assert_eq!(ts.header.market_type, MarketType::Spot);
         assert_eq!(ts.header.instance_id, 1);
     }

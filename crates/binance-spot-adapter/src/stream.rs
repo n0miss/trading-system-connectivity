@@ -9,7 +9,9 @@ pub const SPOT_WS_BASE: &str = "wss://stream.binance.com:443";
 pub enum SpotStream {
     BookTicker,
     /// `update_speed_ms` must be 100, 250, or 500.
-    Depth { update_speed_ms: u16 },
+    Depth {
+        update_speed_ms: u16,
+    },
     Trade,
     AggTrade,
 }
@@ -21,7 +23,7 @@ impl SpotStream {
         match self {
             Self::BookTicker => format!("{}@bookTicker", sym),
             Self::Depth { update_speed_ms } => format!("{}@depth@{}ms", sym, update_speed_ms),
-            Self::Trade    => format!("{}@trade", sym),
+            Self::Trade => format!("{}@trade", sym),
             Self::AggTrade => format!("{}@aggTrade", sym),
         }
     }
@@ -45,23 +47,38 @@ mod tests {
 
     #[test]
     fn spot_ws_base_uses_port_443() {
-        assert!(SPOT_WS_BASE.contains(":443"), "SPOT_WS_BASE must use port 443");
+        assert!(
+            SPOT_WS_BASE.contains(":443"),
+            "SPOT_WS_BASE must use port 443"
+        );
     }
 
     #[test]
     fn stream_name_book_ticker() {
-        assert_eq!(SpotStream::BookTicker.stream_name("BTCUSDT"), "btcusdt@bookTicker");
-        assert_eq!(SpotStream::BookTicker.stream_name("btcusdt"), "btcusdt@bookTicker");
+        assert_eq!(
+            SpotStream::BookTicker.stream_name("BTCUSDT"),
+            "btcusdt@bookTicker"
+        );
+        assert_eq!(
+            SpotStream::BookTicker.stream_name("btcusdt"),
+            "btcusdt@bookTicker"
+        );
     }
 
     #[test]
     fn stream_name_depth() {
         assert_eq!(
-            SpotStream::Depth { update_speed_ms: 100 }.stream_name("ETHUSDT"),
+            SpotStream::Depth {
+                update_speed_ms: 100
+            }
+            .stream_name("ETHUSDT"),
             "ethusdt@depth@100ms",
         );
         assert_eq!(
-            SpotStream::Depth { update_speed_ms: 500 }.stream_name("ETHUSDT"),
+            SpotStream::Depth {
+                update_speed_ms: 500
+            }
+            .stream_name("ETHUSDT"),
             "ethusdt@depth@500ms",
         );
     }
@@ -73,16 +90,19 @@ mod tests {
 
     #[test]
     fn stream_name_agg_trade() {
-        assert_eq!(SpotStream::AggTrade.stream_name("SOLUSDT"), "solusdt@aggTrade");
+        assert_eq!(
+            SpotStream::AggTrade.stream_name("SOLUSDT"),
+            "solusdt@aggTrade"
+        );
     }
 
     #[test]
     fn build_url_single_stream() {
-        let url = build_url(
-            SPOT_WS_BASE,
-            &["btcusdt@bookTicker".to_string()],
+        let url = build_url(SPOT_WS_BASE, &["btcusdt@bookTicker".to_string()]);
+        assert_eq!(
+            url,
+            "wss://stream.binance.com:443/stream?streams=btcusdt@bookTicker"
         );
-        assert_eq!(url, "wss://stream.binance.com:443/stream?streams=btcusdt@bookTicker");
     }
 
     #[test]

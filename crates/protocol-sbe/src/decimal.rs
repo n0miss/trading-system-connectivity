@@ -3,9 +3,9 @@ use crate::error::SbeError;
 /// Constant exponent used by all Binance Spot SBE price and quantity fields.
 ///
 /// Actual value = mantissa × 10^(`EXPONENT`) = mantissa × 10^(−8).
-pub const EXPONENT: i8  = -8;
+pub const EXPONENT: i8 = -8;
 /// Absolute value of [`EXPONENT`]; the number of decimal places.
-pub const SCALE: u32    = 8;
+pub const SCALE: u32 = 8;
 /// Wire size of one `decimal64` field (mantissa only; exponent is constant).
 pub const DECIMAL64_SIZE: usize = 8;
 
@@ -34,10 +34,15 @@ impl Decimal64 {
     pub fn decode(buf: &[u8], offset: usize) -> Result<Self, SbeError> {
         let end = offset + DECIMAL64_SIZE;
         if buf.len() < end {
-            return Err(SbeError::BufferTooShort { needed: end, have: buf.len() });
+            return Err(SbeError::BufferTooShort {
+                needed: end,
+                have: buf.len(),
+            });
         }
         let bytes = buf[offset..end].try_into().unwrap();
-        Ok(Self { mantissa: i64::from_le_bytes(bytes) })
+        Ok(Self {
+            mantissa: i64::from_le_bytes(bytes),
+        })
     }
 
     /// Convert to a scaled `i64` as used by the rest of the pipeline.
@@ -69,8 +74,8 @@ impl Decimal64 {
     /// ```
     pub fn to_scaled(self, target_scale: u32) -> i64 {
         match target_scale.cmp(&SCALE) {
-            std::cmp::Ordering::Equal   => self.mantissa,
-            std::cmp::Ordering::Less    => {
+            std::cmp::Ordering::Equal => self.mantissa,
+            std::cmp::Ordering::Less => {
                 let divisor = 10_i64.pow(SCALE - target_scale);
                 self.mantissa / divisor
             }
@@ -134,14 +139,18 @@ mod tests {
 
     #[test]
     fn to_scaled_same_scale_identity() {
-        let d = Decimal64 { mantissa: 1_234_567_890 };
+        let d = Decimal64 {
+            mantissa: 1_234_567_890,
+        };
         assert_eq!(d.to_scaled(8), 1_234_567_890);
     }
 
     #[test]
     fn to_scaled_downscale_btcusdt_price() {
         // 50000.00 with price_scale=2
-        let d = Decimal64 { mantissa: 5_000_000_000_000 };
+        let d = Decimal64 {
+            mantissa: 5_000_000_000_000,
+        };
         assert_eq!(d.to_scaled(2), 5_000_000);
     }
 

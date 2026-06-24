@@ -30,12 +30,14 @@ pub const HEARTBEAT_INTERVAL_NS: i64 = 1_000_000_000;
 
 /// Tracks when the next per-shard heartbeat should be published.
 pub struct Heartbeater {
-    interval_ns:  i64,
+    interval_ns: i64,
     last_beat_ns: i64, // 0 → never beaten
 }
 
 impl Default for Heartbeater {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Heartbeater {
@@ -51,7 +53,10 @@ impl Heartbeater {
     /// Panics if `interval_ns` is zero or negative.
     pub fn with_interval_ns(interval_ns: i64) -> Self {
         assert!(interval_ns > 0, "heartbeat interval_ns must be positive");
-        Self { interval_ns, last_beat_ns: 0 }
+        Self {
+            interval_ns,
+            last_beat_ns: 0,
+        }
     }
 
     /// Returns `true` if a heartbeat should be published at `now_ns`.
@@ -76,10 +81,14 @@ impl Heartbeater {
     }
 
     /// The configured heartbeat interval in nanoseconds.
-    pub fn interval_ns(&self) -> i64 { self.interval_ns }
+    pub fn interval_ns(&self) -> i64 {
+        self.interval_ns
+    }
 
     /// Nanosecond timestamp of the last recorded beat (0 if never beaten).
-    pub fn last_beat_ns(&self) -> i64 { self.last_beat_ns }
+    pub fn last_beat_ns(&self) -> i64 {
+        self.last_beat_ns
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -191,7 +200,7 @@ mod tests {
     #[test]
     fn second_beat_resets_timer_correctly() {
         let mut hb = Heartbeater::new();
-        let first_beat  = 3 * ONE_SEC;
+        let first_beat = 3 * ONE_SEC;
         let second_beat = 4 * ONE_SEC;
         hb.record_beat(first_beat);
         hb.record_beat(second_beat);

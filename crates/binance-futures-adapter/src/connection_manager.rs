@@ -46,13 +46,16 @@ enum DisconnectReason {
 /// Owns the reconnect loop, ping/pong keepalive, and forced 24-hour rotation.
 /// Raw frames are forwarded over the caller-supplied mpsc channel.
 pub struct ConnectionManager {
-    config:  WebSocketConfig,
+    config: WebSocketConfig,
     metrics: Option<Arc<ConnectorMetrics>>,
 }
 
 impl ConnectionManager {
     pub fn new(config: WebSocketConfig) -> Self {
-        Self { config, metrics: None }
+        Self {
+            config,
+            metrics: None,
+        }
     }
 
     pub fn with_metrics(mut self, m: Arc<ConnectorMetrics>) -> Self {
@@ -81,20 +84,34 @@ impl ConnectionManager {
             }
 
             let base_url = url.split('?').next().unwrap_or(url);
-            info!(url = base_url, reconnect_count, "connecting to Binance Futures WebSocket");
+            info!(
+                url = base_url,
+                reconnect_count, "connecting to Binance Futures WebSocket"
+            );
 
-            let result = connect_and_run(url, &self.config, &mut on_frame, &mut shutdown, self.metrics.as_deref()).await;
+            let result = connect_and_run(
+                url,
+                &self.config,
+                &mut on_frame,
+                &mut shutdown,
+                self.metrics.as_deref(),
+            )
+            .await;
 
             match result {
                 Ok(DisconnectReason::Shutdown) => break,
                 Ok(DisconnectReason::ForcedRotation) => {
                     info!("24h rotation — reconnecting immediately");
                     reconnect_count += 1;
-                    if let Some(m) = &self.metrics { m.reconnects.increment(); }
+                    if let Some(m) = &self.metrics {
+                        m.reconnects.increment();
+                    }
                 }
                 Ok(DisconnectReason::PeerClosed) | Err(_) => {
                     reconnect_count += 1;
-                    if let Some(m) = &self.metrics { m.reconnects.increment(); }
+                    if let Some(m) = &self.metrics {
+                        m.reconnects.increment();
+                    }
                     let delay = backoff_delay(reconnect_count, self.config.reconnect_delay_ms);
                     warn!(
                         reconnect_count,
@@ -119,11 +136,11 @@ impl ConnectionManager {
 
 /// Establish one WebSocket session and drive it until it ends for any reason.
 async fn connect_and_run<F: FnMut(RawFrame)>(
-    url:      &str,
-    config:   &WebSocketConfig,
+    url: &str,
+    config: &WebSocketConfig,
     on_frame: &mut F,
     shutdown: &mut watch::Receiver<bool>,
-    metrics:  Option<&ConnectorMetrics>,
+    metrics: Option<&ConnectorMetrics>,
 ) -> Result<DisconnectReason, FuturesAdapterError> {
     let connect_result = tokio::select! {
         r = tokio::time::timeout(Duration::from_secs(10), connect_async(url)) => r,
@@ -158,10 +175,8 @@ async fn connect_and_run<F: FnMut(RawFrame)>(
 
     // Proactive pings start after the first full interval (not immediately).
     let ping_dur = Duration::from_secs(config.ping_interval_secs as u64);
-    let mut ping_interval = tokio::time::interval_at(
-        tokio::time::Instant::now() + ping_dur,
-        ping_dur,
-    );
+    let mut ping_interval =
+        tokio::time::interval_at(tokio::time::Instant::now() + ping_dur, ping_dur);
     ping_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     let rotation = tokio::time::sleep(Duration::from_secs(config.forced_reconnect_secs));
@@ -302,7 +317,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn integration_connect_and_receive_book_ticker() {
-        use crate::stream::{FuturesStream, FUTURES_WS_BASE, build_url};
+        use crate::stream::{build_url, FuturesStream, FUTURES_WS_BASE};
         use connector_config::WebSocketConfig;
 
         let config = WebSocketConfig {
@@ -344,7 +359,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn integration_agg_trade_and_mark_price_received() {
-        use crate::stream::{FuturesStream, build_url};
+        use crate::stream::{build_url, FuturesStream};
         use connector_config::WebSocketConfig;
         use protocol_json::parse_futures_message;
         use std::sync::{Arc, Mutex};
@@ -353,30 +368,33 @@ mod tests {
 
         const TESTNET_BASE: &str = "wss://stream.binancefuture.com";
         let config = WebSocketConfig {
-            url:                        TESTNET_BASE.to_string(),
-            futures_url:                TESTNET_BASE.to_string(),
-            api_key:                    None,
-            ping_interval_secs:         20,
+            url: TESTNET_BASE.to_string(),
+            futures_url: TESTNET_BASE.to_string(),
+            api_key: None,
+            ping_interval_secs: 20,
             max_streams_per_connection: 1024,
-            reconnect_delay_ms:         500,
-            forced_reconnect_secs:      86_400,
+            reconnect_delay_ms: 500,
+            forced_reconnect_secs: 86_400,
         };
 
         let streams = vec![
             FuturesStream::AggTrade.stream_name("BTCUSDT"),
-            FuturesStream::MarkPrice { update_interval_secs: 1 }.stream_name("BTCUSDT"),
+            FuturesStream::MarkPrice {
+                update_interval_secs: 1,
+            }
+            .stream_name("BTCUSDT"),
             FuturesStream::BookTicker.stream_name("BTCUSDT"),
         ];
         let url = build_url(TESTNET_BASE, &streams);
         println!("connecting to: {url}");
 
-        let seen_bbo   = Arc::new(Mutex::new(false));
+        let seen_bbo = Arc::new(Mutex::new(false));
         let seen_trade = Arc::new(Mutex::new(false));
-        let seen_mark  = Arc::new(Mutex::new(false));
+        let seen_mark = Arc::new(Mutex::new(false));
 
-        let s_bbo   = seen_bbo.clone();
+        let s_bbo = seen_bbo.clone();
         let s_trade = seen_trade.clone();
-        let s_mark  = seen_mark.clone();
+        let s_mark = seen_mark.clone();
 
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let mgr = ConnectionManager::new(config);
@@ -402,12 +420,18 @@ mod tests {
             }
         }
 
-        let got_bbo   = *seen_bbo.lock().unwrap();
+        let got_bbo = *seen_bbo.lock().unwrap();
         let got_trade = *seen_trade.lock().unwrap();
-        let got_mark  = *seen_mark.lock().unwrap();
+        let got_mark = *seen_mark.lock().unwrap();
         println!("bbo={got_bbo} trade={got_trade} mark={got_mark}");
-        assert!(got_bbo,   "no bookTicker events received in 15 s");
-        assert!(got_trade, "no aggTrade events received in 15 s — testnet may be unavailable");
-        assert!(got_mark,  "no markPrice events received in 15 s — testnet may be unavailable");
+        assert!(got_bbo, "no bookTicker events received in 15 s");
+        assert!(
+            got_trade,
+            "no aggTrade events received in 15 s — testnet may be unavailable"
+        );
+        assert!(
+            got_mark,
+            "no markPrice events received in 15 s — testnet may be unavailable"
+        );
     }
 }

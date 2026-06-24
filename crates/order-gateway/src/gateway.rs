@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::{
-    ClientOrderId, ClientOrderIdGenerator, Error, Journal, JournalEntry, OrderRequest,
-    OrderStatus, PendingOrder,
+    ClientOrderId, ClientOrderIdGenerator, Error, Journal, JournalEntry, OrderRequest, OrderStatus,
+    PendingOrder,
 };
 
 /// The order gateway — pre-trade component that assigns client order IDs,
@@ -22,10 +22,10 @@ use crate::{
 /// gateway.on_reject(&cloid, reason, now_ns)?
 /// ```
 pub struct OrderGateway {
-    instance_id:       u32,
-    cloid_gen:         ClientOrderIdGenerator,
+    instance_id: u32,
+    cloid_gen: ClientOrderIdGenerator,
     pub(crate) journal: Journal,
-    orders:            HashMap<ClientOrderId, PendingOrder>,
+    orders: HashMap<ClientOrderId, PendingOrder>,
 }
 
 impl OrderGateway {
@@ -47,8 +47,8 @@ impl OrderGateway {
         Self {
             instance_id,
             cloid_gen: ClientOrderIdGenerator::new(instance_id),
-            journal:   Journal::in_memory(),
-            orders:    HashMap::new(),
+            journal: Journal::in_memory(),
+            orders: HashMap::new(),
         }
     }
 
@@ -64,18 +64,18 @@ impl OrderGateway {
 
         let entry = JournalEntry::OrderRequested {
             timestamp_ns: now_ns,
-            cloid:        cloid.clone(),
-            request:      request.clone(),
+            cloid: cloid.clone(),
+            request: request.clone(),
         };
         self.journal.append(&entry)?;
 
         let order = PendingOrder {
-            cloid:           cloid.clone(),
+            cloid: cloid.clone(),
             request,
-            status:          OrderStatus::Pending,
-            exchange_id:     None,
-            filled_qty:      0,
-            submitted_ns:    now_ns,
+            status: OrderStatus::Pending,
+            exchange_id: None,
+            filled_qty: 0,
+            submitted_ns: now_ns,
             last_updated_ns: now_ns,
         };
         self.orders.insert(cloid.clone(), order);
@@ -89,9 +89,9 @@ impl OrderGateway {
     /// Exchange acknowledged the order (`NEW` status or equivalent).
     pub fn on_ack(
         &mut self,
-        cloid:       &ClientOrderId,
+        cloid: &ClientOrderId,
         exchange_id: u64,
-        now_ns:      i64,
+        now_ns: i64,
     ) -> Result<(), Error> {
         let order = self.get_order_mut(cloid)?;
         if order.status == OrderStatus::New {
@@ -99,11 +99,15 @@ impl OrderGateway {
         }
         self.require_non_terminal(cloid, OrderStatus::New)?;
         let order = self.orders.get_mut(cloid).unwrap();
-        order.exchange_id     = Some(exchange_id);
-        order.status          = OrderStatus::New;
+        order.exchange_id = Some(exchange_id);
+        order.status = OrderStatus::New;
         order.last_updated_ns = now_ns;
 
-        let entry = JournalEntry::OrderAcknowledged { timestamp_ns: now_ns, cloid: cloid.clone(), exchange_id };
+        let entry = JournalEntry::OrderAcknowledged {
+            timestamp_ns: now_ns,
+            cloid: cloid.clone(),
+            exchange_id,
+        };
         self.journal.append(&entry)
     }
 
@@ -113,42 +117,48 @@ impl OrderGateway {
     /// cumulative).  The gateway accumulates fills internally.
     pub fn on_fill(
         &mut self,
-        cloid:      &ClientOrderId,
-        fill_qty:   i64,
+        cloid: &ClientOrderId,
+        fill_qty: i64,
         fill_price: i64,
-        now_ns:     i64,
+        now_ns: i64,
     ) -> Result<(), Error> {
         {
             let order = self.get_order_mut(cloid)?;
             if order.status.is_terminal() {
                 return Err(Error::InvalidTransition {
                     cloid: cloid.to_string(),
-                    from:  order.status,
-                    to:    OrderStatus::PartiallyFilled,
+                    from: order.status,
+                    to: OrderStatus::PartiallyFilled,
                 });
             }
         }
 
         let is_final = {
             let order = self.orders.get_mut(cloid).unwrap();
-            order.filled_qty      += fill_qty;
-            order.last_updated_ns  = now_ns;
+            order.filled_qty += fill_qty;
+            order.last_updated_ns = now_ns;
             let fully_filled = order.filled_qty >= order.request.qty;
-            order.status = if fully_filled { OrderStatus::Filled } else { OrderStatus::PartiallyFilled };
+            order.status = if fully_filled {
+                OrderStatus::Filled
+            } else {
+                OrderStatus::PartiallyFilled
+            };
             fully_filled
         };
 
-        let entry = JournalEntry::OrderFilled { timestamp_ns: now_ns, cloid: cloid.clone(), fill_qty, fill_price, is_final };
+        let entry = JournalEntry::OrderFilled {
+            timestamp_ns: now_ns,
+            cloid: cloid.clone(),
+            fill_qty,
+            fill_price,
+            is_final,
+        };
         self.journal.append(&entry)
     }
 
     /// The exchange cancelled the order (response to a cancel request, or
     /// automatic expiry confirmed as cancelled).
-    pub fn on_cancel(
-        &mut self,
-        cloid:  &ClientOrderId,
-        now_ns: i64,
-    ) -> Result<(), Error> {
+    pub fn on_cancel(&mut self, cloid: &ClientOrderId, now_ns: i64) -> Result<(), Error> {
         {
             let order = self.get_order_mut(cloid)?;
             if order.status == OrderStatus::Cancelled {
@@ -157,23 +167,26 @@ impl OrderGateway {
             if order.status.is_terminal() {
                 return Err(Error::InvalidTransition {
                     cloid: cloid.to_string(),
-                    from:  order.status,
-                    to:    OrderStatus::Cancelled,
+                    from: order.status,
+                    to: OrderStatus::Cancelled,
                 });
             }
         }
         let order = self.orders.get_mut(cloid).unwrap();
-        order.status          = OrderStatus::Cancelled;
+        order.status = OrderStatus::Cancelled;
         order.last_updated_ns = now_ns;
 
-        let entry = JournalEntry::OrderCancelled { timestamp_ns: now_ns, cloid: cloid.clone() };
+        let entry = JournalEntry::OrderCancelled {
+            timestamp_ns: now_ns,
+            cloid: cloid.clone(),
+        };
         self.journal.append(&entry)
     }
 
     /// The exchange rejected the order (e.g. filter violation).
     pub fn on_reject(
         &mut self,
-        cloid:  &ClientOrderId,
+        cloid: &ClientOrderId,
         reason: &str,
         now_ns: i64,
     ) -> Result<(), Error> {
@@ -182,40 +195,43 @@ impl OrderGateway {
             if order.status.is_terminal() {
                 return Err(Error::InvalidTransition {
                     cloid: cloid.to_string(),
-                    from:  order.status,
-                    to:    OrderStatus::Rejected,
+                    from: order.status,
+                    to: OrderStatus::Rejected,
                 });
             }
         }
         let order = self.orders.get_mut(cloid).unwrap();
-        order.status          = OrderStatus::Rejected;
+        order.status = OrderStatus::Rejected;
         order.last_updated_ns = now_ns;
 
-        let entry = JournalEntry::OrderRejected { timestamp_ns: now_ns, cloid: cloid.clone(), reason: reason.to_string() };
+        let entry = JournalEntry::OrderRejected {
+            timestamp_ns: now_ns,
+            cloid: cloid.clone(),
+            reason: reason.to_string(),
+        };
         self.journal.append(&entry)
     }
 
     /// The order expired (IOC not fully matched, GTC past date, etc.).
-    pub fn on_expire(
-        &mut self,
-        cloid:  &ClientOrderId,
-        now_ns: i64,
-    ) -> Result<(), Error> {
+    pub fn on_expire(&mut self, cloid: &ClientOrderId, now_ns: i64) -> Result<(), Error> {
         {
             let order = self.get_order_mut(cloid)?;
             if order.status.is_terminal() {
                 return Err(Error::InvalidTransition {
                     cloid: cloid.to_string(),
-                    from:  order.status,
-                    to:    OrderStatus::Expired,
+                    from: order.status,
+                    to: OrderStatus::Expired,
                 });
             }
         }
         let order = self.orders.get_mut(cloid).unwrap();
-        order.status          = OrderStatus::Expired;
+        order.status = OrderStatus::Expired;
         order.last_updated_ns = now_ns;
 
-        let entry = JournalEntry::OrderExpired { timestamp_ns: now_ns, cloid: cloid.clone() };
+        let entry = JournalEntry::OrderExpired {
+            timestamp_ns: now_ns,
+            cloid: cloid.clone(),
+        };
         self.journal.append(&entry)
     }
 
@@ -228,7 +244,10 @@ impl OrderGateway {
     }
 
     pub fn pending_count(&self) -> usize {
-        self.orders.values().filter(|o| !o.status.is_terminal()).count()
+        self.orders
+            .values()
+            .filter(|o| !o.status.is_terminal())
+            .count()
     }
 
     pub fn order_count(&self) -> usize {
@@ -252,15 +271,25 @@ impl OrderGateway {
     // ---------------------------------------------------------------------------
 
     fn get_order_mut(&mut self, cloid: &ClientOrderId) -> Result<&mut PendingOrder, Error> {
-        self.orders.get_mut(cloid).ok_or_else(|| Error::OrderNotFound { cloid: cloid.to_string() })
+        self.orders
+            .get_mut(cloid)
+            .ok_or_else(|| Error::OrderNotFound {
+                cloid: cloid.to_string(),
+            })
     }
 
     /// Check that the order is not in a terminal state (for transitions that
     /// should only happen while the order is still live).
     fn require_non_terminal(&self, cloid: &ClientOrderId, to: OrderStatus) -> Result<(), Error> {
-        let order = self.orders.get(cloid).ok_or_else(|| Error::OrderNotFound { cloid: cloid.to_string() })?;
+        let order = self.orders.get(cloid).ok_or_else(|| Error::OrderNotFound {
+            cloid: cloid.to_string(),
+        })?;
         if order.status.is_terminal() {
-            Err(Error::InvalidTransition { cloid: cloid.to_string(), from: order.status, to })
+            Err(Error::InvalidTransition {
+                cloid: cloid.to_string(),
+                from: order.status,
+                to,
+            })
         } else {
             Ok(())
         }
@@ -273,58 +302,89 @@ impl OrderGateway {
 
         for entry in entries {
             match entry {
-                JournalEntry::OrderRequested { timestamp_ns, cloid, request } => {
+                JournalEntry::OrderRequested {
+                    timestamp_ns,
+                    cloid,
+                    request,
+                } => {
                     if let Some(ctr) = cloid.parse_counter() {
                         max_counter = Some(max_counter.map_or(ctr, |m: u64| m.max(ctr)));
                     }
-                    self.orders.insert(cloid.clone(), PendingOrder {
-                        cloid,
-                        request,
-                        status:          OrderStatus::Pending,
-                        exchange_id:     None,
-                        filled_qty:      0,
-                        submitted_ns:    timestamp_ns,
-                        last_updated_ns: timestamp_ns,
-                    });
+                    self.orders.insert(
+                        cloid.clone(),
+                        PendingOrder {
+                            cloid,
+                            request,
+                            status: OrderStatus::Pending,
+                            exchange_id: None,
+                            filled_qty: 0,
+                            submitted_ns: timestamp_ns,
+                            last_updated_ns: timestamp_ns,
+                        },
+                    );
                 }
-                JournalEntry::OrderAcknowledged { timestamp_ns, cloid, exchange_id } => {
+                JournalEntry::OrderAcknowledged {
+                    timestamp_ns,
+                    cloid,
+                    exchange_id,
+                } => {
                     if let Some(o) = self.orders.get_mut(&cloid) {
                         if !o.status.is_terminal() {
-                            o.status          = OrderStatus::New;
-                            o.exchange_id     = Some(exchange_id);
+                            o.status = OrderStatus::New;
+                            o.exchange_id = Some(exchange_id);
                             o.last_updated_ns = timestamp_ns;
                         }
                     }
                 }
-                JournalEntry::OrderFilled { timestamp_ns, cloid, fill_qty, fill_price: _, is_final } => {
+                JournalEntry::OrderFilled {
+                    timestamp_ns,
+                    cloid,
+                    fill_qty,
+                    fill_price: _,
+                    is_final,
+                } => {
                     if let Some(o) = self.orders.get_mut(&cloid) {
                         if !o.status.is_terminal() {
-                            o.filled_qty      += fill_qty;
-                            o.last_updated_ns  = timestamp_ns;
-                            o.status = if is_final { OrderStatus::Filled } else { OrderStatus::PartiallyFilled };
+                            o.filled_qty += fill_qty;
+                            o.last_updated_ns = timestamp_ns;
+                            o.status = if is_final {
+                                OrderStatus::Filled
+                            } else {
+                                OrderStatus::PartiallyFilled
+                            };
                         }
                     }
                 }
-                JournalEntry::OrderCancelled { timestamp_ns, cloid } => {
+                JournalEntry::OrderCancelled {
+                    timestamp_ns,
+                    cloid,
+                } => {
                     if let Some(o) = self.orders.get_mut(&cloid) {
                         if !o.status.is_terminal() {
-                            o.status          = OrderStatus::Cancelled;
+                            o.status = OrderStatus::Cancelled;
                             o.last_updated_ns = timestamp_ns;
                         }
                     }
                 }
-                JournalEntry::OrderRejected { timestamp_ns, cloid, reason: _ } => {
+                JournalEntry::OrderRejected {
+                    timestamp_ns,
+                    cloid,
+                    reason: _,
+                } => {
                     if let Some(o) = self.orders.get_mut(&cloid) {
                         if !o.status.is_terminal() {
-                            o.status          = OrderStatus::Rejected;
+                            o.status = OrderStatus::Rejected;
                             o.last_updated_ns = timestamp_ns;
                         }
                     }
                 }
-                JournalEntry::OrderExpired { timestamp_ns, cloid } => {
+                JournalEntry::OrderExpired {
+                    timestamp_ns,
+                    cloid,
+                } => {
                     if let Some(o) = self.orders.get_mut(&cloid) {
                         if !o.status.is_terminal() {
-                            o.status          = OrderStatus::Expired;
+                            o.status = OrderStatus::Expired;
                             o.last_updated_ns = timestamp_ns;
                         }
                     }
@@ -348,16 +408,18 @@ mod tests {
 
     fn req() -> OrderRequest {
         OrderRequest {
-            symbol:        "BTCUSDT".into(),
-            side:          OrderSide::Buy,
-            order_type:    OrderType::Limit,
-            qty:           100,
-            limit_price:   Some(50_000_000),
+            symbol: "BTCUSDT".into(),
+            side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+            qty: 100,
+            limit_price: Some(50_000_000),
             time_in_force: TimeInForce::GoodTillCancel,
         }
     }
 
-    fn gw() -> OrderGateway { OrderGateway::in_memory(0) }
+    fn gw() -> OrderGateway {
+        OrderGateway::in_memory(0)
+    }
 
     #[test]
     fn enqueue_returns_unique_cloids() {
@@ -538,9 +600,9 @@ mod tests {
         // Replay into a fresh gateway.
         let mut gw2 = OrderGateway {
             instance_id: 0,
-            cloid_gen:   ClientOrderIdGenerator::new(0),
-            journal:     Journal::in_memory(),
-            orders:      HashMap::new(),
+            cloid_gen: ClientOrderIdGenerator::new(0),
+            journal: Journal::in_memory(),
+            orders: HashMap::new(),
         };
         gw2.replay_journal(recovered_entries).unwrap();
 
@@ -560,15 +622,18 @@ mod tests {
 
         let mut gw2 = OrderGateway {
             instance_id: 0,
-            cloid_gen:   ClientOrderIdGenerator::new(0),
-            journal:     Journal::in_memory(),
-            orders:      HashMap::new(),
+            cloid_gen: ClientOrderIdGenerator::new(0),
+            journal: Journal::in_memory(),
+            orders: HashMap::new(),
         };
         gw2.replay_journal(recovered_entries).unwrap();
 
         // Next cloid must not collide with any previously issued cloid.
         let next_cloid = gw2.cloid_gen.next();
-        let next_ctr   = next_cloid.parse_counter().unwrap();
-        assert!(next_ctr >= 5, "generator must resume after counter 4; got {next_ctr}");
+        let next_ctr = next_cloid.parse_counter().unwrap();
+        assert!(
+            next_ctr >= 5,
+            "generator must resume after counter 4; got {next_ctr}"
+        );
     }
 }

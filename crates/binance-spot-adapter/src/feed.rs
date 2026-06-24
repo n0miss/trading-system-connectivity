@@ -28,7 +28,7 @@ impl DecodedFrame {
     /// Which protocol produced this frame.
     pub fn feed_kind(&self) -> FeedKind {
         match self {
-            Self::Sbe(_)  => FeedKind::Sbe,
+            Self::Sbe(_) => FeedKind::Sbe,
             Self::Json(_) => FeedKind::Json,
         }
     }
@@ -83,7 +83,10 @@ fn decode_binary_frame(payload: &[u8]) -> Result<DecodedFrame, FeedError> {
             // while SBE is being negotiated or re-negotiated.
             match parse_spot_message(payload) {
                 Ok(event) => Ok(DecodedFrame::Json(event)),
-                Err(json_err) => Err(FeedError::BothFailed { sbe: sbe_err, json: json_err }),
+                Err(json_err) => Err(FeedError::BothFailed {
+                    sbe: sbe_err,
+                    json: json_err,
+                }),
             }
         }
     }
@@ -107,7 +110,7 @@ mod tests {
 
         let write_u16 = |buf: &mut Vec<u8>, v: u16| buf.extend_from_slice(&v.to_le_bytes());
         let write_i64 = |buf: &mut Vec<u8>, v: i64| buf.extend_from_slice(&v.to_le_bytes());
-        let write_u8  = |buf: &mut Vec<u8>, v: u8| buf.push(v);
+        let write_u8 = |buf: &mut Vec<u8>, v: u8| buf.push(v);
 
         // SBE header: blockLength=58, templateId=0, schemaId=3, version=0
         write_u16(&mut buf, 58);
@@ -115,16 +118,16 @@ mod tests {
         write_u16(&mut buf, SPOT_SCHEMA_ID);
         write_u16(&mut buf, 0);
         // Root block (58 bytes):
-        write_i64(&mut buf, 1_699_000_000_000);  // eventTime
-        write_i64(&mut buf, 1_699_000_001_000);  // transactTime
-        write_i64(&mut buf, 12_345_678);          // tradeId
-        write_i64(&mut buf, 5_000_050_000_000);  // price mantissa
-        write_i64(&mut buf, 100_000);              // qty mantissa
-        write_i64(&mut buf, 111_111);              // buyerOrderId
-        write_i64(&mut buf, 222_222);              // sellerOrderId
-        write_u8(&mut buf, 1);                     // aggressorSide=BUY
-        write_u8(&mut buf, 0);                     // isBuyerMarketMaker=false
-        // varString symbol
+        write_i64(&mut buf, 1_699_000_000_000); // eventTime
+        write_i64(&mut buf, 1_699_000_001_000); // transactTime
+        write_i64(&mut buf, 12_345_678); // tradeId
+        write_i64(&mut buf, 5_000_050_000_000); // price mantissa
+        write_i64(&mut buf, 100_000); // qty mantissa
+        write_i64(&mut buf, 111_111); // buyerOrderId
+        write_i64(&mut buf, 222_222); // sellerOrderId
+        write_u8(&mut buf, 1); // aggressorSide=BUY
+        write_u8(&mut buf, 0); // isBuyerMarketMaker=false
+                               // varString symbol
         write_u16(&mut buf, 7);
         buf.extend_from_slice(b"BTCUSDT");
         buf
@@ -139,11 +142,19 @@ mod tests {
     }
 
     fn binary_frame(payload: Vec<u8>) -> RawFrame {
-        RawFrame { recv_ts: 0, payload, is_binary: true }
+        RawFrame {
+            recv_ts: 0,
+            payload,
+            is_binary: true,
+        }
     }
 
     fn text_frame(payload: Vec<u8>) -> RawFrame {
-        RawFrame { recv_ts: 0, payload, is_binary: false }
+        RawFrame {
+            recv_ts: 0,
+            payload,
+            is_binary: false,
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -161,8 +172,9 @@ mod tests {
     #[test]
     fn binary_sbe_trade_has_correct_trade_id() {
         let frame = binary_frame(make_sbe_trade_frame());
-        let DecodedFrame::Sbe(SbeMessage::Trade(tr)) = decode_raw_frame(&frame).unwrap()
-        else { panic!("expected SBE Trade") };
+        let DecodedFrame::Sbe(SbeMessage::Trade(tr)) = decode_raw_frame(&frame).unwrap() else {
+            panic!("expected SBE Trade")
+        };
         assert_eq!(tr.trade_id, 12_345_678);
     }
 
@@ -174,7 +186,10 @@ mod tests {
     fn text_bbo_frame_decodes_as_json() {
         let frame = text_frame(make_json_bbo_frame());
         let decoded = decode_raw_frame(&frame).unwrap();
-        assert!(matches!(decoded, DecodedFrame::Json(SpotEvent::BookTicker(_))));
+        assert!(matches!(
+            decoded,
+            DecodedFrame::Json(SpotEvent::BookTicker(_))
+        ));
         assert_eq!(decoded.feed_kind(), FeedKind::Json);
     }
 
@@ -182,7 +197,10 @@ mod tests {
     fn text_depth_frame_decodes_as_json() {
         let frame = text_frame(make_json_depth_frame());
         let decoded = decode_raw_frame(&frame).unwrap();
-        assert!(matches!(decoded, DecodedFrame::Json(SpotEvent::DepthUpdate(_))));
+        assert!(matches!(
+            decoded,
+            DecodedFrame::Json(SpotEvent::DepthUpdate(_))
+        ));
     }
 
     // -----------------------------------------------------------------------
@@ -197,7 +215,8 @@ mod tests {
         let decoded = decode_raw_frame(&frame).unwrap();
         assert!(
             matches!(decoded, DecodedFrame::Json(_)),
-            "expected JSON fallback, got {:?}", decoded.feed_kind(),
+            "expected JSON fallback, got {:?}",
+            decoded.feed_kind(),
         );
     }
 

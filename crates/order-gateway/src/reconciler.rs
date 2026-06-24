@@ -107,8 +107,8 @@ pub struct RawRestTrade {
 /// One balance entry in `GET /api/v3/account`.
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct RawRestBalance {
-    pub asset:  String,
-    pub free:   String,
+    pub asset: String,
+    pub free: String,
     pub locked: String,
 }
 
@@ -117,7 +117,7 @@ pub struct RawRestBalance {
 #[serde(rename_all = "camelCase")]
 pub struct RawRestAccount {
     pub update_time: i64,
-    pub balances:    Vec<RawRestBalance>,
+    pub balances: Vec<RawRestBalance>,
 }
 
 // ---------------------------------------------------------------------------
@@ -141,21 +141,24 @@ pub enum RestOrderStatus {
 impl RestOrderStatus {
     pub fn from_raw(s: &str) -> Self {
         match s {
-            "NEW"              => Self::New,
+            "NEW" => Self::New,
             "PARTIALLY_FILLED" => Self::PartiallyFilled,
-            "FILLED"           => Self::Filled,
-            "CANCELED"         => Self::Canceled,
-            "PENDING_CANCEL"   => Self::PendingCancel,
-            "REJECTED"         => Self::Rejected,
-            "EXPIRED"          => Self::Expired,
+            "FILLED" => Self::Filled,
+            "CANCELED" => Self::Canceled,
+            "PENDING_CANCEL" => Self::PendingCancel,
+            "REJECTED" => Self::Rejected,
+            "EXPIRED" => Self::Expired,
             "EXPIRED_IN_MATCH" => Self::ExpiredInMatch,
-            other              => Self::Unknown(other.to_string()),
+            other => Self::Unknown(other.to_string()),
         }
     }
 
     /// True when the order is still open / active on the exchange.
     pub fn is_live(&self) -> bool {
-        matches!(self, Self::New | Self::PartiallyFilled | Self::PendingCancel)
+        matches!(
+            self,
+            Self::New | Self::PartiallyFilled | Self::PendingCancel
+        )
     }
 
     /// True when the order has reached a final state.
@@ -195,11 +198,11 @@ pub struct ReconcileOrder {
 /// A fill parsed from `GET /api/v3/myTrades`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReconcileFill {
-    pub trade_id:          u64,
+    pub trade_id: u64,
     pub exchange_order_id: u64,
-    pub symbol:            String,
+    pub symbol: String,
     /// Fill quantity (scaled).
-    pub qty:   i64,
+    pub qty: i64,
     /// Fill price (scaled).
     pub price: i64,
     pub time_ns: i64,
@@ -214,7 +217,10 @@ pub struct ReconcileFill {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReconcileAction {
     /// A tracked order is confirmed still live on the exchange.
-    OrderStillLive { cloid: ClientOrderId, exchange_id: u64 },
+    OrderStillLive {
+        cloid: ClientOrderId,
+        exchange_id: u64,
+    },
 
     /// An open order found on the exchange that the gateway is not tracking.
     ///
@@ -272,17 +278,17 @@ pub enum ReconcileRequest {
 /// for not dispatching duplicate in-flight requests.
 pub struct ReconciliationScheduler {
     periodic_interval_ns: i64,
-    startup_pending:      bool,
-    reconnect_pending:    bool,
+    startup_pending: bool,
+    reconnect_pending: bool,
     /// When the next periodic check is due (None = timer not yet started).
-    next_periodic_ns:     Option<i64>,
+    next_periodic_ns: Option<i64>,
 }
 
 impl ReconciliationScheduler {
     pub fn new(periodic_interval_ns: i64) -> Self {
         Self {
             periodic_interval_ns,
-            startup_pending:  false,
+            startup_pending: false,
             reconnect_pending: false,
             next_periodic_ns: None,
         }
@@ -313,8 +319,12 @@ impl ReconciliationScheduler {
     /// after each reconciliation finishes.
     pub fn tick(&self, now_ns: i64) -> Vec<ReconcileRequest> {
         let mut requests = Vec::new();
-        if self.startup_pending   { requests.push(ReconcileRequest::Startup);   }
-        if self.reconnect_pending { requests.push(ReconcileRequest::Reconnect); }
+        if self.startup_pending {
+            requests.push(ReconcileRequest::Startup);
+        }
+        if self.reconnect_pending {
+            requests.push(ReconcileRequest::Reconnect);
+        }
         if let Some(due_ns) = self.next_periodic_ns {
             if now_ns >= due_ns {
                 requests.push(ReconcileRequest::Periodic);
@@ -330,17 +340,23 @@ impl ReconciliationScheduler {
     ///   `periodic_interval_ns` after `now_ns`.
     pub fn on_completed(&mut self, kind: ReconcileRequest, now_ns: i64) {
         match kind {
-            ReconcileRequest::Startup   => self.startup_pending  = false,
+            ReconcileRequest::Startup => self.startup_pending = false,
             ReconcileRequest::Reconnect => self.reconnect_pending = false,
-            ReconcileRequest::Periodic  => {
+            ReconcileRequest::Periodic => {
                 self.next_periodic_ns = Some(now_ns + self.periodic_interval_ns);
             }
         }
     }
 
-    pub fn startup_pending(&self)   -> bool { self.startup_pending }
-    pub fn reconnect_pending(&self) -> bool { self.reconnect_pending }
-    pub fn periodic_interval_ns(&self) -> i64 { self.periodic_interval_ns }
+    pub fn startup_pending(&self) -> bool {
+        self.startup_pending
+    }
+    pub fn reconnect_pending(&self) -> bool {
+        self.reconnect_pending
+    }
+    pub fn periodic_interval_ns(&self) -> i64 {
+        self.periodic_interval_ns
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -350,8 +366,8 @@ impl ReconciliationScheduler {
 /// Converts raw Binance REST responses into reconciliation actions and SM inputs.
 pub struct Reconciler {
     default_price_scale: i64,
-    default_qty_scale:   i64,
-    symbol_scales:       HashMap<String, SymbolScales>,
+    default_qty_scale: i64,
+    symbol_scales: HashMap<String, SymbolScales>,
 }
 
 impl Reconciler {
@@ -364,14 +380,23 @@ impl Reconciler {
     }
 
     pub fn register_symbol(&mut self, symbol: impl Into<String>, price_scale: i64, qty_scale: i64) {
-        self.symbol_scales.insert(symbol.into(), SymbolScales { price_scale, qty_scale });
+        self.symbol_scales.insert(
+            symbol.into(),
+            SymbolScales {
+                price_scale,
+                qty_scale,
+            },
+        );
     }
 
     fn scales_for(&self, symbol: &str) -> SymbolScales {
-        self.symbol_scales.get(symbol).cloned().unwrap_or(SymbolScales {
-            price_scale: self.default_price_scale,
-            qty_scale:   self.default_qty_scale,
-        })
+        self.symbol_scales
+            .get(symbol)
+            .cloned()
+            .unwrap_or(SymbolScales {
+                price_scale: self.default_price_scale,
+                qty_scale: self.default_qty_scale,
+            })
     }
 
     // -----------------------------------------------------------------------
@@ -406,7 +431,7 @@ impl Reconciler {
                 if tracked.contains(cloid) {
                     seen.insert(cloid.clone());
                     actions.push(ReconcileAction::OrderStillLive {
-                        cloid:       cloid.clone(),
+                        cloid: cloid.clone(),
                         exchange_id: order.exchange_id,
                     });
                     continue;
@@ -417,7 +442,9 @@ impl Reconciler {
 
         for cloid in tracked {
             if !seen.contains(cloid) {
-                actions.push(ReconcileAction::OrderVanished { cloid: cloid.clone() });
+                actions.push(ReconcileAction::OrderVanished {
+                    cloid: cloid.clone(),
+                });
             }
         }
 
@@ -483,11 +510,18 @@ impl Reconciler {
         raw: &RawRestAccount,
     ) -> Result<Vec<AssetBalance>, NormalizerError> {
         use crate::normalizer::BALANCE_SCALE;
-        raw.balances.iter().map(|b| {
-            let free_scaled   = parse_scaled(&b.free,   BALANCE_SCALE)?;
-            let locked_scaled = parse_scaled(&b.locked, BALANCE_SCALE)?;
-            Ok(AssetBalance { asset: b.asset.clone(), free_scaled, locked_scaled })
-        }).collect()
+        raw.balances
+            .iter()
+            .map(|b| {
+                let free_scaled = parse_scaled(&b.free, BALANCE_SCALE)?;
+                let locked_scaled = parse_scaled(&b.locked, BALANCE_SCALE)?;
+                Ok(AssetBalance {
+                    asset: b.asset.clone(),
+                    free_scaled,
+                    locked_scaled,
+                })
+            })
+            .collect()
     }
 
     // -----------------------------------------------------------------------
@@ -499,19 +533,22 @@ impl Reconciler {
         &self,
         raw_trades: &[RawRestTrade],
     ) -> Result<Vec<ReconcileFill>, NormalizerError> {
-        raw_trades.iter().map(|t| {
-            let scales = self.scales_for(&t.symbol);
-            let qty   = parse_scaled(&t.qty,   scales.qty_scale)?;
-            let price = parse_scaled(&t.price, scales.price_scale)?;
-            Ok(ReconcileFill {
-                trade_id:          t.id,
-                exchange_order_id: t.order_id,
-                symbol:            t.symbol.clone(),
-                qty,
-                price,
-                time_ns:           t.time_ms * 1_000_000,
+        raw_trades
+            .iter()
+            .map(|t| {
+                let scales = self.scales_for(&t.symbol);
+                let qty = parse_scaled(&t.qty, scales.qty_scale)?;
+                let price = parse_scaled(&t.price, scales.price_scale)?;
+                Ok(ReconcileFill {
+                    trade_id: t.id,
+                    exchange_order_id: t.order_id,
+                    symbol: t.symbol.clone(),
+                    qty,
+                    price,
+                    time_ns: t.time_ms * 1_000_000,
+                })
             })
-        }).collect()
+            .collect()
     }
 
     // -----------------------------------------------------------------------
@@ -522,17 +559,21 @@ impl Reconciler {
         let scales = self.scales_for(&raw.symbol);
         let cloid_str = raw.client_order_id.clone();
         let cand = ClientOrderId::new_raw(cloid_str.clone());
-        let cloid = if cand.parse_counter().is_some() { Some(cand) } else { None };
+        let cloid = if cand.parse_counter().is_some() {
+            Some(cand)
+        } else {
+            None
+        };
         Ok(ReconcileOrder {
-            exchange_id:  raw.order_id,
+            exchange_id: raw.order_id,
             cloid,
-            raw_cloid:    cloid_str,
-            symbol:       raw.symbol.clone(),
-            status:       RestOrderStatus::from_raw(&raw.status),
-            orig_qty:     parse_scaled(&raw.orig_qty,     scales.qty_scale)?,
+            raw_cloid: cloid_str,
+            symbol: raw.symbol.clone(),
+            status: RestOrderStatus::from_raw(&raw.status),
+            orig_qty: parse_scaled(&raw.orig_qty, scales.qty_scale)?,
             executed_qty: parse_scaled(&raw.executed_qty, scales.qty_scale)?,
-            created_ns:   raw.created_ms   * 1_000_000,
-            updated_ns:   raw.update_time  * 1_000_000,
+            created_ns: raw.created_ms * 1_000_000,
+            updated_ns: raw.update_time * 1_000_000,
         })
     }
 
@@ -541,12 +582,15 @@ impl Reconciler {
         &self,
         raw_trades: &[RawRestTrade],
     ) -> Result<Vec<(u64, i64, i64)>, NormalizerError> {
-        raw_trades.iter().map(|t| {
-            let scales = self.scales_for(&t.symbol);
-            let qty   = parse_scaled(&t.qty,   scales.qty_scale)?;
-            let price = parse_scaled(&t.price, scales.price_scale)?;
-            Ok((t.id, qty, price))
-        }).collect()
+        raw_trades
+            .iter()
+            .map(|t| {
+                let scales = self.scales_for(&t.symbol);
+                let qty = parse_scaled(&t.qty, scales.qty_scale)?;
+                let price = parse_scaled(&t.price, scales.price_scale)?;
+                Ok((t.id, qty, price))
+            })
+            .collect()
     }
 }
 
@@ -723,20 +767,41 @@ mod tests {
 
     #[test]
     fn reconcile_order_status_new_is_live() {
-        let outcome = rec().reconcile_order_status(&rest_order("NEW"), None).unwrap();
-        assert_eq!(outcome, StatusCheckOutcome::Live { exchange_id: 4293153 });
+        let outcome = rec()
+            .reconcile_order_status(&rest_order("NEW"), None)
+            .unwrap();
+        assert_eq!(
+            outcome,
+            StatusCheckOutcome::Live {
+                exchange_id: 4293153
+            }
+        );
     }
 
     #[test]
     fn reconcile_order_status_partially_filled_is_live() {
-        let outcome = rec().reconcile_order_status(&rest_order("PARTIALLY_FILLED"), None).unwrap();
-        assert_eq!(outcome, StatusCheckOutcome::Live { exchange_id: 4293153 });
+        let outcome = rec()
+            .reconcile_order_status(&rest_order("PARTIALLY_FILLED"), None)
+            .unwrap();
+        assert_eq!(
+            outcome,
+            StatusCheckOutcome::Live {
+                exchange_id: 4293153
+            }
+        );
     }
 
     #[test]
     fn reconcile_order_status_pending_cancel_is_live() {
-        let outcome = rec().reconcile_order_status(&rest_order("PENDING_CANCEL"), None).unwrap();
-        assert_eq!(outcome, StatusCheckOutcome::Live { exchange_id: 4293153 });
+        let outcome = rec()
+            .reconcile_order_status(&rest_order("PENDING_CANCEL"), None)
+            .unwrap();
+        assert_eq!(
+            outcome,
+            StatusCheckOutcome::Live {
+                exchange_id: 4293153
+            }
+        );
     }
 
     #[test]
@@ -745,7 +810,10 @@ mod tests {
         let outcome = rec().reconcile_order_status(&order, None).unwrap();
         assert_eq!(
             outcome,
-            StatusCheckOutcome::Filled { exchange_id: 4293153, fills: vec![] },
+            StatusCheckOutcome::Filled {
+                exchange_id: 4293153,
+                fills: vec![]
+            },
         );
     }
 
@@ -754,7 +822,9 @@ mod tests {
         let order: RawRestOrder = serde_json::from_str(ORDER_FILLED).unwrap();
         let trade: RawRestTrade = serde_json::from_str(TRADE_JSON).unwrap();
 
-        let outcome = rec().reconcile_order_status(&order, Some(&[trade])).unwrap();
+        let outcome = rec()
+            .reconcile_order_status(&order, Some(&[trade]))
+            .unwrap();
         let StatusCheckOutcome::Filled { exchange_id, fills } = outcome else {
             panic!("expected Filled");
         };
@@ -770,7 +840,12 @@ mod tests {
     fn reconcile_order_status_canceled_is_cancelled() {
         let order: RawRestOrder = serde_json::from_str(ORDER_CANCELED).unwrap();
         let outcome = rec().reconcile_order_status(&order, None).unwrap();
-        assert_eq!(outcome, StatusCheckOutcome::Cancelled { exchange_id: 4293154 });
+        assert_eq!(
+            outcome,
+            StatusCheckOutcome::Cancelled {
+                exchange_id: 4293154
+            }
+        );
     }
 
     #[test]
@@ -784,12 +859,19 @@ mod tests {
     fn reconcile_order_status_expired_is_expired() {
         let order: RawRestOrder = serde_json::from_str(ORDER_EXPIRED).unwrap();
         let outcome = rec().reconcile_order_status(&order, None).unwrap();
-        assert_eq!(outcome, StatusCheckOutcome::Expired { exchange_id: 4293155 });
+        assert_eq!(
+            outcome,
+            StatusCheckOutcome::Expired {
+                exchange_id: 4293155
+            }
+        );
     }
 
     #[test]
     fn reconcile_order_status_unknown_status_is_error() {
-        let outcome = rec().reconcile_order_status(&rest_order("SOME_FUTURE_STATUS"), None).unwrap();
+        let outcome = rec()
+            .reconcile_order_status(&rest_order("SOME_FUTURE_STATUS"), None)
+            .unwrap();
         assert!(matches!(outcome, StatusCheckOutcome::Error { .. }));
     }
 
@@ -798,7 +880,8 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn open_order_json(cloid: &str, exchange_id: u64) -> String {
-        format!(r#"{{
+        format!(
+            r#"{{
             "symbol":"BTCUSDT","orderId":{exchange_id},"orderListId":-1,
             "clientOrderId":"{cloid}","price":"50000.00000000",
             "origQty":"0.10000000","executedQty":"0.00000000",
@@ -806,11 +889,15 @@ mod tests {
             "type":"LIMIT","side":"BUY","stopPrice":"0","icebergQty":"0",
             "time":1499827319559,"updateTime":1499827319559,"isWorking":true,
             "origQuoteOrderQty":"0","workingTime":1499827319559,"selfTradePreventionMode":"NONE"
-        }}"#)
+        }}"#
+        )
     }
 
     fn parse_orders(jsons: &[String]) -> Vec<RawRestOrder> {
-        jsons.iter().map(|j| serde_json::from_str(j).unwrap()).collect()
+        jsons
+            .iter()
+            .map(|j| serde_json::from_str(j).unwrap())
+            .collect()
     }
 
     #[test]
@@ -820,7 +907,13 @@ mod tests {
         let t = tracked(&[0x42]);
         let actions = rec().reconcile_open_orders(&orders, &t).unwrap();
         assert_eq!(actions.len(), 1);
-        assert!(matches!(&actions[0], ReconcileAction::OrderStillLive { exchange_id: 1001, .. }));
+        assert!(matches!(
+            &actions[0],
+            ReconcileAction::OrderStillLive {
+                exchange_id: 1001,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -830,7 +923,9 @@ mod tests {
         let t = tracked(&[]);
         let actions = rec().reconcile_open_orders(&orders, &t).unwrap();
         assert_eq!(actions.len(), 1);
-        let ReconcileAction::UnexpectedOrder(ref o) = actions[0] else { panic!() };
+        let ReconcileAction::UnexpectedOrder(ref o) = actions[0] else {
+            panic!()
+        };
         assert!(o.cloid.is_none());
         assert_eq!(o.exchange_id, 9999);
     }
@@ -842,8 +937,13 @@ mod tests {
         let t = tracked(&[]); // empty tracked set
         let actions = rec().reconcile_open_orders(&orders, &t).unwrap();
         assert_eq!(actions.len(), 1);
-        let ReconcileAction::UnexpectedOrder(ref o) = actions[0] else { panic!() };
-        assert!(o.cloid.is_some(), "orphan in our format should have cloid set");
+        let ReconcileAction::UnexpectedOrder(ref o) = actions[0] else {
+            panic!()
+        };
+        assert!(
+            o.cloid.is_some(),
+            "orphan in our format should have cloid set"
+        );
         assert_eq!(o.exchange_id, 8888);
     }
 
@@ -866,24 +966,34 @@ mod tests {
             _ => String::new(),
         });
         assert_eq!(actions.len(), 3);
-        assert!(actions.iter().all(|a| matches!(a, ReconcileAction::OrderVanished { .. })));
+        assert!(actions
+            .iter()
+            .all(|a| matches!(a, ReconcileAction::OrderVanished { .. })));
     }
 
     #[test]
     fn reconcile_open_orders_mixed_scenario() {
-        let cloid_live    = make_cloid(0x10);
+        let cloid_live = make_cloid(0x10);
         let cloid_vanished = make_cloid(0x20);
         // Exchange has: cloid_live (ours, tracked) + external order
         let orders = parse_orders(&[
             open_order_json(cloid_live.as_str(), 1000),
             open_order_json("ui-placed-order", 2000),
         ]);
-        let t: HashSet<ClientOrderId> = [cloid_live.clone(), cloid_vanished.clone()].into_iter().collect();
+        let t: HashSet<ClientOrderId> = [cloid_live.clone(), cloid_vanished.clone()]
+            .into_iter()
+            .collect();
         let actions = rec().reconcile_open_orders(&orders, &t).unwrap();
         assert_eq!(actions.len(), 3); // Still-live + Unexpected + Vanished
-        assert!(actions.iter().any(|a| matches!(a, ReconcileAction::OrderStillLive { .. })));
-        assert!(actions.iter().any(|a| matches!(a, ReconcileAction::UnexpectedOrder(_))));
-        assert!(actions.iter().any(|a| matches!(a, ReconcileAction::OrderVanished { .. })));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, ReconcileAction::OrderStillLive { .. })));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, ReconcileAction::UnexpectedOrder(_))));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a, ReconcileAction::OrderVanished { .. })));
     }
 
     // -----------------------------------------------------------------------
@@ -897,11 +1007,11 @@ mod tests {
         assert_eq!(balances.len(), 2);
         // BTC: free="4.72384689" * 10^8 = 472_384_689
         assert_eq!(balances[0].asset, "BTC");
-        assert_eq!(balances[0].free_scaled,   472_384_689);
+        assert_eq!(balances[0].free_scaled, 472_384_689);
         assert_eq!(balances[0].locked_scaled, 0);
         // ETH: free="0.50000000" * 10^8 = 50_000_000; locked="0.25000000" = 25_000_000
         assert_eq!(balances[1].asset, "ETH");
-        assert_eq!(balances[1].free_scaled,   50_000_000);
+        assert_eq!(balances[1].free_scaled, 50_000_000);
         assert_eq!(balances[1].locked_scaled, 25_000_000);
     }
 
@@ -917,7 +1027,7 @@ mod tests {
         assert_eq!(fills[0].trade_id, 28457);
         assert_eq!(fills[0].exchange_order_id, 4293153);
         assert_eq!(fills[0].symbol, "BTCUSDT");
-        assert_eq!(fills[0].qty,   5_000_000);        // 0.05 * 10^8
+        assert_eq!(fills[0].qty, 5_000_000); // 0.05 * 10^8
         assert_eq!(fills[0].price, 5_000_000_000_000); // 50000 * 10^8
         assert_eq!(fills[0].time_ns, 1499865549590 * 1_000_000);
     }
@@ -1001,7 +1111,9 @@ mod tests {
         // Immediately after, the next is not yet due.
         assert!(!s.tick(INTERVAL + 1).contains(&ReconcileRequest::Periodic));
         // After another full interval it is due again.
-        assert!(s.tick(INTERVAL + INTERVAL).contains(&ReconcileRequest::Periodic));
+        assert!(s
+            .tick(INTERVAL + INTERVAL)
+            .contains(&ReconcileRequest::Periodic));
     }
 
     #[test]
@@ -1012,7 +1124,12 @@ mod tests {
         s.on_reconnect(2_000_000_000);
         let r = s.tick(2_000_000_000);
         // Only one Reconnect request despite three calls.
-        assert_eq!(r.iter().filter(|&&x| x == ReconcileRequest::Reconnect).count(), 1);
+        assert_eq!(
+            r.iter()
+                .filter(|&&x| x == ReconcileRequest::Reconnect)
+                .count(),
+            1
+        );
     }
 
     #[test]

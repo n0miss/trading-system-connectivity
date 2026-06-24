@@ -6,7 +6,11 @@ pub enum Error {
     OrderNotFound { cloid: String },
 
     #[error("invalid state transition for {cloid}: {from:?} → {to:?}")]
-    InvalidTransition { cloid: String, from: OrderStatus, to: OrderStatus },
+    InvalidTransition {
+        cloid: String,
+        from: OrderStatus,
+        to: OrderStatus,
+    },
 
     #[error("journal I/O: {0}")]
     Io(#[from] std::io::Error),

@@ -3,7 +3,7 @@ use crate::Error;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum VenueId {
-    BinanceSpot    = 1,
+    BinanceSpot = 1,
     BinanceFutures = 2,
 }
 
@@ -21,7 +21,7 @@ impl TryFrom<u8> for VenueId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum MarketType {
-    Spot        = 1,
+    Spot = 1,
     UsdmFutures = 2,
 }
 
@@ -40,39 +40,39 @@ impl TryFrom<u8> for MarketType {
 #[repr(u8)]
 pub enum MessageType {
     InstrumentDefinition = 1,
-    TradingStatus        = 2,
-    BookSnapshot         = 3,
-    BookDelta            = 4,
-    BestBidOffer         = 5,
-    Trade                = 6,
-    MarkPrice            = 7,
-    FundingRate          = 8,
-    Liquidation          = 9,
-    OpenInterest         = 10,
-    AccountUpdate        = 11,
-    OrderUpdate          = 12,
-    Heartbeat            = 13,
-    FeedStatus           = 14,
-    GapDetected          = 15,
-    BookStale            = 16,
-    BookRecovered        = 17,
+    TradingStatus = 2,
+    BookSnapshot = 3,
+    BookDelta = 4,
+    BestBidOffer = 5,
+    Trade = 6,
+    MarkPrice = 7,
+    FundingRate = 8,
+    Liquidation = 9,
+    OpenInterest = 10,
+    AccountUpdate = 11,
+    OrderUpdate = 12,
+    Heartbeat = 13,
+    FeedStatus = 14,
+    GapDetected = 15,
+    BookStale = 16,
+    BookRecovered = 17,
     /// Published by passive instances to the status stream (§9.34).
-    BookChecksum         = 18,
+    BookChecksum = 18,
 }
 
 impl TryFrom<u8> for MessageType {
     type Error = Error;
     fn try_from(v: u8) -> Result<Self, Self::Error> {
         match v {
-            1  => Ok(Self::InstrumentDefinition),
-            2  => Ok(Self::TradingStatus),
-            3  => Ok(Self::BookSnapshot),
-            4  => Ok(Self::BookDelta),
-            5  => Ok(Self::BestBidOffer),
-            6  => Ok(Self::Trade),
-            7  => Ok(Self::MarkPrice),
-            8  => Ok(Self::FundingRate),
-            9  => Ok(Self::Liquidation),
+            1 => Ok(Self::InstrumentDefinition),
+            2 => Ok(Self::TradingStatus),
+            3 => Ok(Self::BookSnapshot),
+            4 => Ok(Self::BookDelta),
+            5 => Ok(Self::BestBidOffer),
+            6 => Ok(Self::Trade),
+            7 => Ok(Self::MarkPrice),
+            8 => Ok(Self::FundingRate),
+            9 => Ok(Self::Liquidation),
             10 => Ok(Self::OpenInterest),
             11 => Ok(Self::AccountUpdate),
             12 => Ok(Self::OrderUpdate),
@@ -82,7 +82,7 @@ impl TryFrom<u8> for MessageType {
             16 => Ok(Self::BookStale),
             17 => Ok(Self::BookRecovered),
             18 => Ok(Self::BookChecksum),
-            _  => Err(Error::UnknownMessageType(v)),
+            _ => Err(Error::UnknownMessageType(v)),
         }
     }
 }
@@ -118,17 +118,25 @@ impl InstanceRole {
     /// arbiter (§9.35) handles the failover logic when the active instance
     /// diverges or goes silent.
     pub fn from_instance_id(id: u32) -> Self {
-        if id == 0 { Self::Active } else { Self::Passive }
+        if id == 0 {
+            Self::Active
+        } else {
+            Self::Passive
+        }
     }
 
-    pub fn is_active(self)  -> bool { self == Self::Active  }
-    pub fn is_passive(self) -> bool { self == Self::Passive }
+    pub fn is_active(self) -> bool {
+        self == Self::Active
+    }
+    pub fn is_passive(self) -> bool {
+        self == Self::Passive
+    }
 }
 
 impl std::fmt::Display for InstanceRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Active  => f.write_str("active"),
+            Self::Active => f.write_str("active"),
             Self::Passive => f.write_str("passive"),
         }
     }
@@ -139,12 +147,12 @@ impl std::fmt::Display for InstanceRole {
 #[repr(u8)]
 pub enum FeedState {
     Connecting = 1,
-    Live       = 2,
-    Degraded   = 3,
-    Stale      = 4,
+    Live = 2,
+    Degraded = 3,
+    Stale = 4,
     Recovering = 5,
-    Recovered  = 6,
-    Failed     = 7,
+    Recovered = 6,
+    Failed = 7,
 }
 
 impl TryFrom<u8> for FeedState {
@@ -168,8 +176,8 @@ impl TryFrom<u8> for FeedState {
 #[repr(u8)]
 pub enum AggressorSide {
     Unknown = 0,
-    Buy     = 1,
-    Sell    = 2,
+    Buy = 1,
+    Sell = 2,
 }
 
 impl TryFrom<u8> for AggressorSide {
@@ -188,14 +196,14 @@ impl TryFrom<u8> for AggressorSide {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum BookStaleReason {
-    SequenceGap          = 1,
-    WebSocketReconnect   = 2,
+    SequenceGap = 1,
+    WebSocketReconnect = 2,
     SnapshotIncompatible = 3,
-    StaleTimeout         = 4,
-    MalformedEvent       = 5,
-    ExchangeShutdown     = 6,
-    BboMismatch          = 7,
-    BufferOverflow       = 8,
+    StaleTimeout = 4,
+    MalformedEvent = 5,
+    ExchangeShutdown = 6,
+    BboMismatch = 7,
+    BufferOverflow = 8,
 }
 
 impl TryFrom<u8> for BookStaleReason {

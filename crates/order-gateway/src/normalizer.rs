@@ -84,14 +84,14 @@ pub enum ExecutionType {
 impl ExecutionType {
     pub fn from_raw(s: &str) -> Self {
         match s {
-            "NEW"              => Self::New,
-            "CANCELED"         => Self::Canceled,
-            "REPLACED"         => Self::Replaced,
-            "REJECTED"         => Self::Rejected,
-            "TRADE"            => Self::Trade,
-            "EXPIRED"          => Self::Expired,
+            "NEW" => Self::New,
+            "CANCELED" => Self::Canceled,
+            "REPLACED" => Self::Replaced,
+            "REJECTED" => Self::Rejected,
+            "TRADE" => Self::Trade,
+            "EXPIRED" => Self::Expired,
             "TRADE_PREVENTION" => Self::TradePrevention,
-            other              => Self::Unknown(other.to_string()),
+            other => Self::Unknown(other.to_string()),
         }
     }
 }
@@ -183,7 +183,7 @@ pub enum NormalizedEvent {
 #[derive(Debug, Clone)]
 pub struct SymbolScales {
     pub price_scale: i64,
-    pub qty_scale:   i64,
+    pub qty_scale: i64,
 }
 
 // ---------------------------------------------------------------------------
@@ -198,8 +198,8 @@ pub struct SymbolScales {
 /// from the refdata crate after exchangeInfo is fetched.
 pub struct Normalizer {
     default_price_scale: i64,
-    default_qty_scale:   i64,
-    symbol_scales:       HashMap<String, SymbolScales>,
+    default_qty_scale: i64,
+    symbol_scales: HashMap<String, SymbolScales>,
 }
 
 impl Normalizer {
@@ -212,20 +212,24 @@ impl Normalizer {
     }
 
     /// Register per-symbol scale factors.  Takes precedence over the defaults.
-    pub fn register_symbol(
-        &mut self,
-        symbol: impl Into<String>,
-        price_scale: i64,
-        qty_scale: i64,
-    ) {
-        self.symbol_scales.insert(symbol.into(), SymbolScales { price_scale, qty_scale });
+    pub fn register_symbol(&mut self, symbol: impl Into<String>, price_scale: i64, qty_scale: i64) {
+        self.symbol_scales.insert(
+            symbol.into(),
+            SymbolScales {
+                price_scale,
+                qty_scale,
+            },
+        );
     }
 
     fn scales_for(&self, symbol: &str) -> SymbolScales {
-        self.symbol_scales.get(symbol).cloned().unwrap_or(SymbolScales {
-            price_scale: self.default_price_scale,
-            qty_scale:   self.default_qty_scale,
-        })
+        self.symbol_scales
+            .get(symbol)
+            .cloned()
+            .unwrap_or(SymbolScales {
+                price_scale: self.default_price_scale,
+                qty_scale: self.default_qty_scale,
+            })
     }
 
     /// Normalize one raw user data stream event.
@@ -234,14 +238,14 @@ impl Normalizer {
             RawUserDataEvent::ExecutionReport(rep) => {
                 let scales = self.scales_for(&rep.symbol);
 
-                let side       = parse_side(&rep.side_raw)?;
+                let side = parse_side(&rep.side_raw)?;
                 let order_type = parse_order_type(&rep.order_type_raw)?;
-                let tif        = parse_tif(&rep.time_in_force_raw)?;
-                let exec_type  = ExecutionType::from_raw(&rep.exec_type_raw);
+                let tif = parse_tif(&rep.time_in_force_raw)?;
+                let exec_type = ExecutionType::from_raw(&rep.exec_type_raw);
 
-                let last_fill_qty   = parse_scaled(&rep.last_fill_qty_raw,   scales.qty_scale)?;
+                let last_fill_qty = parse_scaled(&rep.last_fill_qty_raw, scales.qty_scale)?;
                 let last_fill_price = parse_scaled(&rep.last_fill_price_raw, scales.price_scale)?;
-                let cum_fill_qty    = parse_scaled(&rep.cum_fill_qty_raw,    scales.qty_scale)?;
+                let cum_fill_qty = parse_scaled(&rep.cum_fill_qty_raw, scales.qty_scale)?;
 
                 let trade_id = if rep.trade_id >= 0 {
                     Some(rep.trade_id as u64)
@@ -249,50 +253,61 @@ impl Normalizer {
                     None
                 };
 
-                let reject_reason = if rep.reject_reason_raw.is_empty()
-                    || rep.reject_reason_raw == "NONE"
-                {
-                    None
-                } else {
-                    Some(rep.reject_reason_raw)
-                };
+                let reject_reason =
+                    if rep.reject_reason_raw.is_empty() || rep.reject_reason_raw == "NONE" {
+                        None
+                    } else {
+                        Some(rep.reject_reason_raw)
+                    };
 
                 // Detect our cloid format: if parse_counter() succeeds it matches cc-XXXX-...
                 let cloid_str = rep.client_order_id;
                 let cand = ClientOrderId::new_raw(cloid_str.clone());
-                let cloid = if cand.parse_counter().is_some() { Some(cand) } else { None };
+                let cloid = if cand.parse_counter().is_some() {
+                    Some(cand)
+                } else {
+                    None
+                };
 
                 Ok(NormalizedEvent::OrderUpdate(OrderUpdate {
-                    exchange_id:         rep.exchange_order_id,
+                    exchange_id: rep.exchange_order_id,
                     cloid,
-                    raw_cloid:           cloid_str,
-                    symbol:              rep.symbol,
+                    raw_cloid: cloid_str,
+                    symbol: rep.symbol,
                     side,
                     order_type,
-                    time_in_force:       tif,
+                    time_in_force: tif,
                     exec_type,
-                    order_status_raw:    rep.order_status_raw,
+                    order_status_raw: rep.order_status_raw,
                     last_fill_qty,
                     last_fill_price,
                     cum_fill_qty,
                     trade_id,
                     reject_reason,
-                    is_maker:            rep.is_maker,
-                    event_time_ns:       rep.event_time_ms * 1_000_000,
+                    is_maker: rep.is_maker,
+                    event_time_ns: rep.event_time_ms * 1_000_000,
                     transaction_time_ns: rep.transaction_time_ms * 1_000_000,
                 }))
             }
 
             RawUserDataEvent::OutboundAccountPosition(pos) => {
-                let balances = pos.balances.iter().map(|b| {
-                    let free_scaled   = parse_scaled(&b.free,   BALANCE_SCALE)?;
-                    let locked_scaled = parse_scaled(&b.locked, BALANCE_SCALE)?;
-                    Ok(AssetBalance { asset: b.asset.clone(), free_scaled, locked_scaled })
-                }).collect::<Result<Vec<_>, NormalizerError>>()?;
+                let balances = pos
+                    .balances
+                    .iter()
+                    .map(|b| {
+                        let free_scaled = parse_scaled(&b.free, BALANCE_SCALE)?;
+                        let locked_scaled = parse_scaled(&b.locked, BALANCE_SCALE)?;
+                        Ok(AssetBalance {
+                            asset: b.asset.clone(),
+                            free_scaled,
+                            locked_scaled,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, NormalizerError>>()?;
 
                 Ok(NormalizedEvent::AccountUpdate(AccountUpdate {
                     balances,
-                    event_time_ns:  pos.event_time_ms * 1_000_000,
+                    event_time_ns: pos.event_time_ms * 1_000_000,
                     last_update_ns: pos.last_update_ms * 1_000_000,
                 }))
             }
@@ -300,16 +315,14 @@ impl Normalizer {
             RawUserDataEvent::BalanceUpdate(upd) => {
                 let delta_scaled = parse_scaled(&upd.delta_raw, BALANCE_SCALE)?;
                 Ok(NormalizedEvent::BalanceDelta(BalanceDelta {
-                    asset:               upd.asset,
+                    asset: upd.asset,
                     delta_scaled,
-                    event_time_ns:       upd.event_time_ms * 1_000_000,
-                    transaction_time_ns: upd.clear_time_ms  * 1_000_000,
+                    event_time_ns: upd.event_time_ms * 1_000_000,
+                    transaction_time_ns: upd.clear_time_ms * 1_000_000,
                 }))
             }
 
-            RawUserDataEvent::Unknown { event_type } => {
-                Ok(NormalizedEvent::Unknown { event_type })
-            }
+            RawUserDataEvent::Unknown { event_type } => Ok(NormalizedEvent::Unknown { event_type }),
         }
     }
 }
@@ -329,14 +342,17 @@ impl Normalizer {
 /// | `is_expired`    | ≥ 60 min since last renewal (key likely invalidated) | Obtain a new key and reconnect WS        |
 #[derive(Debug, Clone)]
 pub struct ListenKeyState {
-    key:             String,
+    key: String,
     last_renewed_ns: i64,
 }
 
 impl ListenKeyState {
     /// Create state for a freshly-issued listen key (`now_ns` is the issue time).
     pub fn new(key: impl Into<String>, now_ns: i64) -> Self {
-        Self { key: key.into(), last_renewed_ns: now_ns }
+        Self {
+            key: key.into(),
+            last_renewed_ns: now_ns,
+        }
     }
 
     /// The listen key string (embed in the WS URL: `.../ws/{key}`).
@@ -374,17 +390,17 @@ impl ListenKeyState {
 
 fn parse_side(raw: &str) -> Result<OrderSide, NormalizerError> {
     match raw {
-        "BUY"  => Ok(OrderSide::Buy),
+        "BUY" => Ok(OrderSide::Buy),
         "SELL" => Ok(OrderSide::Sell),
-        other  => Err(NormalizerError::UnknownSide(other.to_string())),
+        other => Err(NormalizerError::UnknownSide(other.to_string())),
     }
 }
 
 fn parse_order_type(raw: &str) -> Result<OrderType, NormalizerError> {
     match raw {
-        "LIMIT"  => Ok(OrderType::Limit),
+        "LIMIT" => Ok(OrderType::Limit),
         "MARKET" => Ok(OrderType::Market),
-        other    => Err(NormalizerError::UnknownOrderType(other.to_string())),
+        other => Err(NormalizerError::UnknownOrderType(other.to_string())),
     }
 }
 
@@ -416,28 +432,37 @@ pub fn parse_scaled(decimal: &str, scale: i64) -> Result<i64, NormalizerError> {
 
     let (int_str, frac_str) = match s.find('.') {
         Some(pos) => (&s[..pos], &s[pos + 1..]),
-        None      => (s, ""),
+        None => (s, ""),
     };
 
     let int_val: i64 = if int_str.is_empty() {
         0
     } else {
-        int_str.parse::<i64>().map_err(|_| NormalizerError::InvalidDecimal(decimal.to_string()))?
+        int_str
+            .parse::<i64>()
+            .map_err(|_| NormalizerError::InvalidDecimal(decimal.to_string()))?
     };
 
     // Number of decimal digits the scale represents (scale must be a power of 10).
     let mut digits = 0usize;
     let mut tmp = scale;
-    while tmp > 1 { tmp /= 10; digits += 1; }
+    while tmp > 1 {
+        tmp /= 10;
+        digits += 1;
+    }
 
     let frac_val: i64 = if frac_str.is_empty() {
         0
     } else {
         let available = frac_str.len().min(digits);
-        let padding   = digits - available;
+        let padding = digits - available;
         let mut frac_s = frac_str[..available].to_string();
-        for _ in 0..padding { frac_s.push('0'); }
-        frac_s.parse::<i64>().map_err(|_| NormalizerError::InvalidDecimal(decimal.to_string()))?
+        for _ in 0..padding {
+            frac_s.push('0');
+        }
+        frac_s
+            .parse::<i64>()
+            .map_err(|_| NormalizerError::InvalidDecimal(decimal.to_string()))?
     };
 
     Ok(int_val * scale + frac_val)
@@ -477,7 +502,10 @@ mod tests {
 
     #[test]
     fn parse_scaled_8_decimals() {
-        assert_eq!(parse_scaled("1.00000000", 100_000_000).unwrap(), 100_000_000);
+        assert_eq!(
+            parse_scaled("1.00000000", 100_000_000).unwrap(),
+            100_000_000
+        );
     }
 
     #[test]
@@ -488,13 +516,19 @@ mod tests {
     #[test]
     fn parse_scaled_large_integer() {
         // 50000 * 10^8 = 5_000_000_000_000
-        assert_eq!(parse_scaled("50000.00000000", 100_000_000).unwrap(), 5_000_000_000_000);
+        assert_eq!(
+            parse_scaled("50000.00000000", 100_000_000).unwrap(),
+            5_000_000_000_000
+        );
     }
 
     #[test]
     fn parse_scaled_truncates_extra_decimals() {
         // "1.123456789" has 9 dp; scale is 10^8 → truncate last digit → 112_345_678
-        assert_eq!(parse_scaled("1.123456789", 100_000_000).unwrap(), 112_345_678);
+        assert_eq!(
+            parse_scaled("1.123456789", 100_000_000).unwrap(),
+            112_345_678
+        );
     }
 
     #[test]
@@ -514,13 +548,16 @@ mod tests {
 
     #[test]
     fn execution_type_all_variants() {
-        assert_eq!(ExecutionType::from_raw("NEW"),              ExecutionType::New);
-        assert_eq!(ExecutionType::from_raw("CANCELED"),         ExecutionType::Canceled);
-        assert_eq!(ExecutionType::from_raw("REPLACED"),         ExecutionType::Replaced);
-        assert_eq!(ExecutionType::from_raw("REJECTED"),         ExecutionType::Rejected);
-        assert_eq!(ExecutionType::from_raw("TRADE"),            ExecutionType::Trade);
-        assert_eq!(ExecutionType::from_raw("EXPIRED"),          ExecutionType::Expired);
-        assert_eq!(ExecutionType::from_raw("TRADE_PREVENTION"), ExecutionType::TradePrevention);
+        assert_eq!(ExecutionType::from_raw("NEW"), ExecutionType::New);
+        assert_eq!(ExecutionType::from_raw("CANCELED"), ExecutionType::Canceled);
+        assert_eq!(ExecutionType::from_raw("REPLACED"), ExecutionType::Replaced);
+        assert_eq!(ExecutionType::from_raw("REJECTED"), ExecutionType::Rejected);
+        assert_eq!(ExecutionType::from_raw("TRADE"), ExecutionType::Trade);
+        assert_eq!(ExecutionType::from_raw("EXPIRED"), ExecutionType::Expired);
+        assert_eq!(
+            ExecutionType::from_raw("TRADE_PREVENTION"),
+            ExecutionType::TradePrevention
+        );
         assert_eq!(
             ExecutionType::from_raw("FUTURE_TYPE"),
             ExecutionType::Unknown("FUTURE_TYPE".to_string()),
@@ -575,36 +612,42 @@ mod tests {
 
     #[test]
     fn normalize_new_exec_produces_order_update() {
-        let NormalizedEvent::OrderUpdate(upd) = normalize(NEW_EXEC) else { panic!() };
+        let NormalizedEvent::OrderUpdate(upd) = normalize(NEW_EXEC) else {
+            panic!()
+        };
         assert_eq!(upd.exec_type, ExecutionType::New);
         assert_eq!(upd.exchange_id, 4293153);
         assert_eq!(upd.symbol, "BTCUSDT");
         assert_eq!(upd.side, OrderSide::Buy);
         assert_eq!(upd.order_type, OrderType::Limit);
         assert_eq!(upd.time_in_force, TimeInForce::GoodTillCancel);
-        assert_eq!(upd.last_fill_qty,   0);
+        assert_eq!(upd.last_fill_qty, 0);
         assert_eq!(upd.last_fill_price, 0);
-        assert_eq!(upd.cum_fill_qty,    0);
+        assert_eq!(upd.cum_fill_qty, 0);
         assert!(upd.trade_id.is_none());
         assert!(upd.reject_reason.is_none());
-        assert_eq!(upd.event_time_ns,       1499405658658 * 1_000_000);
+        assert_eq!(upd.event_time_ns, 1499405658658 * 1_000_000);
         assert_eq!(upd.transaction_time_ns, 1499405658657 * 1_000_000);
     }
 
     #[test]
     fn normalize_trade_exec_has_fill_and_trade_id() {
-        let NormalizedEvent::OrderUpdate(upd) = normalize(TRADE_EXEC) else { panic!() };
+        let NormalizedEvent::OrderUpdate(upd) = normalize(TRADE_EXEC) else {
+            panic!()
+        };
         assert_eq!(upd.exec_type, ExecutionType::Trade);
-        assert_eq!(upd.last_fill_qty,   10_000_000);    // 0.1 * 10^8
+        assert_eq!(upd.last_fill_qty, 10_000_000); // 0.1 * 10^8
         assert_eq!(upd.last_fill_price, 5_000_000_000_000); // 50000 * 10^8
-        assert_eq!(upd.cum_fill_qty,    10_000_000);
+        assert_eq!(upd.cum_fill_qty, 10_000_000);
         assert_eq!(upd.trade_id, Some(9876543));
         assert!(upd.reject_reason.is_none());
     }
 
     #[test]
     fn normalize_rejected_exec_has_reason_and_no_trade_id() {
-        let NormalizedEvent::OrderUpdate(upd) = normalize(REJECTED_EXEC) else { panic!() };
+        let NormalizedEvent::OrderUpdate(upd) = normalize(REJECTED_EXEC) else {
+            panic!()
+        };
         assert_eq!(upd.exec_type, ExecutionType::Rejected);
         assert_eq!(upd.reject_reason, Some("PRICE_FILTER".to_string()));
         assert!(upd.trade_id.is_none());
@@ -612,7 +655,9 @@ mod tests {
 
     #[test]
     fn normalize_canceled_exec_sets_side_and_no_trade_id() {
-        let NormalizedEvent::OrderUpdate(upd) = normalize(CANCELED_EXEC) else { panic!() };
+        let NormalizedEvent::OrderUpdate(upd) = normalize(CANCELED_EXEC) else {
+            panic!()
+        };
         assert_eq!(upd.exec_type, ExecutionType::Canceled);
         assert_eq!(upd.side, OrderSide::Sell);
         assert!(upd.trade_id.is_none());
@@ -621,14 +666,18 @@ mod tests {
 
     #[test]
     fn normalize_expired_exec_uses_ioc_tif() {
-        let NormalizedEvent::OrderUpdate(upd) = normalize(EXPIRED_EXEC) else { panic!() };
+        let NormalizedEvent::OrderUpdate(upd) = normalize(EXPIRED_EXEC) else {
+            panic!()
+        };
         assert_eq!(upd.exec_type, ExecutionType::Expired);
         assert_eq!(upd.time_in_force, TimeInForce::ImmediateOrCancel);
     }
 
     #[test]
     fn cloid_is_parsed_for_our_format() {
-        let NormalizedEvent::OrderUpdate(upd) = normalize(NEW_EXEC) else { panic!() };
+        let NormalizedEvent::OrderUpdate(upd) = normalize(NEW_EXEC) else {
+            panic!()
+        };
         assert!(upd.cloid.is_some());
         assert_eq!(upd.raw_cloid, "cc-0001-0000000000000042");
     }
@@ -637,7 +686,9 @@ mod tests {
     fn cloid_is_none_for_external_orders() {
         let json = TRADE_EXEC.replace("cc-0001-0000000000000042", "binance-web-ui-abc123");
         let raw = parse_raw(json.as_bytes()).unwrap();
-        let NormalizedEvent::OrderUpdate(upd) = norm().normalize(raw).unwrap() else { panic!() };
+        let NormalizedEvent::OrderUpdate(upd) = norm().normalize(raw).unwrap() else {
+            panic!()
+        };
         assert!(upd.cloid.is_none());
         assert_eq!(upd.raw_cloid, "binance-web-ui-abc123");
     }
@@ -648,7 +699,9 @@ mod tests {
         // Override BTCUSDT price scale to 10^2 (contrived but tests dispatch).
         n.register_symbol("BTCUSDT", 100, 100_000_000);
         let raw = parse_raw(TRADE_EXEC.as_bytes()).unwrap();
-        let NormalizedEvent::OrderUpdate(upd) = n.normalize(raw).unwrap() else { panic!() };
+        let NormalizedEvent::OrderUpdate(upd) = n.normalize(raw).unwrap() else {
+            panic!()
+        };
         // 50000.00 * 100 = 5_000_000
         assert_eq!(upd.last_fill_price, 5_000_000);
     }
@@ -665,17 +718,19 @@ mod tests {
 
     #[test]
     fn normalize_account_position_parses_balances() {
-        let NormalizedEvent::AccountUpdate(upd) = normalize(ACCOUNT_POS) else { panic!() };
+        let NormalizedEvent::AccountUpdate(upd) = normalize(ACCOUNT_POS) else {
+            panic!()
+        };
         assert_eq!(upd.balances.len(), 2);
         // ETH: free 10.5 → 10.5 * 10^8 = 1_050_000_000
         assert_eq!(upd.balances[0].asset, "ETH");
-        assert_eq!(upd.balances[0].free_scaled,   1_050_000_000);
+        assert_eq!(upd.balances[0].free_scaled, 1_050_000_000);
         assert_eq!(upd.balances[0].locked_scaled, 0);
         // BTC: free 0.001 → 100_000; locked 0.0005 → 50_000
         assert_eq!(upd.balances[1].asset, "BTC");
-        assert_eq!(upd.balances[1].free_scaled,   100_000);
-        assert_eq!(upd.balances[1].locked_scaled,  50_000);
-        assert_eq!(upd.event_time_ns,  1564034571105 * 1_000_000);
+        assert_eq!(upd.balances[1].free_scaled, 100_000);
+        assert_eq!(upd.balances[1].locked_scaled, 50_000);
+        assert_eq!(upd.event_time_ns, 1564034571105 * 1_000_000);
         assert_eq!(upd.last_update_ns, 1564034571073 * 1_000_000);
     }
 
@@ -688,10 +743,12 @@ mod tests {
 
     #[test]
     fn normalize_balance_update_produces_delta() {
-        let NormalizedEvent::BalanceDelta(d) = normalize(BALANCE_UPD) else { panic!() };
+        let NormalizedEvent::BalanceDelta(d) = normalize(BALANCE_UPD) else {
+            panic!()
+        };
         assert_eq!(d.asset, "BTC");
         assert_eq!(d.delta_scaled, 10_000_000_000); // 100 * 10^8
-        assert_eq!(d.event_time_ns,       1573200697110 * 1_000_000);
+        assert_eq!(d.event_time_ns, 1573200697110 * 1_000_000);
         assert_eq!(d.transaction_time_ns, 1573200697068 * 1_000_000);
     }
 
@@ -704,7 +761,12 @@ mod tests {
         let json = r#"{"e":"listStatus","E":1234567890000}"#;
         let raw = parse_raw(json.as_bytes()).unwrap();
         let ev = norm().normalize(raw).unwrap();
-        assert_eq!(ev, NormalizedEvent::Unknown { event_type: "listStatus".to_string() });
+        assert_eq!(
+            ev,
+            NormalizedEvent::Unknown {
+                event_type: "listStatus".to_string()
+            }
+        );
     }
 
     // -----------------------------------------------------------------------

@@ -83,7 +83,10 @@ pub enum SmStatus {
 
 impl SmStatus {
     pub fn is_terminal(self) -> bool {
-        matches!(self, Self::Filled | Self::Cancelled | Self::Rejected | Self::Expired)
+        matches!(
+            self,
+            Self::Filled | Self::Cancelled | Self::Rejected | Self::Expired
+        )
     }
 
     /// True when the order is live and accepting fills.
@@ -95,14 +98,14 @@ impl SmStatus {
 impl std::fmt::Display for SmStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::Pending         => "Pending",
-            Self::New             => "New",
+            Self::Pending => "Pending",
+            Self::New => "New",
             Self::PartiallyFilled => "PartiallyFilled",
-            Self::UnknownStatus   => "UnknownStatus",
-            Self::Filled          => "Filled",
-            Self::Cancelled       => "Cancelled",
-            Self::Rejected        => "Rejected",
-            Self::Expired         => "Expired",
+            Self::UnknownStatus => "UnknownStatus",
+            Self::Filled => "Filled",
+            Self::Cancelled => "Cancelled",
+            Self::Rejected => "Rejected",
+            Self::Expired => "Expired",
         })
     }
 }
@@ -118,7 +121,12 @@ pub enum SmInput {
     Acknowledged { exchange_id: u64, now_ns: i64 },
 
     /// A fill execution report arrived from the exchange.
-    FillReceived { trade_id: u64, fill_qty: i64, fill_price: i64, now_ns: i64 },
+    FillReceived {
+        trade_id: u64,
+        fill_qty: i64,
+        fill_price: i64,
+        now_ns: i64,
+    },
 
     /// Exchange confirmed the cancel (CANCELED status on WS or REST).
     CancelConfirmed { now_ns: i64 },
@@ -131,7 +139,10 @@ pub enum SmInput {
 
     /// Result of a REST `GET /api/v3/order` status check, triggered by the
     /// unknown-status timeout path.
-    StatusCheckResult { outcome: StatusCheckOutcome, now_ns: i64 },
+    StatusCheckResult {
+        outcome: StatusCheckOutcome,
+        now_ns: i64,
+    },
 }
 
 /// Outcome of a REST order status check.
@@ -140,7 +151,10 @@ pub enum StatusCheckOutcome {
     /// Exchange reports the order is NEW / PARTIALLY_FILLED — still live.
     Live { exchange_id: u64 },
     /// Exchange reports the order is fully filled.
-    Filled { exchange_id: u64, fills: Vec<(u64, i64, i64)> },
+    Filled {
+        exchange_id: u64,
+        fills: Vec<(u64, i64, i64)>,
+    },
     /// Exchange reports the order is cancelled.
     Cancelled { exchange_id: u64 },
     /// Exchange reports the order was rejected (e.g. PRICE_FILTER, MIN_NOTIONAL).
@@ -195,16 +209,16 @@ pub enum SmError {
 
 #[derive(Debug, Clone)]
 struct BufferedFill {
-    fill_qty:   i64,
+    fill_qty: i64,
     fill_price: i64,
 }
 
 struct OrderSm {
-    cloid:          ClientOrderId,
-    status:         SmStatus,
-    total_qty:      i64,
-    filled_qty:     i64,
-    submitted_ns:   i64,
+    cloid: ClientOrderId,
+    status: SmStatus,
+    total_qty: i64,
+    filled_qty: i64,
+    submitted_ns: i64,
     buffered_fills: Vec<BufferedFill>,
     seen_trade_ids: HashSet<u64>,
 }
@@ -213,9 +227,9 @@ impl OrderSm {
     fn new(cloid: ClientOrderId, total_qty: i64, submitted_ns: i64) -> Self {
         Self {
             cloid,
-            status:         SmStatus::Pending,
+            status: SmStatus::Pending,
             total_qty,
-            filled_qty:     0,
+            filled_qty: 0,
             submitted_ns,
             buffered_fills: Vec::new(),
             seen_trade_ids: HashSet::new(),
@@ -247,7 +261,10 @@ impl OrderSm {
                 let fills: Vec<_> = std::mem::take(&mut self.buffered_fills);
                 for f in fills {
                     self.filled_qty += f.fill_qty;
-                    actions.push(SmAction::ApplyFill { fill_qty: f.fill_qty, fill_price: f.fill_price });
+                    actions.push(SmAction::ApplyFill {
+                        fill_qty: f.fill_qty,
+                        fill_price: f.fill_price,
+                    });
                 }
                 self.status = if self.filled_qty >= self.total_qty {
                     SmStatus::Filled
@@ -259,13 +276,21 @@ impl OrderSm {
                 actions
             }
 
-            SmInput::FillReceived { trade_id, fill_qty, fill_price, .. } => {
+            SmInput::FillReceived {
+                trade_id,
+                fill_qty,
+                fill_price,
+                ..
+            } => {
                 if self.seen_trade_ids.contains(&trade_id) {
                     return vec![SmAction::Ignored];
                 }
                 self.seen_trade_ids.insert(trade_id);
                 // Buffer: cannot apply to gateway without prior ACK.
-                self.buffered_fills.push(BufferedFill { fill_qty, fill_price });
+                self.buffered_fills.push(BufferedFill {
+                    fill_qty,
+                    fill_price,
+                });
                 // Return empty — no gateway action yet; fill will be applied on ACK.
                 vec![]
             }
@@ -289,7 +314,12 @@ impl OrderSm {
 
     fn process_live(&mut self, input: SmInput) -> Vec<SmAction> {
         match input {
-            SmInput::FillReceived { trade_id, fill_qty, fill_price, .. } => {
+            SmInput::FillReceived {
+                trade_id,
+                fill_qty,
+                fill_price,
+                ..
+            } => {
                 if self.seen_trade_ids.contains(&trade_id) {
                     return vec![SmAction::Ignored];
                 }
@@ -300,7 +330,10 @@ impl OrderSm {
                 } else {
                     SmStatus::PartiallyFilled
                 };
-                vec![SmAction::ApplyFill { fill_qty, fill_price }]
+                vec![SmAction::ApplyFill {
+                    fill_qty,
+                    fill_price,
+                }]
             }
 
             SmInput::CancelConfirmed { .. } => {
@@ -337,7 +370,10 @@ impl OrderSm {
                 let fills: Vec<_> = std::mem::take(&mut self.buffered_fills);
                 for f in fills {
                     self.filled_qty += f.fill_qty;
-                    actions.push(SmAction::ApplyFill { fill_qty: f.fill_qty, fill_price: f.fill_price });
+                    actions.push(SmAction::ApplyFill {
+                        fill_qty: f.fill_qty,
+                        fill_price: f.fill_price,
+                    });
                 }
                 self.status = if self.filled_qty >= self.total_qty {
                     SmStatus::Filled
@@ -350,12 +386,20 @@ impl OrderSm {
             }
 
             // Buffer fills received while the REST check is in flight.
-            SmInput::FillReceived { trade_id, fill_qty, fill_price, .. } => {
+            SmInput::FillReceived {
+                trade_id,
+                fill_qty,
+                fill_price,
+                ..
+            } => {
                 if self.seen_trade_ids.contains(&trade_id) {
                     return vec![SmAction::Ignored];
                 }
                 self.seen_trade_ids.insert(trade_id);
-                self.buffered_fills.push(BufferedFill { fill_qty, fill_price });
+                self.buffered_fills.push(BufferedFill {
+                    fill_qty,
+                    fill_price,
+                });
                 vec![]
             }
 
@@ -379,7 +423,10 @@ impl OrderSm {
                 let fills: Vec<_> = std::mem::take(&mut self.buffered_fills);
                 for f in fills {
                     self.filled_qty += f.fill_qty;
-                    actions.push(SmAction::ApplyFill { fill_qty: f.fill_qty, fill_price: f.fill_price });
+                    actions.push(SmAction::ApplyFill {
+                        fill_qty: f.fill_qty,
+                        fill_price: f.fill_price,
+                    });
                 }
                 self.status = if self.filled_qty >= self.total_qty {
                     SmStatus::Filled
@@ -399,14 +446,20 @@ impl OrderSm {
                     if !self.seen_trade_ids.contains(&trade_id) {
                         self.seen_trade_ids.insert(trade_id);
                         self.filled_qty += fill_qty;
-                        actions.push(SmAction::ApplyFill { fill_qty, fill_price });
+                        actions.push(SmAction::ApplyFill {
+                            fill_qty,
+                            fill_price,
+                        });
                     }
                 }
                 // Also flush any WS fills buffered while in UnknownStatus.
                 let pending: Vec<_> = std::mem::take(&mut self.buffered_fills);
                 for f in pending {
                     self.filled_qty += f.fill_qty;
-                    actions.push(SmAction::ApplyFill { fill_qty: f.fill_qty, fill_price: f.fill_price });
+                    actions.push(SmAction::ApplyFill {
+                        fill_qty: f.fill_qty,
+                        fill_price: f.fill_price,
+                    });
                 }
                 self.status = SmStatus::Filled;
                 actions
@@ -451,7 +504,7 @@ impl OrderSm {
 /// One `StateMachineEngine` manages all in-flight orders for a single gateway
 /// instance.  It is single-threaded and synchronous; no locks or channels.
 pub struct StateMachineEngine {
-    orders:     HashMap<ClientOrderId, OrderSm>,
+    orders: HashMap<ClientOrderId, OrderSm>,
     timeout_ns: i64,
 }
 
@@ -471,7 +524,10 @@ impl StateMachineEngine {
     ///
     /// Useful in tests where 5 s is inconvenient.
     pub fn with_timeout_ns(timeout_ns: i64) -> Self {
-        Self { orders: HashMap::new(), timeout_ns }
+        Self {
+            orders: HashMap::new(),
+            timeout_ns,
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -485,7 +541,8 @@ impl StateMachineEngine {
     /// * `total_qty` — the original requested quantity; used to detect full fill.
     /// * `submitted_ns` — virtual/wall nanosecond timestamp of submission.
     pub fn track(&mut self, cloid: ClientOrderId, total_qty: i64, submitted_ns: i64) {
-        self.orders.insert(cloid.clone(), OrderSm::new(cloid, total_qty, submitted_ns));
+        self.orders
+            .insert(cloid.clone(), OrderSm::new(cloid, total_qty, submitted_ns));
     }
 
     /// Stop tracking an order (e.g. after it reaches a terminal state or is
@@ -508,9 +565,12 @@ impl StateMachineEngine {
         input: SmInput,
     ) -> Result<Vec<SmAction>, SmError> {
         // Take ownership so we can mutate and conditionally drop on terminal.
-        let mut sm = self.orders.remove(cloid).ok_or_else(|| SmError::OrderNotTracked {
-            cloid: cloid.to_string(),
-        })?;
+        let mut sm = self
+            .orders
+            .remove(cloid)
+            .ok_or_else(|| SmError::OrderNotTracked {
+                cloid: cloid.to_string(),
+            })?;
 
         let actions = sm.process_input(input);
 
@@ -562,13 +622,19 @@ impl StateMachineEngine {
     /// Number of fills buffered for `cloid` awaiting an ACK.
     #[cfg(test)]
     pub(crate) fn buffered_fill_count(&self, cloid: &ClientOrderId) -> usize {
-        self.orders.get(cloid).map(|sm| sm.buffered_fills.len()).unwrap_or(0)
+        self.orders
+            .get(cloid)
+            .map(|sm| sm.buffered_fills.len())
+            .unwrap_or(0)
     }
 
     /// Number of trade IDs seen for `cloid`.
     #[cfg(test)]
     pub(crate) fn seen_trade_id_count(&self, cloid: &ClientOrderId) -> usize {
-        self.orders.get(cloid).map(|sm| sm.seen_trade_ids.len()).unwrap_or(0)
+        self.orders
+            .get(cloid)
+            .map(|sm| sm.seen_trade_ids.len())
+            .unwrap_or(0)
     }
 }
 
@@ -592,7 +658,9 @@ mod tests {
         let n = CTR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut gen = ClientOrderIdGenerator::new(0);
         // Fast-forward the generator to produce a unique cloid per call.
-        for _ in 0..n { gen.next(); }
+        for _ in 0..n {
+            gen.next();
+        }
         gen.next()
     }
 
@@ -604,16 +672,33 @@ mod tests {
     }
 
     fn ack(exchange_id: u64) -> SmInput {
-        SmInput::Acknowledged { exchange_id, now_ns: 1 }
+        SmInput::Acknowledged {
+            exchange_id,
+            now_ns: 1,
+        }
     }
 
     fn fill(trade_id: u64, qty: i64, price: i64) -> SmInput {
-        SmInput::FillReceived { trade_id, fill_qty: qty, fill_price: price, now_ns: 1 }
+        SmInput::FillReceived {
+            trade_id,
+            fill_qty: qty,
+            fill_price: price,
+            now_ns: 1,
+        }
     }
 
-    fn cancel() -> SmInput { SmInput::CancelConfirmed { now_ns: 1 } }
-    fn reject(r: &str) -> SmInput { SmInput::Rejected { reason: r.into(), now_ns: 1 } }
-    fn expire() -> SmInput { SmInput::Expired { now_ns: 1 } }
+    fn cancel() -> SmInput {
+        SmInput::CancelConfirmed { now_ns: 1 }
+    }
+    fn reject(r: &str) -> SmInput {
+        SmInput::Rejected {
+            reason: r.into(),
+            now_ns: 1,
+        }
+    }
+    fn expire() -> SmInput {
+        SmInput::Expired { now_ns: 1 }
+    }
 
     // -----------------------------------------------------------------------
     // Basic lifecycle
@@ -639,8 +724,14 @@ mod tests {
         let (mut eng, cloid) = setup();
         eng.process(&cloid, ack(1)).unwrap();
         let actions = eng.process(&cloid, fill(1, 100, 50_000)).unwrap();
-        assert_eq!(actions, vec![SmAction::ApplyFill { fill_qty: 100, fill_price: 50_000 }]);
-        assert_eq!(eng.status(&cloid), None);  // auto-untracked
+        assert_eq!(
+            actions,
+            vec![SmAction::ApplyFill {
+                fill_qty: 100,
+                fill_price: 50_000
+            }]
+        );
+        assert_eq!(eng.status(&cloid), None); // auto-untracked
         assert!(!eng.is_tracked(&cloid));
     }
 
@@ -676,7 +767,12 @@ mod tests {
     fn reject_from_pending_transitions_to_rejected() {
         let (mut eng, cloid) = setup();
         let actions = eng.process(&cloid, reject("PRICE_FILTER")).unwrap();
-        assert_eq!(actions, vec![SmAction::ApplyReject { reason: "PRICE_FILTER".into() }]);
+        assert_eq!(
+            actions,
+            vec![SmAction::ApplyReject {
+                reason: "PRICE_FILTER".into()
+            }]
+        );
         assert!(!eng.is_tracked(&cloid));
     }
 
@@ -705,7 +801,10 @@ mod tests {
     fn fill_before_ack_is_buffered_not_applied() {
         let (mut eng, cloid) = setup();
         let actions = eng.process(&cloid, fill(1, 40, 50_000)).unwrap();
-        assert!(actions.is_empty(), "fill before ack must produce no gateway actions");
+        assert!(
+            actions.is_empty(),
+            "fill before ack must produce no gateway actions"
+        );
         assert_eq!(eng.status(&cloid), Some(SmStatus::Pending));
         assert_eq!(eng.buffered_fill_count(&cloid), 1);
     }
@@ -716,10 +815,16 @@ mod tests {
         eng.process(&cloid, fill(1, 40, 50_000)).unwrap();
 
         let actions = eng.process(&cloid, ack(99)).unwrap();
-        assert_eq!(actions, vec![
-            SmAction::ApplyAck { exchange_id: 99 },
-            SmAction::ApplyFill { fill_qty: 40, fill_price: 50_000 },
-        ]);
+        assert_eq!(
+            actions,
+            vec![
+                SmAction::ApplyAck { exchange_id: 99 },
+                SmAction::ApplyFill {
+                    fill_qty: 40,
+                    fill_price: 50_000
+                },
+            ]
+        );
         assert_eq!(eng.status(&cloid), Some(SmStatus::PartiallyFilled));
         assert_eq!(eng.buffered_fill_count(&cloid), 0);
     }
@@ -731,11 +836,20 @@ mod tests {
         eng.process(&cloid, fill(2, 30, 50_100)).unwrap();
 
         let actions = eng.process(&cloid, ack(1)).unwrap();
-        assert_eq!(actions, vec![
-            SmAction::ApplyAck { exchange_id: 1 },
-            SmAction::ApplyFill { fill_qty: 30, fill_price: 50_000 },
-            SmAction::ApplyFill { fill_qty: 30, fill_price: 50_100 },
-        ]);
+        assert_eq!(
+            actions,
+            vec![
+                SmAction::ApplyAck { exchange_id: 1 },
+                SmAction::ApplyFill {
+                    fill_qty: 30,
+                    fill_price: 50_000
+                },
+                SmAction::ApplyFill {
+                    fill_qty: 30,
+                    fill_price: 50_100
+                },
+            ]
+        );
         assert_eq!(eng.status(&cloid), Some(SmStatus::PartiallyFilled));
     }
 
@@ -746,7 +860,10 @@ mod tests {
         eng.process(&cloid, fill(2, 40, 50_100)).unwrap();
 
         eng.process(&cloid, ack(1)).unwrap();
-        assert!(!eng.is_tracked(&cloid), "full fill on ACK flush must auto-untrack");
+        assert!(
+            !eng.is_tracked(&cloid),
+            "full fill on ACK flush must auto-untrack"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -772,7 +889,11 @@ mod tests {
 
         let actions = eng.process(&cloid, fill(7, 30, 49_000)).unwrap();
         assert_eq!(actions, vec![SmAction::Ignored]);
-        assert_eq!(eng.buffered_fill_count(&cloid), 1, "only one fill should be buffered");
+        assert_eq!(
+            eng.buffered_fill_count(&cloid),
+            1,
+            "only one fill should be buffered"
+        );
         assert_eq!(eng.seen_trade_id_count(&cloid), 1);
     }
 
@@ -812,11 +933,11 @@ mod tests {
     #[test]
     fn tick_only_times_out_pending_orders_not_live() {
         let mut eng = engine();
-        let c_pending  = next_cloid();
-        let c_live     = next_cloid();
-        eng.track(c_pending.clone(),  100, 0);
-        eng.track(c_live.clone(),     100, 0);
-        eng.process(&c_live, ack(1)).unwrap();  // c_live is now New
+        let c_pending = next_cloid();
+        let c_live = next_cloid();
+        eng.track(c_pending.clone(), 100, 0);
+        eng.track(c_live.clone(), 100, 0);
+        eng.process(&c_live, ack(1)).unwrap(); // c_live is now New
 
         let result = eng.tick(TIMEOUT_NS + 1);
         assert_eq!(result.len(), 1);
@@ -843,10 +964,16 @@ mod tests {
         eng.process(&cloid, fill(1, 30, 50_000)).unwrap(); // buffered
 
         let actions = eng.process(&cloid, ack(77)).unwrap();
-        assert_eq!(actions, vec![
-            SmAction::ApplyAck { exchange_id: 77 },
-            SmAction::ApplyFill { fill_qty: 30, fill_price: 50_000 },
-        ]);
+        assert_eq!(
+            actions,
+            vec![
+                SmAction::ApplyAck { exchange_id: 77 },
+                SmAction::ApplyFill {
+                    fill_qty: 30,
+                    fill_price: 50_000
+                },
+            ]
+        );
         assert_eq!(eng.status(&cloid), Some(SmStatus::PartiallyFilled));
     }
 
@@ -863,7 +990,9 @@ mod tests {
         let (mut eng, cloid) = setup();
         eng.tick(TIMEOUT_NS + 1);
 
-        let actions = eng.process(&cloid, check(StatusCheckOutcome::Live { exchange_id: 55 })).unwrap();
+        let actions = eng
+            .process(&cloid, check(StatusCheckOutcome::Live { exchange_id: 55 }))
+            .unwrap();
         assert_eq!(actions, vec![SmAction::ApplyAck { exchange_id: 55 }]);
         assert_eq!(eng.status(&cloid), Some(SmStatus::New));
     }
@@ -875,16 +1004,27 @@ mod tests {
         // trade_id=1 already buffered via WS.
         eng.process(&cloid, fill(1, 40, 50_000)).unwrap();
 
-        let actions = eng.process(&cloid, check(StatusCheckOutcome::Filled {
-            exchange_id: 88,
-            fills: vec![(1, 40, 50_000), (2, 60, 50_100)], // trade_id=1 is duplicate
-        })).unwrap();
+        let actions = eng
+            .process(
+                &cloid,
+                check(StatusCheckOutcome::Filled {
+                    exchange_id: 88,
+                    fills: vec![(1, 40, 50_000), (2, 60, 50_100)], // trade_id=1 is duplicate
+                }),
+            )
+            .unwrap();
 
         // Must deduplicate trade_id=1; apply trade_id=2 only (then flush the WS buffer).
         let expected = vec![
             SmAction::ApplyAck { exchange_id: 88 },
-            SmAction::ApplyFill { fill_qty: 60, fill_price: 50_100 }, // REST fill (trade_id=2)
-            SmAction::ApplyFill { fill_qty: 40, fill_price: 50_000 }, // buffered WS fill (trade_id=1)
+            SmAction::ApplyFill {
+                fill_qty: 60,
+                fill_price: 50_100,
+            }, // REST fill (trade_id=2)
+            SmAction::ApplyFill {
+                fill_qty: 40,
+                fill_price: 50_000,
+            }, // buffered WS fill (trade_id=1)
         ];
         assert_eq!(actions, expected);
         assert!(!eng.is_tracked(&cloid), "Filled → auto-untracked");
@@ -895,7 +1035,12 @@ mod tests {
         let (mut eng, cloid) = setup();
         eng.tick(TIMEOUT_NS + 1);
 
-        let actions = eng.process(&cloid, check(StatusCheckOutcome::Cancelled { exchange_id: 3 })).unwrap();
+        let actions = eng
+            .process(
+                &cloid,
+                check(StatusCheckOutcome::Cancelled { exchange_id: 3 }),
+            )
+            .unwrap();
         assert_eq!(actions, vec![SmAction::ApplyCancel]);
         assert!(!eng.is_tracked(&cloid));
     }
@@ -905,7 +1050,9 @@ mod tests {
         let (mut eng, cloid) = setup();
         eng.tick(TIMEOUT_NS + 1);
 
-        let actions = eng.process(&cloid, check(StatusCheckOutcome::NotFound)).unwrap();
+        let actions = eng
+            .process(&cloid, check(StatusCheckOutcome::NotFound))
+            .unwrap();
         assert!(matches!(actions[0], SmAction::ApplyReject { .. }));
         assert!(!eng.is_tracked(&cloid));
     }
@@ -915,7 +1062,14 @@ mod tests {
         let (mut eng, cloid) = setup();
         eng.tick(TIMEOUT_NS + 1);
 
-        let actions = eng.process(&cloid, check(StatusCheckOutcome::Error { reason: "timeout".into() })).unwrap();
+        let actions = eng
+            .process(
+                &cloid,
+                check(StatusCheckOutcome::Error {
+                    reason: "timeout".into(),
+                }),
+            )
+            .unwrap();
         assert_eq!(actions, vec![SmAction::ScheduleStatusCheck]);
         assert_eq!(eng.status(&cloid), Some(SmStatus::UnknownStatus)); // still in unknown
     }
@@ -984,7 +1138,7 @@ mod tests {
         eng.track(c2.clone(), 10, 0);
         assert_eq!(eng.order_count(), 2);
         eng.process(&c1, fill(1, 10, 100)).unwrap(); // pre-ack fill buffered
-        eng.process(&c1, ack(1)).unwrap();            // → Filled → untracked
+        eng.process(&c1, ack(1)).unwrap(); // → Filled → untracked
         assert_eq!(eng.order_count(), 1);
     }
 }

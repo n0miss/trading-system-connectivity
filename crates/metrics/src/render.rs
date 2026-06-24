@@ -124,9 +124,7 @@ mod tests {
         let mut out = String::new();
         write_histogram(&mut out, &h);
         // NUM_BOUNDS explicit buckets + 1 +Inf bucket
-        let bucket_lines = out.lines()
-            .filter(|l| l.contains("_bucket{"))
-            .count();
+        let bucket_lines = out.lines().filter(|l| l.contains("_bucket{")).count();
         assert_eq!(bucket_lines, NUM_BOUNDS + 1);
     }
 
@@ -141,8 +139,8 @@ mod tests {
     #[test]
     fn histogram_buckets_are_cumulative() {
         let h = Histogram::new("lat_ns", "help");
-        h.record(500);          // → bucket 0 (le=1000)
-        h.record(3_000);        // → bucket 1 (le=5000)
+        h.record(500); // → bucket 0 (le=1000)
+        h.record(3_000); // → bucket 1 (le=5000)
         let mut out = String::new();
         write_histogram(&mut out, &h);
         // le=1000 bucket should show 1 (just the 500ns sample)

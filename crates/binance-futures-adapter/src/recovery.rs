@@ -15,7 +15,6 @@
 /// `prev_final` is `delta.prev_update_id` — set to the `pu` field by the
 /// normalizer (§5.22).  In Bridging state `prev_final` is ignored; it only
 /// matters once the validator transitions to Active.
-
 use connector_core::InstrumentDefinition;
 use connector_order_book::OrderBook;
 use connector_refdata::{RefDataError, RestClient};
@@ -40,8 +39,8 @@ pub enum RecoveryError {
 #[derive(Debug, Clone, Copy)]
 pub struct RecoveryOutcome {
     pub snapshot_id: u64,
-    pub replayed:    usize,
-    pub discarded:   usize,
+    pub replayed: usize,
+    pub discarded: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -51,9 +50,9 @@ pub struct RecoveryOutcome {
 /// Apply a pre-fetched REST depth snapshot to `book`, reinitialise `validator`,
 /// and replay any buffered deltas whose `final_update_id > snapshot.update_id`.
 pub fn apply_futures_snapshot(
-    snapshot:     &connector_core::BookSnapshot,
-    book:         &mut OrderBook,
-    validator:    &mut FuturesSequenceValidator,
+    snapshot: &connector_core::BookSnapshot,
+    book: &mut OrderBook,
+    validator: &mut FuturesSequenceValidator,
     recovery_buf: &mut RecoveryBuffer,
 ) -> Result<RecoveryOutcome, RecoveryError> {
     let snapshot_id = snapshot.update_id;
@@ -63,12 +62,12 @@ pub fn apply_futures_snapshot(
 
     let candidates = recovery_buf.drain_after(snapshot_id);
 
-    let mut replayed  = 0_usize;
+    let mut replayed = 0_usize;
     let mut discarded = 0_usize;
 
     for buffered in candidates {
-        let first      = buffered.delta.first_update_id;
-        let final_     = buffered.delta.final_update_id;
+        let first = buffered.delta.first_update_id;
+        let final_ = buffered.delta.final_update_id;
         let prev_final = buffered.delta.prev_update_id; // = pu, set by normalizer
 
         match validator.validate(first, final_, prev_final) {
@@ -79,8 +78,15 @@ pub fn apply_futures_snapshot(
             ValidateResult::Discard => {
                 discarded += 1;
             }
-            ValidateResult::Gap { expected_pu, actual_pu, .. } => {
-                return Err(RecoveryError::GapInReplay { expected_pu, actual_pu });
+            ValidateResult::Gap {
+                expected_pu,
+                actual_pu,
+                ..
+            } => {
+                return Err(RecoveryError::GapInReplay {
+                    expected_pu,
+                    actual_pu,
+                });
             }
             ValidateResult::Buffering => {
                 discarded += 1;
@@ -90,7 +96,11 @@ pub fn apply_futures_snapshot(
 
     book.mark_recovered();
 
-    Ok(RecoveryOutcome { snapshot_id, replayed, discarded })
+    Ok(RecoveryOutcome {
+        snapshot_id,
+        replayed,
+        discarded,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -98,11 +108,11 @@ pub fn apply_futures_snapshot(
 // ---------------------------------------------------------------------------
 
 pub async fn run_futures_recovery(
-    rest:         &RestClient,
-    inst:         &InstrumentDefinition,
-    recv_ts:      i64,
-    book:         &mut OrderBook,
-    validator:    &mut FuturesSequenceValidator,
+    rest: &RestClient,
+    inst: &InstrumentDefinition,
+    recv_ts: i64,
+    book: &mut OrderBook,
+    validator: &mut FuturesSequenceValidator,
     recovery_buf: &mut RecoveryBuffer,
 ) -> Result<RecoveryOutcome, RecoveryError> {
     let snapshot = rest.fetch_futures_depth_snapshot(inst, recv_ts).await?;

@@ -153,7 +153,9 @@ pub enum RawUserDataEvent {
     ///
     /// Stored so callers can log or metric on unknown event types without
     /// losing the type string.
-    Unknown { event_type: String },
+    Unknown {
+        event_type: String,
+    },
 }
 
 /// Parse one JSON message received from the Binance user data WebSocket.
@@ -170,15 +172,15 @@ pub fn parse(bytes: &[u8]) -> Result<RawUserDataEvent, ParseError> {
     }
     let disc: Discriminant = serde_json::from_slice(bytes)?;
     match disc.e.as_str() {
-        "executionReport" => {
-            Ok(RawUserDataEvent::ExecutionReport(serde_json::from_slice(bytes)?))
-        }
-        "outboundAccountPosition" => {
-            Ok(RawUserDataEvent::OutboundAccountPosition(serde_json::from_slice(bytes)?))
-        }
-        "balanceUpdate" => {
-            Ok(RawUserDataEvent::BalanceUpdate(serde_json::from_slice(bytes)?))
-        }
+        "executionReport" => Ok(RawUserDataEvent::ExecutionReport(serde_json::from_slice(
+            bytes,
+        )?)),
+        "outboundAccountPosition" => Ok(RawUserDataEvent::OutboundAccountPosition(
+            serde_json::from_slice(bytes)?,
+        )),
+        "balanceUpdate" => Ok(RawUserDataEvent::BalanceUpdate(serde_json::from_slice(
+            bytes,
+        )?)),
         _ => Ok(RawUserDataEvent::Unknown { event_type: disc.e }),
     }
 }
@@ -256,7 +258,9 @@ mod tests {
     #[test]
     fn parse_execution_report_new() {
         let ev = parse(NEW_EXEC_REPORT.as_bytes()).unwrap();
-        let RawUserDataEvent::ExecutionReport(rep) = ev else { panic!("expected ExecutionReport") };
+        let RawUserDataEvent::ExecutionReport(rep) = ev else {
+            panic!("expected ExecutionReport")
+        };
         assert_eq!(rep.symbol, "BTCUSDT");
         assert_eq!(rep.client_order_id, "cc-0001-0000000000000042");
         assert_eq!(rep.side_raw, "BUY");
@@ -273,7 +277,9 @@ mod tests {
     #[test]
     fn parse_execution_report_trade() {
         let ev = parse(TRADE_EXEC_REPORT.as_bytes()).unwrap();
-        let RawUserDataEvent::ExecutionReport(rep) = ev else { panic!("expected ExecutionReport") };
+        let RawUserDataEvent::ExecutionReport(rep) = ev else {
+            panic!("expected ExecutionReport")
+        };
         assert_eq!(rep.exec_type_raw, "TRADE");
         assert_eq!(rep.order_status_raw, "FILLED");
         assert_eq!(rep.trade_id, 9876543);
@@ -286,7 +292,9 @@ mod tests {
     #[test]
     fn parse_execution_report_canceled() {
         let ev = parse(CANCELED_EXEC_REPORT.as_bytes()).unwrap();
-        let RawUserDataEvent::ExecutionReport(rep) = ev else { panic!("expected ExecutionReport") };
+        let RawUserDataEvent::ExecutionReport(rep) = ev else {
+            panic!("expected ExecutionReport")
+        };
         assert_eq!(rep.exec_type_raw, "CANCELED");
         assert_eq!(rep.side_raw, "SELL");
         assert_eq!(rep.trade_id, -1);
@@ -295,7 +303,9 @@ mod tests {
     #[test]
     fn parse_execution_report_rejected() {
         let ev = parse(REJECTED_EXEC_REPORT.as_bytes()).unwrap();
-        let RawUserDataEvent::ExecutionReport(rep) = ev else { panic!("expected ExecutionReport") };
+        let RawUserDataEvent::ExecutionReport(rep) = ev else {
+            panic!("expected ExecutionReport")
+        };
         assert_eq!(rep.exec_type_raw, "REJECTED");
         assert_eq!(rep.reject_reason_raw, "PRICE_FILTER");
         assert_eq!(rep.trade_id, -1);
@@ -311,7 +321,7 @@ mod tests {
         assert_eq!(pos.last_update_ms, 1564034571073);
         assert_eq!(pos.balances.len(), 2);
         assert_eq!(pos.balances[0].asset, "ETH");
-        assert_eq!(pos.balances[0].free,   "10.50000000");
+        assert_eq!(pos.balances[0].free, "10.50000000");
         assert_eq!(pos.balances[0].locked, "0.00000000");
         assert_eq!(pos.balances[1].asset, "BTC");
         assert_eq!(pos.balances[1].locked, "0.00050000");
@@ -320,7 +330,9 @@ mod tests {
     #[test]
     fn parse_balance_update() {
         let ev = parse(BALANCE_UPDATE.as_bytes()).unwrap();
-        let RawUserDataEvent::BalanceUpdate(upd) = ev else { panic!("expected BalanceUpdate") };
+        let RawUserDataEvent::BalanceUpdate(upd) = ev else {
+            panic!("expected BalanceUpdate")
+        };
         assert_eq!(upd.asset, "BTC");
         assert_eq!(upd.delta_raw, "100.00000000");
         assert_eq!(upd.event_time_ms, 1573200697110);
@@ -331,7 +343,12 @@ mod tests {
     fn parse_unknown_event_type() {
         let json = r#"{"e":"listStatus","E":1234567890000,"s":"BTCUSDT"}"#;
         let ev = parse(json.as_bytes()).unwrap();
-        assert_eq!(ev, RawUserDataEvent::Unknown { event_type: "listStatus".to_string() });
+        assert_eq!(
+            ev,
+            RawUserDataEvent::Unknown {
+                event_type: "listStatus".to_string()
+            }
+        );
     }
 
     #[test]

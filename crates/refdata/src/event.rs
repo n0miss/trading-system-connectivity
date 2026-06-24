@@ -16,14 +16,14 @@ use connector_core::{
 pub enum RefDataEvent {
     /// The symbol was seen for the first time in this session.
     Added {
-        def:    InstrumentDefinition,
+        def: InstrumentDefinition,
         /// Initial trading status (always present for new symbols).
         status: TradingStatus,
     },
     /// The symbol already existed and ≥1 business field changed.
     Updated {
-        old:    InstrumentDefinition,
-        new:    InstrumentDefinition,
+        old: InstrumentDefinition,
+        new: InstrumentDefinition,
         /// `Some` only when `is_trading` changed; `None` for other field changes.
         status: Option<TradingStatus>,
     },
@@ -33,7 +33,7 @@ impl RefDataEvent {
     /// The current (new or initial) [`InstrumentDefinition`].
     pub fn definition(&self) -> &InstrumentDefinition {
         match self {
-            Self::Added   { def, .. } => def,
+            Self::Added { def, .. } => def,
             Self::Updated { new, .. } => new,
         }
     }
@@ -47,7 +47,7 @@ impl RefDataEvent {
     /// [`Updated`]: RefDataEvent::Updated
     pub fn trading_status(&self) -> Option<&TradingStatus> {
         match self {
-            Self::Added   { status, .. } => Some(status),
+            Self::Added { status, .. } => Some(status),
             Self::Updated { status, .. } => status.as_ref(),
         }
     }
@@ -65,7 +65,7 @@ impl RefDataEvent {
     /// `true` when `is_trading` changed (always `true` for `Added` events).
     pub fn trading_changed(&self) -> bool {
         match self {
-            Self::Added   { .. }           => true,
+            Self::Added { .. } => true,
             Self::Updated { old, new, .. } => old.is_trading != new.is_trading,
         }
     }
@@ -80,20 +80,20 @@ impl RefDataEvent {
 pub(crate) fn make_trading_status(def: &InstrumentDefinition, seq: u64) -> TradingStatus {
     TradingStatus {
         header: MessageHeader {
-            schema_version:    SCHEMA_VERSION,
-            message_type:      MessageType::TradingStatus,
-            venue_id:          def.header.venue_id,
-            market_type:       def.header.market_type,
-            instrument_id:     def.header.instrument_id,
-            connection_id:     0,
-            instance_id:       def.header.instance_id,
-            sequence_number:   seq,
+            schema_version: SCHEMA_VERSION,
+            message_type: MessageType::TradingStatus,
+            venue_id: def.header.venue_id,
+            market_type: def.header.market_type,
+            instrument_id: def.header.instrument_id,
+            connection_id: 0,
+            instance_id: def.header.instance_id,
+            sequence_number: seq,
             exchange_event_ts: TS_NONE,
-            exchange_tx_ts:    TS_NONE,
-            local_recv_ts:     TS_NONE,
-            local_publish_ts:  TS_NONE,
+            exchange_tx_ts: TS_NONE,
+            local_recv_ts: TS_NONE,
+            local_publish_ts: TS_NONE,
         },
-        symbol:     def.symbol.clone(),
+        symbol: def.symbol.clone(),
         is_trading: def.is_trading,
     }
 }
@@ -103,16 +103,16 @@ pub(crate) fn make_trading_status(def: &InstrumentDefinition, seq: u64) -> Tradi
 /// The `header` field is deliberately excluded — it changes on every REST fetch
 /// (sequence number, timestamps) and does not represent a meaningful change.
 pub(crate) fn business_fields_differ(a: &InstrumentDefinition, b: &InstrumentDefinition) -> bool {
-    a.base_asset    != b.base_asset    ||
-    a.quote_asset   != b.quote_asset   ||
-    a.price_scale   != b.price_scale   ||
-    a.qty_scale     != b.qty_scale     ||
-    a.tick_size     != b.tick_size     ||
-    a.step_size     != b.step_size     ||
-    a.min_qty       != b.min_qty       ||
-    a.min_notional  != b.min_notional  ||
-    a.contract_size != b.contract_size ||
-    a.is_trading    != b.is_trading
+    a.base_asset != b.base_asset
+        || a.quote_asset != b.quote_asset
+        || a.price_scale != b.price_scale
+        || a.qty_scale != b.qty_scale
+        || a.tick_size != b.tick_size
+        || a.step_size != b.step_size
+        || a.min_qty != b.min_qty
+        || a.min_notional != b.min_notional
+        || a.contract_size != b.contract_size
+        || a.is_trading != b.is_trading
 }
 
 // ---------------------------------------------------------------------------
@@ -122,34 +122,34 @@ pub(crate) fn business_fields_differ(a: &InstrumentDefinition, b: &InstrumentDef
 #[cfg(test)]
 mod tests {
     use super::*;
-    use connector_core::{MarketType, MessageType, VenueId, SCHEMA_VERSION, TS_NONE};
     use connector_core::MessageHeader;
+    use connector_core::{MarketType, MessageType, VenueId, SCHEMA_VERSION, TS_NONE};
 
     fn make_def(symbol: &str, is_trading: bool, tick_size: i64) -> InstrumentDefinition {
         InstrumentDefinition {
             header: MessageHeader {
-                schema_version:    SCHEMA_VERSION,
-                message_type:      MessageType::InstrumentDefinition,
-                venue_id:          VenueId::BinanceSpot,
-                market_type:       MarketType::Spot,
-                instrument_id:     42,
-                connection_id:     0,
-                instance_id:       1,
-                sequence_number:   0,
+                schema_version: SCHEMA_VERSION,
+                message_type: MessageType::InstrumentDefinition,
+                venue_id: VenueId::BinanceSpot,
+                market_type: MarketType::Spot,
+                instrument_id: 42,
+                connection_id: 0,
+                instance_id: 1,
+                sequence_number: 0,
                 exchange_event_ts: TS_NONE,
-                exchange_tx_ts:    TS_NONE,
-                local_recv_ts:     TS_NONE,
-                local_publish_ts:  TS_NONE,
+                exchange_tx_ts: TS_NONE,
+                local_recv_ts: TS_NONE,
+                local_publish_ts: TS_NONE,
             },
-            symbol:        symbol.to_string(),
-            base_asset:    "BTC".to_string(),
-            quote_asset:   "USDT".to_string(),
-            price_scale:   2,
-            qty_scale:     3,
+            symbol: symbol.to_string(),
+            base_asset: "BTC".to_string(),
+            quote_asset: "USDT".to_string(),
+            price_scale: 2,
+            qty_scale: 3,
             tick_size,
-            step_size:     10,
-            min_qty:       10,
-            min_notional:  10_000,
+            step_size: 10,
+            min_qty: 10,
+            min_notional: 10_000,
             contract_size: 0,
             is_trading,
         }
@@ -161,7 +161,10 @@ mod tests {
     fn added_definition_returns_the_def() {
         let def = make_def("BTCUSDT", true, 100);
         let status = make_trading_status(&def, 0);
-        let event = RefDataEvent::Added { def: def.clone(), status };
+        let event = RefDataEvent::Added {
+            def: def.clone(),
+            status,
+        };
         assert_eq!(event.definition().symbol, "BTCUSDT");
         assert!(event.is_added());
         assert!(!event.is_updated());
@@ -172,7 +175,11 @@ mod tests {
     fn updated_definition_returns_new_def() {
         let old = make_def("BTCUSDT", true, 100);
         let new = make_def("BTCUSDT", true, 200);
-        let event = RefDataEvent::Updated { old, new, status: None };
+        let event = RefDataEvent::Updated {
+            old,
+            new,
+            status: None,
+        };
         assert_eq!(event.definition().tick_size, 200);
         assert!(event.is_updated());
         assert!(!event.is_added());
@@ -191,7 +198,11 @@ mod tests {
         let old = make_def("BTCUSDT", true, 100);
         let new = make_def("BTCUSDT", false, 100);
         let ts = make_trading_status(&new, 1);
-        let event = RefDataEvent::Updated { old, new, status: Some(ts) };
+        let event = RefDataEvent::Updated {
+            old,
+            new,
+            status: Some(ts),
+        };
         assert!(event.trading_status().is_some());
         assert!(event.trading_changed());
         assert!(!event.trading_status().unwrap().is_trading);
@@ -201,7 +212,11 @@ mod tests {
     fn trading_status_none_when_only_non_status_field_changed() {
         let old = make_def("BTCUSDT", true, 100);
         let new = make_def("BTCUSDT", true, 200);
-        let event = RefDataEvent::Updated { old, new, status: None };
+        let event = RefDataEvent::Updated {
+            old,
+            new,
+            status: None,
+        };
         assert!(event.trading_status().is_none());
         assert!(!event.trading_changed());
     }
@@ -243,12 +258,12 @@ mod tests {
     fn trading_status_inherits_venue_from_def_header() {
         let def = make_def("BTCUSDT", true, 100);
         let ts = make_trading_status(&def, 7);
-        assert_eq!(ts.header.venue_id,        VenueId::BinanceSpot);
-        assert_eq!(ts.header.market_type,      MarketType::Spot);
-        assert_eq!(ts.header.instance_id,      1);
-        assert_eq!(ts.header.instrument_id,    42);
-        assert_eq!(ts.header.sequence_number,  7);
-        assert_eq!(ts.header.message_type,     MessageType::TradingStatus);
+        assert_eq!(ts.header.venue_id, VenueId::BinanceSpot);
+        assert_eq!(ts.header.market_type, MarketType::Spot);
+        assert_eq!(ts.header.instance_id, 1);
+        assert_eq!(ts.header.instrument_id, 42);
+        assert_eq!(ts.header.sequence_number, 7);
+        assert_eq!(ts.header.message_type, MessageType::TradingStatus);
         assert_eq!(ts.symbol, "BTCUSDT");
         assert!(ts.is_trading);
     }

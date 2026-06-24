@@ -14,7 +14,6 @@
 /// This module exposes two types:
 /// * [`OfferOutcome`] — the result of one `try_offer` call.
 /// * [`BackpressureGuard`] — per-publication state machine.
-
 use tracing::warn;
 
 use crate::publication::{OfferResult, Publication};
@@ -207,8 +206,8 @@ impl BackpressureGuard {
     /// [`try_offer`]: BackpressureGuard::try_offer
     pub fn try_offer_at<P: Publication>(
         &mut self,
-        pub_:   &mut P,
-        bytes:  &[u8],
+        pub_: &mut P,
+        bytes: &[u8],
         now_ns: i64,
     ) -> OfferOutcome {
         match pub_.offer(bytes) {
@@ -222,7 +221,7 @@ impl BackpressureGuard {
             // block indefinitely.
             OfferResult::BackPressured | OfferResult::AdminAction => {
                 // Record the start of this window on the first failure.
-                let start   = *self.bp_start_ns.get_or_insert(now_ns);
+                let start = *self.bp_start_ns.get_or_insert(now_ns);
                 let elapsed = now_ns.saturating_sub(start);
 
                 if elapsed >= self.restart_ns {
@@ -234,8 +233,8 @@ impl BackpressureGuard {
                 } else if elapsed >= self.warn_ns {
                     if !self.warned {
                         warn!(
-                            elapsed_ns           = elapsed,
-                            warn_threshold_ns    = self.warn_ns,
+                            elapsed_ns = elapsed,
+                            warn_threshold_ns = self.warn_ns,
                             degrade_threshold_ns = self.degrade_ns,
                             restart_threshold_ns = self.restart_ns,
                             "Aeron back-pressure exceeded warn threshold",
@@ -267,7 +266,7 @@ impl BackpressureGuard {
     /// attempting the next message.
     pub fn reset(&mut self) {
         self.bp_start_ns = None;
-        self.warned      = false;
+        self.warned = false;
     }
 
     /// `true` when the guard is currently tracking a back-pressure window.
@@ -284,7 +283,9 @@ impl BackpressureGuard {
 }
 
 impl Default for BackpressureGuard {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -303,34 +304,56 @@ mod tests {
     /// Always returns BackPressured.
     struct AlwaysBP;
     impl Publication for AlwaysBP {
-        fn offer(&mut self, _: &[u8]) -> OfferResult { OfferResult::BackPressured }
-        fn is_connected(&self) -> bool { true }
+        fn offer(&mut self, _: &[u8]) -> OfferResult {
+            OfferResult::BackPressured
+        }
+        fn is_connected(&self) -> bool {
+            true
+        }
     }
 
     /// Always returns AdminAction.
     struct AlwaysAdmin;
     impl Publication for AlwaysAdmin {
-        fn offer(&mut self, _: &[u8]) -> OfferResult { OfferResult::AdminAction }
-        fn is_connected(&self) -> bool { true }
+        fn offer(&mut self, _: &[u8]) -> OfferResult {
+            OfferResult::AdminAction
+        }
+        fn is_connected(&self) -> bool {
+            true
+        }
     }
 
     /// Always returns Closed.
     struct AlwaysClosed;
     impl Publication for AlwaysClosed {
-        fn offer(&mut self, _: &[u8]) -> OfferResult { OfferResult::Closed }
-        fn is_connected(&self) -> bool { false }
+        fn offer(&mut self, _: &[u8]) -> OfferResult {
+            OfferResult::Closed
+        }
+        fn is_connected(&self) -> bool {
+            false
+        }
     }
 
     /// Returns MaxPositionExceeded.
     struct AlwaysMaxPos;
     impl Publication for AlwaysMaxPos {
-        fn offer(&mut self, _: &[u8]) -> OfferResult { OfferResult::MaxPositionExceeded }
-        fn is_connected(&self) -> bool { true }
+        fn offer(&mut self, _: &[u8]) -> OfferResult {
+            OfferResult::MaxPositionExceeded
+        }
+        fn is_connected(&self) -> bool {
+            true
+        }
     }
 
     /// Fails for the first `fail_count` calls, then succeeds at position `fail_count + 1`.
-    struct FailThenOk { remaining: u32 }
-    impl FailThenOk { fn new(n: u32) -> Self { Self { remaining: n } } }
+    struct FailThenOk {
+        remaining: u32,
+    }
+    impl FailThenOk {
+        fn new(n: u32) -> Self {
+            Self { remaining: n }
+        }
+    }
     impl Publication for FailThenOk {
         fn offer(&mut self, _: &[u8]) -> OfferResult {
             if self.remaining > 0 {
@@ -340,10 +363,14 @@ mod tests {
                 OfferResult::Ok(42)
             }
         }
-        fn is_connected(&self) -> bool { true }
+        fn is_connected(&self) -> bool {
+            true
+        }
     }
 
-    fn guard() -> BackpressureGuard { BackpressureGuard::new() }
+    fn guard() -> BackpressureGuard {
+        BackpressureGuard::new()
+    }
 
     // -----------------------------------------------------------------------
     // OfferOutcome helpers
@@ -446,7 +473,7 @@ mod tests {
         let mut g = guard();
         let mut p = AlwaysBP;
         g.try_offer_at(&mut p, b"x", 0); // starts window
-        // exactly 100µs elapsed
+                                         // exactly 100µs elapsed
         assert_eq!(g.try_offer_at(&mut p, b"x", 100_000), OfferOutcome::Warned);
     }
 
@@ -456,7 +483,7 @@ mod tests {
         let mut p = AlwaysBP;
         g.try_offer_at(&mut p, b"x", 0);
         g.try_offer_at(&mut p, b"x", 100_000); // first Warned
-        // second call at same elapsed — still Warned, warn not re-logged
+                                               // second call at same elapsed — still Warned, warn not re-logged
         assert_eq!(g.try_offer_at(&mut p, b"x", 100_000), OfferOutcome::Warned);
     }
 
@@ -465,7 +492,10 @@ mod tests {
         let mut g = guard();
         let mut p = AlwaysBP;
         g.try_offer_at(&mut p, b"x", 0);
-        assert_eq!(g.try_offer_at(&mut p, b"x", 1_000_000), OfferOutcome::Degrade);
+        assert_eq!(
+            g.try_offer_at(&mut p, b"x", 1_000_000),
+            OfferOutcome::Degrade
+        );
     }
 
     #[test]
@@ -473,7 +503,10 @@ mod tests {
         let mut g = guard();
         let mut p = AlwaysBP;
         g.try_offer_at(&mut p, b"x", 0);
-        assert_eq!(g.try_offer_at(&mut p, b"x", 5_000_000), OfferOutcome::Degrade);
+        assert_eq!(
+            g.try_offer_at(&mut p, b"x", 5_000_000),
+            OfferOutcome::Degrade
+        );
     }
 
     #[test]
@@ -481,7 +514,10 @@ mod tests {
         let mut g = guard();
         let mut p = AlwaysBP;
         g.try_offer_at(&mut p, b"x", 0);
-        assert_eq!(g.try_offer_at(&mut p, b"x", 10_000_000), OfferOutcome::Restart);
+        assert_eq!(
+            g.try_offer_at(&mut p, b"x", 10_000_000),
+            OfferOutcome::Restart
+        );
     }
 
     #[test]
@@ -489,7 +525,10 @@ mod tests {
         let mut g = guard();
         let mut p = AlwaysBP;
         g.try_offer_at(&mut p, b"x", 0);
-        assert_eq!(g.try_offer_at(&mut p, b"x", 50_000_000), OfferOutcome::Restart);
+        assert_eq!(
+            g.try_offer_at(&mut p, b"x", 50_000_000),
+            OfferOutcome::Restart
+        );
     }
 
     #[test]
@@ -497,14 +536,26 @@ mod tests {
         let mut g = guard();
         let mut p = AlwaysBP;
 
-        assert_eq!(g.try_offer_at(&mut p, b"x", 0),            OfferOutcome::Retrying);
-        assert_eq!(g.try_offer_at(&mut p, b"x", 50_000),       OfferOutcome::Retrying);
-        assert_eq!(g.try_offer_at(&mut p, b"x", 100_000),      OfferOutcome::Warned);
-        assert_eq!(g.try_offer_at(&mut p, b"x", 500_000),      OfferOutcome::Warned);
-        assert_eq!(g.try_offer_at(&mut p, b"x", 1_000_000),    OfferOutcome::Degrade);
-        assert_eq!(g.try_offer_at(&mut p, b"x", 5_000_000),    OfferOutcome::Degrade);
-        assert_eq!(g.try_offer_at(&mut p, b"x", 10_000_000),   OfferOutcome::Restart);
-        assert_eq!(g.try_offer_at(&mut p, b"x", 100_000_000),  OfferOutcome::Restart);
+        assert_eq!(g.try_offer_at(&mut p, b"x", 0), OfferOutcome::Retrying);
+        assert_eq!(g.try_offer_at(&mut p, b"x", 50_000), OfferOutcome::Retrying);
+        assert_eq!(g.try_offer_at(&mut p, b"x", 100_000), OfferOutcome::Warned);
+        assert_eq!(g.try_offer_at(&mut p, b"x", 500_000), OfferOutcome::Warned);
+        assert_eq!(
+            g.try_offer_at(&mut p, b"x", 1_000_000),
+            OfferOutcome::Degrade
+        );
+        assert_eq!(
+            g.try_offer_at(&mut p, b"x", 5_000_000),
+            OfferOutcome::Degrade
+        );
+        assert_eq!(
+            g.try_offer_at(&mut p, b"x", 10_000_000),
+            OfferOutcome::Restart
+        );
+        assert_eq!(
+            g.try_offer_at(&mut p, b"x", 100_000_000),
+            OfferOutcome::Restart
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -515,9 +566,9 @@ mod tests {
     fn start_time_recorded_at_first_failure() {
         let mut g = guard();
         let mut p = AlwaysBP;
-        g.try_offer_at(&mut p, b"x", 1_000);   // start = 1_000
-        g.try_offer_at(&mut p, b"x", 2_000);   // should NOT move start
-        // elapsed relative to start=1_000 at now=3_000 is 2_000, not 1_000
+        g.try_offer_at(&mut p, b"x", 1_000); // start = 1_000
+        g.try_offer_at(&mut p, b"x", 2_000); // should NOT move start
+                                             // elapsed relative to start=1_000 at now=3_000 is 2_000, not 1_000
         assert_eq!(g.elapsed_ns(3_000), Some(2_000));
     }
 
@@ -622,7 +673,10 @@ mod tests {
         let mut g = guard();
         let mut p = AlwaysAdmin;
         g.try_offer_at(&mut p, b"x", 0);
-        assert_eq!(g.try_offer_at(&mut p, b"x", 10_000_000), OfferOutcome::Restart);
+        assert_eq!(
+            g.try_offer_at(&mut p, b"x", 10_000_000),
+            OfferOutcome::Restart
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -634,17 +688,17 @@ mod tests {
         // Tight thresholds for unit-test convenience
         let mut g = BackpressureGuard::with_thresholds(10, 20, 30);
         let mut p = AlwaysBP;
-        assert_eq!(g.try_offer_at(&mut p, b"x", 0),  OfferOutcome::Retrying); // elapsed 0 < 10
-        assert_eq!(g.try_offer_at(&mut p, b"x", 10), OfferOutcome::Warned);   // elapsed 10 ≥ 10
-        assert_eq!(g.try_offer_at(&mut p, b"x", 20), OfferOutcome::Degrade);  // elapsed 20 ≥ 20
-        assert_eq!(g.try_offer_at(&mut p, b"x", 30), OfferOutcome::Restart);  // elapsed 30 ≥ 30
+        assert_eq!(g.try_offer_at(&mut p, b"x", 0), OfferOutcome::Retrying); // elapsed 0 < 10
+        assert_eq!(g.try_offer_at(&mut p, b"x", 10), OfferOutcome::Warned); // elapsed 10 ≥ 10
+        assert_eq!(g.try_offer_at(&mut p, b"x", 20), OfferOutcome::Degrade); // elapsed 20 ≥ 20
+        assert_eq!(g.try_offer_at(&mut p, b"x", 30), OfferOutcome::Restart); // elapsed 30 ≥ 30
     }
 
     #[test]
     fn default_and_new_have_same_thresholds() {
         let a = BackpressureGuard::new();
         let b = BackpressureGuard::default();
-        assert_eq!(a.warn_ns,    b.warn_ns);
+        assert_eq!(a.warn_ns, b.warn_ns);
         assert_eq!(a.degrade_ns, b.degrade_ns);
         assert_eq!(a.restart_ns, b.restart_ns);
     }
@@ -652,10 +706,10 @@ mod tests {
     #[test]
     fn default_thresholds_match_spec() {
         let g = BackpressureGuard::new();
-        assert_eq!(g.warn_ns,    DEFAULT_WARN_NS);
+        assert_eq!(g.warn_ns, DEFAULT_WARN_NS);
         assert_eq!(g.degrade_ns, DEFAULT_DEGRADE_NS);
         assert_eq!(g.restart_ns, DEFAULT_RESTART_NS);
-        assert_eq!(DEFAULT_WARN_NS,    100_000);
+        assert_eq!(DEFAULT_WARN_NS, 100_000);
         assert_eq!(DEFAULT_DEGRADE_NS, 1_000_000);
         assert_eq!(DEFAULT_RESTART_NS, 10_000_000);
     }
@@ -672,7 +726,9 @@ mod tests {
         let mut t: i64 = 0;
         let outcome = loop {
             let o = g.try_offer_at(&mut p, b"msg", t);
-            if !o.should_retry() { break o; }
+            if !o.should_retry() {
+                break o;
+            }
             t += 10_000; // advance 10µs per attempt
         };
 
@@ -703,13 +759,21 @@ mod tests {
         t = 10_000_000;
         outcomes.push(g.try_offer_at(&mut p, b"m", t));
 
-        assert!(outcomes.contains(&OfferOutcome::Retrying),
-            "expected Retrying: {outcomes:?}");
-        assert!(outcomes.contains(&OfferOutcome::Warned),
-            "expected Warned: {outcomes:?}");
-        assert!(outcomes.contains(&OfferOutcome::Degrade),
-            "expected Degrade: {outcomes:?}");
-        assert!(outcomes.contains(&OfferOutcome::Restart),
-            "expected Restart: {outcomes:?}");
+        assert!(
+            outcomes.contains(&OfferOutcome::Retrying),
+            "expected Retrying: {outcomes:?}"
+        );
+        assert!(
+            outcomes.contains(&OfferOutcome::Warned),
+            "expected Warned: {outcomes:?}"
+        );
+        assert!(
+            outcomes.contains(&OfferOutcome::Degrade),
+            "expected Degrade: {outcomes:?}"
+        );
+        assert!(
+            outcomes.contains(&OfferOutcome::Restart),
+            "expected Restart: {outcomes:?}"
+        );
     }
 }

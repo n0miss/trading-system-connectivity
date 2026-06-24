@@ -29,10 +29,9 @@ async fn main() {
     let first = &defs[0];
     let mut buf = vec![0u8; 4096];
     let n = first.encode_into(&mut buf).expect("encode failed");
-    let decoded = connector_core::InstrumentDefinition::decode(&buf[..n])
-        .expect("decode failed");
-    assert_eq!(first.symbol,      decoded.symbol);
+    let decoded = connector_core::InstrumentDefinition::decode(&buf[..n]).expect("decode failed");
+    assert_eq!(first.symbol, decoded.symbol);
     assert_eq!(first.price_scale, decoded.price_scale);
-    assert_eq!(first.tick_size,   decoded.tick_size);
+    assert_eq!(first.tick_size, decoded.tick_size);
     println!("\nBinary round-trip OK for {}", first.symbol);
 }

@@ -3,7 +3,7 @@ use crate::ClientOrderId;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum OrderSide {
-    Buy  = 0,
+    Buy = 0,
     Sell = 1,
 }
 
@@ -21,7 +21,7 @@ impl TryFrom<u8> for OrderSide {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum OrderType {
-    Limit  = 0,
+    Limit = 0,
     Market = 1,
 }
 
@@ -39,9 +39,9 @@ impl TryFrom<u8> for OrderType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum TimeInForce {
-    GoodTillCancel    = 0,
+    GoodTillCancel = 0,
     ImmediateOrCancel = 1,
-    FillOrKill        = 2,
+    FillOrKill = 2,
 }
 
 impl TryFrom<u8> for TimeInForce {
@@ -79,21 +79,24 @@ pub enum OrderStatus {
 
 impl OrderStatus {
     pub fn is_terminal(self) -> bool {
-        matches!(self, Self::Filled | Self::Cancelled | Self::Rejected | Self::Expired)
+        matches!(
+            self,
+            Self::Filled | Self::Cancelled | Self::Rejected | Self::Expired
+        )
     }
 }
 
 impl std::fmt::Display for OrderStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::Pending         => "Pending",
-            Self::New             => "New",
+            Self::Pending => "Pending",
+            Self::New => "New",
             Self::PartiallyFilled => "PartiallyFilled",
-            Self::Filled          => "Filled",
-            Self::Cancelling      => "Cancelling",
-            Self::Cancelled       => "Cancelled",
-            Self::Rejected        => "Rejected",
-            Self::Expired         => "Expired",
+            Self::Filled => "Filled",
+            Self::Cancelling => "Cancelling",
+            Self::Cancelled => "Cancelled",
+            Self::Rejected => "Rejected",
+            Self::Expired => "Expired",
         })
     }
 }
@@ -103,27 +106,27 @@ impl std::fmt::Display for OrderStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderRequest {
     /// Instrument symbol in exchange notation (e.g. "BTCUSDT").
-    pub symbol:        String,
-    pub side:          OrderSide,
-    pub order_type:    OrderType,
+    pub symbol: String,
+    pub side: OrderSide,
+    pub order_type: OrderType,
     /// Scaled quantity (no floats).
-    pub qty:           i64,
+    pub qty: i64,
     /// Scaled limit price. `None` for `Market` orders.
-    pub limit_price:   Option<i64>,
+    pub limit_price: Option<i64>,
     pub time_in_force: TimeInForce,
 }
 
 /// An order tracked by the gateway after being enqueued.
 #[derive(Debug, Clone)]
 pub struct PendingOrder {
-    pub cloid:           ClientOrderId,
-    pub request:         OrderRequest,
-    pub status:          OrderStatus,
+    pub cloid: ClientOrderId,
+    pub request: OrderRequest,
+    pub status: OrderStatus,
     /// Exchange-assigned order ID, set on first acknowledgement.
-    pub exchange_id:     Option<u64>,
+    pub exchange_id: Option<u64>,
     /// Cumulative filled quantity across all partial fill events.
-    pub filled_qty:      i64,
-    pub submitted_ns:    i64,
+    pub filled_qty: i64,
+    pub submitted_ns: i64,
     pub last_updated_ns: i64,
 }
 
@@ -139,10 +142,10 @@ mod tests {
 
     #[test]
     fn terminal_statuses() {
-        assert!( OrderStatus::Filled.is_terminal());
-        assert!( OrderStatus::Cancelled.is_terminal());
-        assert!( OrderStatus::Rejected.is_terminal());
-        assert!( OrderStatus::Expired.is_terminal());
+        assert!(OrderStatus::Filled.is_terminal());
+        assert!(OrderStatus::Cancelled.is_terminal());
+        assert!(OrderStatus::Rejected.is_terminal());
+        assert!(OrderStatus::Expired.is_terminal());
     }
 
     #[test]
@@ -181,17 +184,17 @@ mod tests {
         let mut order = PendingOrder {
             cloid,
             request: OrderRequest {
-                symbol:        "BTCUSDT".into(),
-                side:          OrderSide::Buy,
-                order_type:    OrderType::Limit,
-                qty:           100,
-                limit_price:   Some(50_000),
+                symbol: "BTCUSDT".into(),
+                side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+                qty: 100,
+                limit_price: Some(50_000),
                 time_in_force: TimeInForce::GoodTillCancel,
             },
-            status:          OrderStatus::New,
-            exchange_id:     None,
-            filled_qty:      0,
-            submitted_ns:    0,
+            status: OrderStatus::New,
+            exchange_id: None,
+            filled_qty: 0,
+            submitted_ns: 0,
             last_updated_ns: 0,
         };
         assert_eq!(order.unfilled_qty(), 100);

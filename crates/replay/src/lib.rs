@@ -31,7 +31,6 @@
 /// supplied wall-clock value, making all timing decisions deterministic in
 /// tests without sleeping.  [`replayer::Replayer::next_frame`] is the thin
 /// wrapper that reads the real clock.
-
 pub mod frame;
 pub mod mode;
 pub mod replayer;

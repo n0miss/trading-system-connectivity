@@ -13,12 +13,11 @@
 /// **units × 1000** (three implied decimal places).  Bids descend from
 /// `MID_PRICE - TICK` downward; asks ascend from `MID_PRICE + TICK` upward.
 /// This guarantees the bid side never crosses the ask side in normal scenarios.
-
 use std::collections::HashMap;
 
 use connector_core::{
-    BookDelta, BookSnapshot, MarketType, MessageHeader, MessageType, PriceLevel,
-    VenueId, SCHEMA_VERSION, TS_NONE, UPDATE_ID_NONE,
+    BookDelta, BookSnapshot, MarketType, MessageHeader, MessageType, PriceLevel, VenueId,
+    SCHEMA_VERSION, TS_NONE, UPDATE_ID_NONE,
 };
 
 use crate::OrderBook;
@@ -46,7 +45,13 @@ struct Prng {
 
 impl Prng {
     fn new(seed: u64) -> Self {
-        Self { state: if seed == 0 { 0xDEAD_BEEF_CAFE_F00D } else { seed } }
+        Self {
+            state: if seed == 0 {
+                0xDEAD_BEEF_CAFE_F00D
+            } else {
+                seed
+            },
+        }
     }
 
     fn next(&mut self) -> u64 {
@@ -72,7 +77,7 @@ impl Prng {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HarnessStats {
     pub snapshots_applied: u64,
-    pub deltas_applied:    u64,
+    pub deltas_applied: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -84,16 +89,16 @@ pub struct HarnessStats {
 pub enum InvariantViolation {
     /// `best_bid.price >= best_ask.price` — the book is crossed.
     BidAskCrossed {
-        symbol:    String,
+        symbol: String,
         bid_price: i64,
         ask_price: i64,
     },
     /// A retained level has `qty <= 0` — the book stored an invalid entry.
     NonPositiveQty {
         symbol: String,
-        side:   &'static str,
-        price:  i64,
-        qty:    i64,
+        side: &'static str,
+        price: i64,
+        qty: i64,
     },
 }
 
@@ -105,8 +110,12 @@ pub struct InvariantViolations {
 
 impl InvariantViolations {
     /// `true` when no violations were found.
-    pub fn is_clean(&self) -> bool { self.violations.is_empty() }
-    pub fn count(&self)    -> usize { self.violations.len() }
+    pub fn is_clean(&self) -> bool {
+        self.violations.is_empty()
+    }
+    pub fn count(&self) -> usize {
+        self.violations.len()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -121,8 +130,8 @@ impl InvariantViolations {
 pub struct SyntheticHarness {
     books: HashMap<String, OrderBook>,
     /// Monotonically increasing sequence number, used as `last_update_id`.
-    seq:   u64,
-    prng:  Prng,
+    seq: u64,
+    prng: Prng,
     pub stats: HarnessStats,
 }
 
@@ -135,8 +144,8 @@ impl SyntheticHarness {
     pub fn new(seed: u64) -> Self {
         Self {
             books: HashMap::new(),
-            seq:   0,
-            prng:  Prng::new(seed),
+            seq: 0,
+            prng: Prng::new(seed),
             stats: HarnessStats::default(),
         }
     }
@@ -165,7 +174,9 @@ impl SyntheticHarness {
     /// Register a single symbol.  No-op if already registered.
     pub fn add_symbol(&mut self, symbol: impl Into<String>) -> &mut Self {
         let s = symbol.into();
-        self.books.entry(s.clone()).or_insert_with(|| OrderBook::new(s));
+        self.books
+            .entry(s.clone())
+            .or_insert_with(|| OrderBook::new(s));
         self
     }
 
@@ -184,7 +195,7 @@ impl SyntheticHarness {
     /// Apply a [`BookSnapshot`] with `bid_levels` bid levels and `ask_levels`
     /// ask levels.  Clears the existing book state.
     pub fn apply_snapshot_for(&mut self, symbol: &str, bid_levels: usize, ask_levels: usize) {
-        let uid  = self.next_seq();
+        let uid = self.next_seq();
         let bids = make_bid_levels(&mut self.prng, bid_levels);
         let asks = make_ask_levels(&mut self.prng, ask_levels);
         let snap = make_snapshot(symbol, uid, bids, asks);
@@ -198,10 +209,10 @@ impl SyntheticHarness {
     /// updates.  Prices are distinct from the current book so they always add
     /// new levels (not updates or removals).
     pub fn apply_delta_for(&mut self, symbol: &str, bid_levels: usize, ask_levels: usize) {
-        let uid  = self.next_seq();
+        let uid = self.next_seq();
         let bids = make_bid_levels(&mut self.prng, bid_levels);
         let asks = make_ask_levels(&mut self.prng, ask_levels);
-        let d    = make_delta(symbol, uid, bids, asks);
+        let d = make_delta(symbol, uid, bids, asks);
         if let Some(book) = self.books.get_mut(symbol) {
             book.apply_delta(&d);
             self.stats.deltas_applied += 1;
@@ -213,7 +224,7 @@ impl SyntheticHarness {
     /// `last_update_id` advances but no levels are added, modified, or removed.
     pub fn apply_zero_update(&mut self, symbol: &str) -> u64 {
         let uid = self.next_seq();
-        let d   = make_delta(symbol, uid, vec![], vec![]);
+        let d = make_delta(symbol, uid, vec![], vec![]);
         if let Some(book) = self.books.get_mut(symbol) {
             book.apply_delta(&d);
             self.stats.deltas_applied += 1;
@@ -224,9 +235,15 @@ impl SyntheticHarness {
     /// Replace the book with a snapshot where the bid is [`WIDE_BID_PRICE`]
     /// and the ask is [`WIDE_ASK_PRICE`] — the widest representable spread.
     pub fn apply_wide_spread(&mut self, symbol: &str) {
-        let uid  = self.next_seq();
-        let bids = vec![PriceLevel { price: WIDE_BID_PRICE, qty: self.prng.qty() }];
-        let asks = vec![PriceLevel { price: WIDE_ASK_PRICE, qty: self.prng.qty() }];
+        let uid = self.next_seq();
+        let bids = vec![PriceLevel {
+            price: WIDE_BID_PRICE,
+            qty: self.prng.qty(),
+        }];
+        let asks = vec![PriceLevel {
+            price: WIDE_ASK_PRICE,
+            qty: self.prng.qty(),
+        }];
         let snap = make_snapshot(symbol, uid, bids, asks);
         if let Some(book) = self.books.get_mut(symbol) {
             book.apply_snapshot(&snap);
@@ -236,7 +253,7 @@ impl SyntheticHarness {
 
     /// Replace the book with a snapshot that has **no bids** (asks only).
     pub fn apply_empty_bid_side(&mut self, symbol: &str) {
-        let uid  = self.next_seq();
+        let uid = self.next_seq();
         let asks = make_ask_levels(&mut self.prng, 5);
         let snap = make_snapshot(symbol, uid, vec![], asks);
         if let Some(book) = self.books.get_mut(symbol) {
@@ -247,7 +264,7 @@ impl SyntheticHarness {
 
     /// Replace the book with a snapshot that has **no asks** (bids only).
     pub fn apply_empty_ask_side(&mut self, symbol: &str) {
-        let uid  = self.next_seq();
+        let uid = self.next_seq();
         let bids = make_bid_levels(&mut self.prng, 5);
         let snap = make_snapshot(symbol, uid, bids, vec![]);
         if let Some(book) = self.books.get_mut(symbol) {
@@ -260,7 +277,7 @@ impl SyntheticHarness {
     ///
     /// After this call `book.is_empty()` is `true`.
     pub fn apply_delisting(&mut self, symbol: &str) {
-        let uid  = self.next_seq();
+        let uid = self.next_seq();
         let snap = make_snapshot(symbol, uid, vec![], vec![]);
         if let Some(book) = self.books.get_mut(symbol) {
             book.apply_snapshot(&snap);
@@ -271,17 +288,17 @@ impl SyntheticHarness {
     /// Apply a single delta with `level_count` bid levels and `level_count` ask
     /// levels — exercises bulk insertion performance.
     pub fn apply_large_batch(&mut self, symbol: &str, level_count: usize) {
-        let uid  = self.next_seq();
+        let uid = self.next_seq();
         let bids = (0..level_count)
             .map(|i| PriceLevel {
                 price: MID_PRICE - TICK_SIZE * (i as i64 + 1),
-                qty:   self.prng.qty(),
+                qty: self.prng.qty(),
             })
             .collect();
         let asks = (0..level_count)
             .map(|i| PriceLevel {
                 price: MID_PRICE + TICK_SIZE * (i as i64 + 1),
-                qty:   self.prng.qty(),
+                qty: self.prng.qty(),
             })
             .collect();
         let snap = make_snapshot(symbol, uid, bids, asks);
@@ -337,9 +354,13 @@ impl SyntheticHarness {
         self.books.get(symbol)
     }
 
-    pub fn symbol_count(&self) -> usize { self.books.len() }
+    pub fn symbol_count(&self) -> usize {
+        self.books.len()
+    }
 
-    pub fn current_seq(&self) -> u64 { self.seq }
+    pub fn current_seq(&self) -> u64 {
+        self.seq
+    }
 
     // ------------------------------------------------------------------
     // Invariant checking
@@ -357,7 +378,7 @@ impl SyntheticHarness {
             if let (Some(bb), Some(ba)) = (book.best_bid(), book.best_ask()) {
                 if bb.price >= ba.price {
                     out.violations.push(InvariantViolation::BidAskCrossed {
-                        symbol:    sym.clone(),
+                        symbol: sym.clone(),
                         bid_price: bb.price,
                         ask_price: ba.price,
                     });
@@ -368,9 +389,9 @@ impl SyntheticHarness {
                 if lvl.qty <= 0 {
                     out.violations.push(InvariantViolation::NonPositiveQty {
                         symbol: sym.clone(),
-                        side:   "bid",
-                        price:  lvl.price,
-                        qty:    lvl.qty,
+                        side: "bid",
+                        price: lvl.price,
+                        qty: lvl.qty,
                     });
                 }
             }
@@ -378,9 +399,9 @@ impl SyntheticHarness {
                 if lvl.qty <= 0 {
                     out.violations.push(InvariantViolation::NonPositiveQty {
                         symbol: sym.clone(),
-                        side:   "ask",
-                        price:  lvl.price,
-                        qty:    lvl.qty,
+                        side: "ask",
+                        price: lvl.price,
+                        qty: lvl.qty,
                     });
                 }
             }
@@ -404,18 +425,18 @@ impl SyntheticHarness {
 
 fn make_header(msg_type: MessageType) -> MessageHeader {
     MessageHeader {
-        schema_version:    SCHEMA_VERSION,
-        message_type:      msg_type,
-        venue_id:          VenueId::BinanceSpot,
-        market_type:       MarketType::Spot,
-        instrument_id:     0,
-        connection_id:     0,
-        instance_id:       0,
-        sequence_number:   0,
+        schema_version: SCHEMA_VERSION,
+        message_type: msg_type,
+        venue_id: VenueId::BinanceSpot,
+        market_type: MarketType::Spot,
+        instrument_id: 0,
+        connection_id: 0,
+        instance_id: 0,
+        sequence_number: 0,
         exchange_event_ts: TS_NONE,
-        exchange_tx_ts:    TS_NONE,
-        local_recv_ts:     TS_NONE,
-        local_publish_ts:  TS_NONE,
+        exchange_tx_ts: TS_NONE,
+        local_recv_ts: TS_NONE,
+        local_publish_ts: TS_NONE,
     }
 }
 
@@ -423,7 +444,7 @@ fn make_bid_levels(prng: &mut Prng, count: usize) -> Vec<PriceLevel> {
     (0..count)
         .map(|i| PriceLevel {
             price: MID_PRICE - TICK_SIZE * (i as i64 + 1),
-            qty:   prng.qty(),
+            qty: prng.qty(),
         })
         .collect()
 }
@@ -432,18 +453,23 @@ fn make_ask_levels(prng: &mut Prng, count: usize) -> Vec<PriceLevel> {
     (0..count)
         .map(|i| PriceLevel {
             price: MID_PRICE + TICK_SIZE * (i as i64 + 1),
-            qty:   prng.qty(),
+            qty: prng.qty(),
         })
         .collect()
 }
 
-fn make_snapshot(symbol: &str, uid: u64, bids: Vec<PriceLevel>, asks: Vec<PriceLevel>) -> BookSnapshot {
+fn make_snapshot(
+    symbol: &str,
+    uid: u64,
+    bids: Vec<PriceLevel>,
+    asks: Vec<PriceLevel>,
+) -> BookSnapshot {
     BookSnapshot {
-        header:      make_header(MessageType::BookSnapshot),
-        symbol:      symbol.into(),
+        header: make_header(MessageType::BookSnapshot),
+        symbol: symbol.into(),
         price_scale: 2,
-        qty_scale:   3,
-        update_id:   uid,
+        qty_scale: 3,
+        update_id: uid,
         bids,
         asks,
     }
@@ -451,13 +477,13 @@ fn make_snapshot(symbol: &str, uid: u64, bids: Vec<PriceLevel>, asks: Vec<PriceL
 
 fn make_delta(symbol: &str, uid: u64, bids: Vec<PriceLevel>, asks: Vec<PriceLevel>) -> BookDelta {
     BookDelta {
-        header:          make_header(MessageType::BookDelta),
-        symbol:          symbol.into(),
-        price_scale:     2,
-        qty_scale:       3,
+        header: make_header(MessageType::BookDelta),
+        symbol: symbol.into(),
+        price_scale: 2,
+        qty_scale: 3,
         first_update_id: uid,
         final_update_id: uid,
-        prev_update_id:  UPDATE_ID_NONE,
+        prev_update_id: UPDATE_ID_NONE,
         bids,
         asks,
     }
@@ -487,7 +513,7 @@ mod tests {
         let book = h.book("BTCUSDT").unwrap();
         assert!(!book.is_empty());
         assert_eq!(h.stats.snapshots_applied, 1);
-        assert_eq!(h.stats.deltas_applied,    10);
+        assert_eq!(h.stats.deltas_applied, 10);
         assert!(h.check_invariants().is_clean());
     }
 
@@ -524,10 +550,10 @@ mod tests {
 
         assert_eq!(h.symbol_count(), 10);
         assert_eq!(h.stats.snapshots_applied, 10);
-        assert_eq!(h.stats.deltas_applied,    100);
+        assert_eq!(h.stats.deltas_applied, 100);
 
         for i in 1..=10usize {
-            let sym  = format!("SYM{i:06}");
+            let sym = format!("SYM{i:06}");
             let book = h.book(&sym).unwrap();
             assert!(!book.is_empty(), "{sym} should not be empty");
         }
@@ -564,8 +590,11 @@ mod tests {
         }
 
         assert_eq!(h.stats.snapshots_applied, 100);
-        assert_eq!(h.stats.deltas_applied,    2_000);
-        assert!(h.check_invariants().is_clean(), "no invariant violations expected");
+        assert_eq!(h.stats.deltas_applied, 2_000);
+        assert!(
+            h.check_invariants().is_clean(),
+            "no invariant violations expected"
+        );
     }
 
     #[test]
@@ -603,8 +632,8 @@ mod tests {
         let mut h = SyntheticHarness::with_symbol_count(1_000, 1234);
         h.broadcast_snapshot(5, 5);
 
-        assert_eq!(h.symbol_count(),           1_000);
-        assert_eq!(h.stats.snapshots_applied,  1_000);
+        assert_eq!(h.symbol_count(), 1_000);
+        assert_eq!(h.stats.snapshots_applied, 1_000);
 
         let v = h.check_invariants();
         assert!(v.is_clean(), "expected no violations, got {}", v.count());
@@ -634,15 +663,27 @@ mod tests {
         h.apply_snapshot_for("BTCUSDT", 3, 3);
         let bid_depth_before = h.book("BTCUSDT").unwrap().bid_depth();
         let ask_depth_before = h.book("BTCUSDT").unwrap().ask_depth();
-        let uid_before       = h.book("BTCUSDT").unwrap().last_update_id();
+        let uid_before = h.book("BTCUSDT").unwrap().last_update_id();
 
         let new_uid = h.apply_zero_update("BTCUSDT");
 
         let book = h.book("BTCUSDT").unwrap();
-        assert_eq!(book.bid_depth(),       bid_depth_before, "zero update must not change bid depth");
-        assert_eq!(book.ask_depth(),       ask_depth_before, "zero update must not change ask depth");
-        assert!(book.last_update_id()    > uid_before,       "update_id must advance");
-        assert_eq!(book.last_update_id(), new_uid,           "returned uid must match book");
+        assert_eq!(
+            book.bid_depth(),
+            bid_depth_before,
+            "zero update must not change bid depth"
+        );
+        assert_eq!(
+            book.ask_depth(),
+            ask_depth_before,
+            "zero update must not change ask depth"
+        );
+        assert!(book.last_update_id() > uid_before, "update_id must advance");
+        assert_eq!(
+            book.last_update_id(),
+            new_uid,
+            "returned uid must match book"
+        );
     }
 
     #[test]
@@ -670,12 +711,15 @@ mod tests {
         h.apply_wide_spread("BTCUSDT");
 
         let book = h.book("BTCUSDT").unwrap();
-        let bb   = book.best_bid().expect("bid must be present");
-        let ba   = book.best_ask().expect("ask must be present");
+        let bb = book.best_bid().expect("bid must be present");
+        let ba = book.best_ask().expect("ask must be present");
 
         assert_eq!(bb.price, WIDE_BID_PRICE, "bid must be at WIDE_BID_PRICE");
         assert_eq!(ba.price, WIDE_ASK_PRICE, "ask must be at WIDE_ASK_PRICE");
-        assert!(bb.price < ba.price, "bid must be strictly below ask even for wide spreads");
+        assert!(
+            bb.price < ba.price,
+            "bid must be strictly below ask even for wide spreads"
+        );
         assert!(h.check_invariants().is_clean());
     }
 
@@ -748,7 +792,7 @@ mod tests {
         h.apply_delisting("BNBUSDT");
 
         let book = h.book("BNBUSDT").unwrap();
-        assert!(book.is_empty(),           "delisted book must be empty");
+        assert!(book.is_empty(), "delisted book must be empty");
         assert_eq!(book.bid_depth(), 0);
         assert_eq!(book.ask_depth(), 0);
         assert!(book.best_bid().is_none());
@@ -778,7 +822,10 @@ mod tests {
 
         h.apply_snapshot_for("XRPUSDT", 3, 3);
         let book = h.book("XRPUSDT").unwrap();
-        assert!(!book.is_empty(), "book should be non-empty after re-listing");
+        assert!(
+            !book.is_empty(),
+            "book should be non-empty after re-listing"
+        );
         assert!(h.check_invariants().is_clean());
     }
 
@@ -833,7 +880,10 @@ mod tests {
         h.apply_empty_ask_side("SYM000004");
         h.apply_large_batch("SYM000005", 500);
 
-        assert!(h.check_invariants().is_clean(), "all normal scenarios must be clean");
+        assert!(
+            h.check_invariants().is_clean(),
+            "all normal scenarios must be clean"
+        );
     }
 
     #[test]
@@ -843,7 +893,7 @@ mod tests {
         let mut h = SyntheticHarness::with_symbols(["BTCUSDT"], 77);
 
         // Feed a crossed snapshot directly (bid price > ask price).
-        let uid  = h.next_seq();
+        let uid = h.next_seq();
         let snap = make_snapshot(
             "BTCUSDT",
             uid,
@@ -858,7 +908,11 @@ mod tests {
         assert_eq!(v.count(), 1);
         assert!(matches!(
             &v.violations[0],
-            InvariantViolation::BidAskCrossed { bid_price: 200, ask_price: 100, .. }
+            InvariantViolation::BidAskCrossed {
+                bid_price: 200,
+                ask_price: 100,
+                ..
+            }
         ));
     }
 
@@ -868,7 +922,7 @@ mod tests {
 
         // Set up two crossed books.
         for sym in ["SYM000001", "SYM000002"] {
-            let uid  = h.next_seq();
+            let uid = h.next_seq();
             let snap = make_snapshot(
                 sym,
                 uid,
@@ -900,7 +954,7 @@ mod tests {
         h.apply_delta_for("B", 1, 1);
 
         assert_eq!(h.stats.snapshots_applied, 2);
-        assert_eq!(h.stats.deltas_applied,    3);
+        assert_eq!(h.stats.deltas_applied, 3);
     }
 
     #[test]
@@ -909,7 +963,7 @@ mod tests {
         h.broadcast_snapshot(1, 1);
         h.broadcast_delta(1, 1);
         assert_eq!(h.stats.snapshots_applied, 7);
-        assert_eq!(h.stats.deltas_applied,    7);
+        assert_eq!(h.stats.deltas_applied, 7);
     }
 
     // -----------------------------------------------------------------------
@@ -927,7 +981,11 @@ mod tests {
                 .collect::<Vec<_>>()
         };
 
-        assert_eq!(run(42), run(42), "same seed must produce identical book states");
+        assert_eq!(
+            run(42),
+            run(42),
+            "same seed must produce identical book states"
+        );
     }
 
     #[test]
@@ -942,6 +1000,9 @@ mod tests {
             h.apply_snapshot_for("BTCUSDT", 5, 5);
             vec![h.book("BTCUSDT").unwrap().checksum()]
         };
-        assert_ne!(checksums_a, checksums_b, "different seeds should produce different quantities");
+        assert_ne!(
+            checksums_a, checksums_b,
+            "different seeds should produce different quantities"
+        );
     }
 }

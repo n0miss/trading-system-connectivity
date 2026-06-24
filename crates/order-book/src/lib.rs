@@ -25,52 +25,77 @@ pub struct OrderBook {
     bids: BTreeMap<i64, i64>,
     /// price → qty, best ask = minimum key.
     asks: BTreeMap<i64, i64>,
-    symbol:         String,
+    symbol: String,
     last_update_id: u64,
-    stale:          bool,
-    stale_reason:   Option<BookStaleReason>,
+    stale: bool,
+    stale_reason: Option<BookStaleReason>,
 }
 
 impl OrderBook {
     pub fn new(symbol: impl Into<String>) -> Self {
         Self {
-            bids:           BTreeMap::new(),
-            asks:           BTreeMap::new(),
-            symbol:         symbol.into(),
+            bids: BTreeMap::new(),
+            asks: BTreeMap::new(),
+            symbol: symbol.into(),
             last_update_id: 0,
-            stale:          false,
-            stale_reason:   None,
+            stale: false,
+            stale_reason: None,
         }
     }
 
     // --- Accessors ---
 
-    pub fn symbol(&self)         -> &str { &self.symbol }
-    pub fn last_update_id(&self) -> u64  { self.last_update_id }
-    pub fn bid_depth(&self)      -> usize { self.bids.len() }
-    pub fn ask_depth(&self)      -> usize { self.asks.len() }
-    pub fn is_empty(&self)       -> bool  { self.bids.is_empty() && self.asks.is_empty() }
-    pub fn is_stale(&self)       -> bool  { self.stale }
-    pub fn stale_reason(&self)   -> Option<BookStaleReason> { self.stale_reason }
+    pub fn symbol(&self) -> &str {
+        &self.symbol
+    }
+    pub fn last_update_id(&self) -> u64 {
+        self.last_update_id
+    }
+    pub fn bid_depth(&self) -> usize {
+        self.bids.len()
+    }
+    pub fn ask_depth(&self) -> usize {
+        self.asks.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.bids.is_empty() && self.asks.is_empty()
+    }
+    pub fn is_stale(&self) -> bool {
+        self.stale
+    }
+    pub fn stale_reason(&self) -> Option<BookStaleReason> {
+        self.stale_reason
+    }
 
     /// Best (highest-price) bid level, or `None` if the bid side is empty.
     pub fn best_bid(&self) -> Option<PriceLevel> {
-        self.bids.iter().next_back().map(|(&price, &qty)| PriceLevel { price, qty })
+        self.bids
+            .iter()
+            .next_back()
+            .map(|(&price, &qty)| PriceLevel { price, qty })
     }
 
     /// Best (lowest-price) ask level, or `None` if the ask side is empty.
     pub fn best_ask(&self) -> Option<PriceLevel> {
-        self.asks.iter().next().map(|(&price, &qty)| PriceLevel { price, qty })
+        self.asks
+            .iter()
+            .next()
+            .map(|(&price, &qty)| PriceLevel { price, qty })
     }
 
     /// Iterate bids in descending price order (best first).
     pub fn bids(&self) -> impl Iterator<Item = PriceLevel> + '_ {
-        self.bids.iter().rev().map(|(&price, &qty)| PriceLevel { price, qty })
+        self.bids
+            .iter()
+            .rev()
+            .map(|(&price, &qty)| PriceLevel { price, qty })
     }
 
     /// Iterate asks in ascending price order (best first).
     pub fn asks(&self) -> impl Iterator<Item = PriceLevel> + '_ {
-        self.asks.iter().map(|(&price, &qty)| PriceLevel { price, qty })
+        self.asks
+            .iter()
+            .map(|(&price, &qty)| PriceLevel { price, qty })
     }
 
     // --- Staleness ---
@@ -80,14 +105,14 @@ impl OrderBook {
     /// The level data is preserved so recovery (Stage 3.14) can inspect it,
     /// but callers should not rely on the levels being accurate while stale.
     pub fn mark_stale(&mut self, reason: BookStaleReason) {
-        self.stale        = true;
+        self.stale = true;
         self.stale_reason = Some(reason);
     }
 
     /// Clear the stale flag.  Call this after the recovery procedure has
     /// successfully re-synchronised the book (Stage 3.14).
     pub fn mark_recovered(&mut self) {
-        self.stale        = false;
+        self.stale = false;
         self.stale_reason = None;
     }
 
@@ -135,7 +160,7 @@ impl OrderBook {
     /// always produce the same checksum.
     pub fn checksum(&self) -> u64 {
         const OFFSET: u64 = 14_695_981_039_346_656_037;
-        const PRIME:  u64 = 1_099_511_628_211;
+        const PRIME: u64 = 1_099_511_628_211;
 
         let mut h = OFFSET;
         let mut feed = |bytes: &[u8]| {
@@ -185,24 +210,24 @@ fn apply_levels(side: &mut BTreeMap<i64, i64>, levels: &[PriceLevel]) {
 mod tests {
     use super::*;
     use connector_core::{
-        BookStaleReason, MarketType, MessageHeader, MessageType, VenueId,
-        SCHEMA_VERSION, TS_NONE, UPDATE_ID_NONE,
+        BookStaleReason, MarketType, MessageHeader, MessageType, VenueId, SCHEMA_VERSION, TS_NONE,
+        UPDATE_ID_NONE,
     };
 
     fn hdr(msg_type: MessageType) -> MessageHeader {
         MessageHeader {
-            schema_version:    SCHEMA_VERSION,
-            message_type:      msg_type,
-            venue_id:          VenueId::BinanceSpot,
-            market_type:       MarketType::Spot,
-            instrument_id:     1,
-            connection_id:     0,
-            instance_id:       0,
-            sequence_number:   0,
+            schema_version: SCHEMA_VERSION,
+            message_type: msg_type,
+            venue_id: VenueId::BinanceSpot,
+            market_type: MarketType::Spot,
+            instrument_id: 1,
+            connection_id: 0,
+            instance_id: 0,
+            sequence_number: 0,
             exchange_event_ts: TS_NONE,
-            exchange_tx_ts:    TS_NONE,
-            local_recv_ts:     TS_NONE,
-            local_publish_ts:  TS_NONE,
+            exchange_tx_ts: TS_NONE,
+            local_recv_ts: TS_NONE,
+            local_publish_ts: TS_NONE,
         }
     }
 
@@ -212,13 +237,13 @@ mod tests {
 
     fn delta(bids: Vec<PriceLevel>, asks: Vec<PriceLevel>, last_id: u64) -> BookDelta {
         BookDelta {
-            header:          hdr(MessageType::BookDelta),
-            symbol:          "BTCUSDT".to_string(),
-            price_scale:     2,
-            qty_scale:       3,
+            header: hdr(MessageType::BookDelta),
+            symbol: "BTCUSDT".to_string(),
+            price_scale: 2,
+            qty_scale: 3,
             first_update_id: last_id,
             final_update_id: last_id,
-            prev_update_id:  UPDATE_ID_NONE,
+            prev_update_id: UPDATE_ID_NONE,
             bids,
             asks,
         }
@@ -226,10 +251,10 @@ mod tests {
 
     fn snapshot(bids: Vec<PriceLevel>, asks: Vec<PriceLevel>, update_id: u64) -> BookSnapshot {
         BookSnapshot {
-            header:      hdr(MessageType::BookSnapshot),
-            symbol:      "BTCUSDT".to_string(),
+            header: hdr(MessageType::BookSnapshot),
+            symbol: "BTCUSDT".to_string(),
             price_scale: 2,
-            qty_scale:   3,
+            qty_scale: 3,
             update_id,
             bids,
             asks,
@@ -376,11 +401,7 @@ mod tests {
         ));
         assert_eq!(book.bid_depth(), 3);
 
-        book.apply_snapshot(&snapshot(
-            vec![level(101, 7)],
-            vec![level(102, 2)],
-            99,
-        ));
+        book.apply_snapshot(&snapshot(vec![level(101, 7)], vec![level(102, 2)], 99));
         assert_eq!(book.bid_depth(), 1);
         assert_eq!(book.ask_depth(), 1);
         assert_eq!(book.best_bid().unwrap().price, 101);
@@ -469,7 +490,11 @@ mod tests {
     #[test]
     fn empty_book_checksum_is_stable() {
         let book = OrderBook::new("BTCUSDT");
-        assert_eq!(book.checksum(), book.checksum(), "checksum must be deterministic");
+        assert_eq!(
+            book.checksum(),
+            book.checksum(),
+            "checksum must be deterministic"
+        );
     }
 
     #[test]
@@ -477,7 +502,11 @@ mod tests {
         let mut book = OrderBook::new("BTCUSDT");
         let before = book.checksum();
         book.apply_delta(&delta(vec![level(100, 10)], vec![], 1));
-        assert_ne!(book.checksum(), before, "checksum must change when book state changes");
+        assert_ne!(
+            book.checksum(),
+            before,
+            "checksum must change when book state changes"
+        );
     }
 
     #[test]
@@ -496,7 +525,7 @@ mod tests {
         let levels_bid = vec![level(200, 5), level(100, 10)];
         let levels_ask = vec![level(201, 3)];
 
-        let mut active  = OrderBook::new("BTCUSDT");
+        let mut active = OrderBook::new("BTCUSDT");
         let mut passive = OrderBook::new("BTCUSDT");
 
         // Apply identical deltas in the same sequence.
@@ -505,7 +534,8 @@ mod tests {
         passive.apply_delta(&d);
 
         assert_eq!(
-            active.checksum(), passive.checksum(),
+            active.checksum(),
+            passive.checksum(),
             "identical books must produce identical checksums"
         );
     }
@@ -533,7 +563,7 @@ mod tests {
     fn checksum_covers_both_sides() {
         let mut bid_only = OrderBook::new("BTCUSDT");
         let mut ask_only = OrderBook::new("BTCUSDT");
-        let mut both     = OrderBook::new("BTCUSDT");
+        let mut both = OrderBook::new("BTCUSDT");
 
         bid_only.apply_delta(&delta(vec![level(100, 10)], vec![], 1));
         ask_only.apply_delta(&delta(vec![], vec![level(101, 5)], 1));
@@ -549,7 +579,7 @@ mod tests {
     fn checksum_insertion_order_does_not_matter() {
         // Active receives bids in one order, passive in another.
         // BTreeMap sorts by key so the resulting checksum should be identical.
-        let mut active  = OrderBook::new("BTCUSDT");
+        let mut active = OrderBook::new("BTCUSDT");
         let mut passive = OrderBook::new("BTCUSDT");
 
         active.apply_delta(&delta(vec![level(100, 1), level(200, 2)], vec![], 1));
