@@ -647,7 +647,7 @@ async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
     let mut cnt_open_interest: u64 = 0;
     let mut cnt_book_delta: u64 = 0;
     let mut cnt_other: u64 = 0;
-    let mut cnt_decode_err: u64 = 0;
+    let cnt_decode_err: u64 = 0;
 
     loop {
         tokio::select! {
