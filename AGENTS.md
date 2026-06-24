@@ -282,6 +282,19 @@ The ignored integration test `integration_agg_trade_and_mark_price_received` in 
 
 ---
 
+## AWS infrastructure
+
+| Resource | Value |
+|----------|-------|
+| AWS account ID | 931944281606 |
+| Region | ap-northeast-1 (Tokyo) |
+| EC2 node | i-024bc8ad47ce7fabf — `tokyo-1` |
+| Public IP | 35.77.39.5 |
+| Internal DNS | ip-172-31-22-180.ap-northeast-1.compute.internal |
+| Key pair | `~/Documents/Documents - MacBook Air de Simon/tokyo-1-secrets.pem` |
+
+---
+
 ## Documentation
 
 Living documentation is in **Notion** (connected via MCP with token in `~/.claude/settings.json`):
