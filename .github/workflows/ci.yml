@@ -32,6 +32,12 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            uuid-dev libbsd-dev libclang-dev
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
