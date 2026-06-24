@@ -231,7 +231,7 @@ mod tests {
     fn check_returns_open_within_cooldown() {
         let mut cb = CircuitBreaker::with_limits(1, 30 * SEC);
         cb.record_failure(0);
-        let state = cb.check(1 * SEC); // 1s later, still in cooldown
+        let state = cb.check(SEC); // 1s later, still in cooldown
         assert!(state.is_open());
     }
 
@@ -284,7 +284,7 @@ mod tests {
     fn record_failure_when_open_returns_false_and_does_not_restart_timer() {
         let mut cb = CircuitBreaker::with_limits(1, 30 * SEC);
         cb.record_failure(0); // opens, until = 30s
-        let opened = cb.record_failure(1 * SEC); // already open
+        let opened = cb.record_failure(SEC); // already open
         assert!(!opened, "already open — should return false");
         // Timer should NOT be reset to 1s + 30s = 31s.
         assert_eq!(cb.open_until(), Some(30 * SEC));
@@ -317,8 +317,8 @@ mod tests {
         cb.record_failure(0);
         cb.record_failure(0); // opens
         cb.record_success(); // closes
-        cb.record_failure(1 * SEC);
-        let opened = cb.record_failure(1 * SEC);
+        cb.record_failure(SEC);
+        let opened = cb.record_failure(SEC);
         assert!(opened);
     }
 
@@ -351,7 +351,7 @@ mod tests {
         // One more failure then a success
         cb.record_failure(10 * SEC);
         cb.record_success();
-        assert_eq!(cb.check(11 * SEC), CircuitState::Closed);
+        assert_eq!(cb.check(SEC), CircuitState::Closed);
         assert_eq!(cb.failures(), 0);
     }
 }

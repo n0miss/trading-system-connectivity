@@ -278,8 +278,8 @@ mod tests {
     #[test]
     fn push_accumulates_byte_count() {
         let mut buf = RecoveryBuffer::new();
-        buf.push(make_delta(1, 10), 0 * SEC, 100);
-        buf.push(make_delta(11, 20), 1 * SEC, 200);
+        buf.push(make_delta(1, 10), 0, 100);
+        buf.push(make_delta(11, 20), SEC, 200);
         buf.push(make_delta(21, 30), 2 * SEC, 300);
         assert_eq!(buf.len(), 3);
         assert_eq!(buf.total_bytes(), 600);
