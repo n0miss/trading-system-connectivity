@@ -216,7 +216,7 @@ mod tests {
         // Every symbol is owned by exactly one of instance 0 or instance 1.
         for &s in SYMBOLS {
             let shard = spot_shard(s, 16);
-            let inst0 = shard % 2 == 0;
+            let inst0 = shard.is_multiple_of(2);
             let inst1 = shard % 2 == 1;
             assert!(
                 inst0 ^ inst1,

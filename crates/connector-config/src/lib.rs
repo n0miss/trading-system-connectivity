@@ -643,7 +643,11 @@ base_url = "https://api.binance.com"
         for s in &symbols {
             let shard = cfg.shard_for(VenueId::BinanceSpot, MarketType::Spot, s);
             let owned = cfg.owns_symbol(VenueId::BinanceSpot, MarketType::Spot, s);
-            assert_eq!(owned, shard % 2 == 0, "owns_symbol mismatch for {s}");
+            assert_eq!(
+                owned,
+                shard.is_multiple_of(2),
+                "owns_symbol mismatch for {s}"
+            );
         }
     }
 
@@ -670,7 +674,7 @@ base_url = "https://api.binance.com"
         // Covers every symbol exactly once.
         let mut combined: Vec<&str> = owned0.iter().chain(owned1.iter()).copied().collect();
         combined.sort_unstable();
-        let mut expected: Vec<&str> = universe.iter().copied().collect();
+        let mut expected: Vec<&str> = universe.to_vec();
         expected.sort_unstable();
         assert_eq!(combined, expected, "partition misses or duplicates symbols");
     }
