@@ -137,6 +137,7 @@ async fn main() -> anyhow::Result<()> {
 // Per-shard pipeline
 // ---------------------------------------------------------------------------
 
+#[derive(Default)]
 struct SymbolCounters {
     bbo: u64,
     book_deltas: u64,
@@ -146,21 +147,6 @@ struct SymbolCounters {
     liquidations: u64,
     gaps: u64,
     recoveries: u64,
-}
-
-impl Default for SymbolCounters {
-    fn default() -> Self {
-        Self {
-            bbo: 0,
-            book_deltas: 0,
-            trades: 0,
-            mark_prices: 0,
-            funding_rates: 0,
-            liquidations: 0,
-            gaps: 0,
-            recoveries: 0,
-        }
-    }
 }
 
 async fn run_shard(
@@ -553,7 +539,7 @@ fn set_feed_state(
     ctx: &NormalizeCtx,
     seq: &mut u64,
     ts: i64,
-    buf: &mut Vec<u8>,
+    buf: &mut [u8],
     pub_: &mut ShardedPublisher<NullPublication>,
 ) {
     let fs = FeedStatus {
@@ -565,6 +551,7 @@ fn set_feed_state(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn publish_gap_detected(
     shard_id: u32,
     inst: &connector_core::InstrumentDefinition,
@@ -574,7 +561,7 @@ fn publish_gap_detected(
     ctx: &NormalizeCtx,
     seq: &mut u64,
     ts: i64,
-    buf: &mut Vec<u8>,
+    buf: &mut [u8],
     pub_: &mut ShardedPublisher<NullPublication>,
 ) {
     let gd = GapDetected {
@@ -588,6 +575,7 @@ fn publish_gap_detected(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn publish_book_stale(
     shard_id: u32,
     inst: &connector_core::InstrumentDefinition,
@@ -595,7 +583,7 @@ fn publish_book_stale(
     ctx: &NormalizeCtx,
     seq: &mut u64,
     ts: i64,
-    buf: &mut Vec<u8>,
+    buf: &mut [u8],
     pub_: &mut ShardedPublisher<NullPublication>,
 ) {
     let bs = BookStale {
@@ -608,6 +596,7 @@ fn publish_book_stale(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn publish_book_recovered(
     shard_id: u32,
     inst: &connector_core::InstrumentDefinition,
@@ -615,7 +604,7 @@ fn publish_book_recovered(
     ctx: &NormalizeCtx,
     seq: &mut u64,
     ts: i64,
-    buf: &mut Vec<u8>,
+    buf: &mut [u8],
     pub_: &mut ShardedPublisher<NullPublication>,
 ) {
     let br = BookRecovered {
