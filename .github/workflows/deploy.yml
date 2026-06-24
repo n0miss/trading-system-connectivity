@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write   # required for OIDC token → AWS role assumption
+  id-token: write
   contents: read
 
 env:
@@ -14,9 +14,6 @@ env:
   ECR_REGISTRY: 931944281606.dkr.ecr.ap-northeast-1.amazonaws.com
 
 jobs:
-  # ── Build + push images ───────────────────────────────────────────────────
-  # Runs on the tokyo-1 self-hosted runner (native ARM64 / Graviton2).
-  # No cross-compilation needed; ECR auth uses the node's IAM instance role.
   build:
     name: Build ARM64 images
     runs-on: [self-hosted, linux, arm64]
@@ -25,30 +22,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
-
+      # Build Rust binaries inside an Ubuntu Docker container.
+      # The node is aarch64 so Docker runs ARM64 containers natively — no QEMU.
+      # Ubuntu has libuuid and libbsd that rusteron's precompiled Aeron library
+      # requires; Amazon Linux 2023 does not.
+      # Named Docker volumes provide a persistent cargo cache across workflow runs.
       - name: Build release binaries
-        env:
-          RUSTFLAGS: "-C target-cpu=neoverse-n1"
         run: |
-          cargo build --release \
-            --bin connector \
-            --bin aeron-driver \
-            --bin clickhouse-bridge
+          docker run --rm \
+            -v "${{ github.workspace }}:/build" \
+            -v "cargo-registry:/usr/local/cargo/registry" \
+            -v "rust-target-cache:/build/target" \
+            -w /build \
+            -e RUSTFLAGS="-C target-cpu=neoverse-n1" \
+            rust:1-slim-bookworm \
+            bash -c "
+              apt-get update -qq
+              apt-get install -y --no-install-recommends pkg-config libssl-dev
+              cargo build --release \
+                --bin connector \
+                --bin aeron-driver \
+                --bin clickhouse-bridge
+            "
+          # Restore ownership — files inside the container are owned by root.
+          sudo chown -R "$(id -u):$(id -g)" target/
 
-      - name: Log in to ECR (instance role — no static credentials)
+      - name: Log in to ECR
         run: |
           aws ecr get-login-password --region ${{ env.AWS_REGION }} \
             | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker   # use the daemon already on the node
 
       - name: Build and push connector image
         uses: docker/build-push-action@v5
@@ -59,8 +61,7 @@ jobs:
           tags: |
             ${{ env.ECR_REGISTRY }}/trading/connector:${{ github.sha }}
             ${{ env.ECR_REGISTRY }}/trading/connector:latest
-          build-args: |
-            BINARY_PATH=target/release/connector
+          build-args: BINARY_PATH=target/release/connector
 
       - name: Build and push aeron-driver image
         uses: docker/build-push-action@v5
@@ -71,8 +72,7 @@ jobs:
           tags: |
             ${{ env.ECR_REGISTRY }}/trading/aeron-driver:${{ github.sha }}
             ${{ env.ECR_REGISTRY }}/trading/aeron-driver:latest
-          build-args: |
-            BINARY_PATH=target/release/aeron-driver
+          build-args: BINARY_PATH=target/release/aeron-driver
 
       - name: Build and push clickhouse-bridge image
         uses: docker/build-push-action@v5
@@ -83,10 +83,8 @@ jobs:
           tags: |
             ${{ env.ECR_REGISTRY }}/trading/clickhouse-bridge:${{ github.sha }}
             ${{ env.ECR_REGISTRY }}/trading/clickhouse-bridge:latest
-          build-args: |
-            BINARY_PATH=target/release/clickhouse-bridge
+          build-args: BINARY_PATH=target/release/clickhouse-bridge
 
-  # ── Deploy ────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy to k3s
     needs: build
@@ -114,4 +112,4 @@ jobs:
             clickhouse-bridge="${{ env.ECR_REGISTRY }}/trading/clickhouse-bridge:${SHA}" \
             -n trading
 
-          $KUBECTL rollout status deployment/connector -n trading --timeout=120s
+          $KUBECTL rollout status deployment/connector -n trading --timeout=180s
