@@ -140,6 +140,7 @@ bin/
   connector/                main binary — market-data connector
   aeron-driver/             standalone Aeron C media driver
   aeron-observer/           latency validation tool (subscribe + decode + report)
+  clickhouse-bridge/        subscribes to all Aeron shards and inserts into ClickHouse
   shadow-compare/           active/shadow generation comparison tool
 
 crates/
@@ -162,6 +163,16 @@ crates/
 
 ## Quick start
 
+**Prerequisites:** Rust stable (see `rust-toolchain.toml`) and `cmake` (Aeron C is compiled from source).
+
+```bash
+# macOS
+brew install cmake
+
+# Ubuntu / Debian
+sudo apt-get install cmake g++ uuid-dev libbsd-dev libclang-dev
+```
+
 ```bash
 # Build
 cargo build
@@ -175,8 +186,6 @@ cargo run -p connector -- -c config/default.toml
 # Terminal 3 — observe latency on ETHUSDT futures (stream 1)
 cargo run -p aeron-observer -- --dir /tmp/aeron --stream 1 --interval 5
 ```
-
-Rust toolchain: **stable** (see `rust-toolchain.toml`).
 
 ---
 
@@ -265,8 +274,18 @@ Prometheus metrics exported on `:9090`. Covers per-shard message counts, publish
 
 ## Deployment
 
+Production runs on a single AWS EC2 node (`ap-northeast-1`) under **k3s** (lightweight Kubernetes). Three containers share an Aeron IPC memory region via a K8s `emptyDir(medium=Memory)` volume:
+
+1. `aeron-driver` — Aeron C media driver
+2. `connector` — market-data connector (Prometheus metrics on `:9090`)
+3. `clickhouse-bridge` — reads from Aeron and writes to ClickHouse
+
+Images are built by GitHub Actions on a self-hosted ARM64 runner and pushed to ECR. Merging to `main` triggers an automatic deploy.
+
 See `deploy/` for:
-- `Dockerfile` — production image
-- `connector@.service` — systemd template (multi-instance)
+- `Dockerfile`, `Dockerfile.aeron-driver`, `Dockerfile.clickhouse-bridge` — multi-stage production images
+- `k8s/` — K8s manifests (namespace, ClickHouse StatefulSet, connector Deployment, schema Job)
+- `scripts/aws-setup.sh` — creates ECR repos and GitHub OIDC IAM role
+- `scripts/node-setup.sh` — bootstraps k3s on the EC2 node
 - `aws-tuning.sh` — CPU isolation, IRQ affinity, huge pages
 - `runbook.md` — shard migration procedure
