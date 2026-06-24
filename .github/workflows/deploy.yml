@@ -45,6 +45,7 @@ jobs:
               apt-get install -y --no-install-recommends \
                 pkg-config libssl-dev uuid-dev libbsd-dev \
                 g++ make curl ca-certificates libclang-dev
+              rustup component add rustfmt
               # Aeron CMakeLists.txt requires CMake 3.30+; bookworm ships 3.25.
               curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.31.6/cmake-3.31.6-linux-aarch64.tar.gz \
                 | tar xz --strip-components=1 -C /usr/local
