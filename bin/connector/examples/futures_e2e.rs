@@ -30,7 +30,7 @@ use anyhow::Context;
 use tokio::sync::{mpsc, watch};
 
 use binance_futures_adapter::{
-    apply_futures_snapshot, build_url, normalize_futures_event, CircuitState, ConnectionManager,
+    apply_futures_snapshot, build_url, normalize_futures_event, ConnectionManager,
     FuturesShardEngine, FuturesStream, NormalizeCtx, OverflowReason, PushResult, RawFrame,
     ValidateResult, ValidationState, FUTURES_WS_BASE,
 };
