@@ -237,11 +237,11 @@ fn chaos_multiple_reconnect_cycles_within_sla() {
         clk.advance_ms(200); // 200 ms simulated REST latency
         book.apply_snapshot(&snap(
             vec![PriceLevel {
-                price: 99_000 + cycle as i64 * 10,
+                price: 99_000 + cycle * 10,
                 qty: 1,
             }],
             vec![PriceLevel {
-                price: 101_000 + cycle as i64 * 10,
+                price: 101_000 + cycle * 10,
                 qty: 1,
             }],
             100 + cycle as u64,
@@ -419,21 +419,25 @@ fn chaos_rest_snapshot_delayed_11s_exceeds_sla() {
 /// BBO degrade/stale thresholds (§2.3) are ordered and internally consistent.
 #[test]
 fn chaos_bbo_sla_constants_are_ordered() {
-    assert!(
-        sla::BBO_DEGRADE_NS < sla::BBO_STALE_NS,
-        "degrade threshold must be less than stale threshold"
-    );
-    assert!(
-        sla::BBO_STALE_NS < sla::RECOVERY_WINDOW_NS,
-        "stale threshold must be less than recovery window"
-    );
+    const {
+        assert!(
+            sla::BBO_DEGRADE_NS < sla::BBO_STALE_NS,
+            "degrade threshold must be less than stale threshold"
+        )
+    };
+    const {
+        assert!(
+            sla::BBO_STALE_NS < sla::RECOVERY_WINDOW_NS,
+            "stale threshold must be less than recovery window"
+        )
+    };
 }
 
 /// Backpressure thresholds (§5.3) are ordered.
 #[test]
 fn chaos_backpressure_sla_constants_are_ordered() {
-    assert!(sla::BACKPRESSURE_WARN_NS < sla::BACKPRESSURE_DEGRADE_NS);
-    assert!(sla::BACKPRESSURE_DEGRADE_NS < sla::RECOVERY_WINDOW_NS);
+    const { assert!(sla::BACKPRESSURE_WARN_NS < sla::BACKPRESSURE_DEGRADE_NS) };
+    const { assert!(sla::BACKPRESSURE_DEGRADE_NS < sla::RECOVERY_WINDOW_NS) };
 }
 
 // ---------------------------------------------------------------------------
