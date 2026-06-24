@@ -1,0 +1,143 @@
+# Connector pod — three containers sharing a single Aeron IPC memory region.
+#
+# Start order (informal):
+#   1. aeron-driver writes /dev/shm/aeron/cnc.dat
+#   2. connector connects via build_aeron_with_retry (infinite retries)
+#   3. clickhouse-bridge connects to Aeron (retried by K8s if it crashes)
+#
+# The shared memory volume (emptyDir medium=Memory) is mounted at /dev/shm
+# for all three containers so they see the same Aeron directory.
+#
+# Image tags are replaced by the GitHub Actions deploy workflow with the
+# git SHA of the triggering commit.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connector
+  namespace: trading
+  labels:
+    app: connector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: connector
+  strategy:
+    # Recreate stops the old pod before starting the new one — required because
+    # the Aeron media driver holds exclusive locks on /dev/shm/aeron.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: connector
+    spec:
+      # Pin to the single dedicated node.
+      nodeSelector:
+        kubernetes.io/hostname: tokyo-1
+
+      terminationGracePeriodSeconds: 15
+
+      volumes:
+        # Shared memory for Aeron IPC — backed by RAM (tmpfs).
+        - name: aeron-shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi
+        # Connector config mounted from ConfigMap.
+        - name: connector-config
+          configMap:
+            name: connector-config
+
+      containers:
+        # ── 1. Aeron media driver ─────────────────────────────────────────────
+        - name: aeron-driver
+          image: 931944281606.dkr.ecr.ap-northeast-1.amazonaws.com/trading/aeron-driver:latest
+          args: ["--dir", "/dev/shm/aeron"]
+          env:
+            - name: RUST_LOG
+              value: "info"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "250m"
+          volumeMounts:
+            - name: aeron-shm
+              mountPath: /dev/shm
+          # Readiness: wait until the driver's control file exists.
+          readinessProbe:
+            exec:
+              command: ["test", "-f", "/dev/shm/aeron/cnc.dat"]
+            initialDelaySeconds: 2
+            periodSeconds: 1
+            failureThreshold: 30
+
+        # ── 2. Market-data connector ──────────────────────────────────────────
+        - name: connector
+          image: 931944281606.dkr.ecr.ap-northeast-1.amazonaws.com/trading/connector:latest
+          env:
+            - name: RUST_LOG
+              value: "info"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "500m"
+            limits:
+              memory: "512Mi"
+              cpu: "1500m"
+          ports:
+            - name: metrics
+              containerPort: 9090
+          volumeMounts:
+            - name: aeron-shm
+              mountPath: /dev/shm
+            - name: connector-config
+              mountPath: /etc/connector/default.toml
+              subPath: default.toml
+          # Readiness: the connector exposes /metrics once Aeron is connected.
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
+
+        # ── 3. ClickHouse bridge ──────────────────────────────────────────────
+        - name: clickhouse-bridge
+          image: 931944281606.dkr.ecr.ap-northeast-1.amazonaws.com/trading/clickhouse-bridge:latest
+          args:
+            - "--dir"
+            - "/dev/shm/aeron"
+            - "--channel"
+            - "aeron:ipc"
+            - "--total-shards"
+            - "16"
+            - "--clickhouse-url"
+            - "http://clickhouse-0.clickhouse.trading.svc.cluster.local:8123"
+            - "--database"
+            - "market_data"
+            - "--username"
+            - "default"
+            - "--password"
+            - "$(CLICKHOUSE_PASSWORD)"
+          env:
+            - name: RUST_LOG
+              value: "info"
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-credentials
+                  key: password
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "192Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: aeron-shm
+              mountPath: /dev/shm

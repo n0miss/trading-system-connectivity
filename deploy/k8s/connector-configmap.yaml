@@ -1,0 +1,54 @@
+# connector config — mounted at /etc/connector/default.toml inside the pod.
+# The futures_url and websocket settings are the production values.
+# Override individual values with CONNECTOR__* environment variables.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: connector-config
+  namespace: trading
+data:
+  default.toml: |
+    [instance]
+    id     = 0
+    total  = 1
+    venue  = "binance_futures"
+    market = "usdm_futures"
+
+    [sharding]
+    total_logical_shards = 16
+
+    [symbols]
+    universe = []
+
+    [aeron]
+    media_driver_dir       = "/dev/shm/aeron"
+    ipc_enabled            = true
+    mtu                    = 1408
+    term_length_mib        = 64
+    archive_enabled        = false
+    connect_retry_delay_ms = 1000
+
+    [websocket]
+    url                        = "wss://stream.binance.com:443"
+    futures_url                = "wss://fstream.binance.com:443"
+    ping_interval_secs         = 20
+    max_streams_per_connection = 200
+    reconnect_delay_ms         = 500
+    forced_reconnect_secs      = 86400
+
+    [rest]
+    spot_base_url            = "https://api.binance.com"
+    futures_base_url         = "https://fapi.binance.com"
+    timeout_ms               = 5000
+    max_retries              = 3
+    open_interest_poll_secs  = 60
+
+    [recovery]
+    max_buffered_events         = 2048
+    max_buffered_bytes          = 4194304
+    max_buffer_age_secs         = 10
+    max_recovery_attempts       = 5
+    circuit_break_cooldown_secs = 30
+
+    [metrics]
+    prometheus_port = 9090

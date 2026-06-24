@@ -1,0 +1,184 @@
+# One-time Job that creates the ClickHouse tables.
+# Apply once after ClickHouse is running and before the connector pod starts.
+# Safe to re-run — all statements use CREATE TABLE IF NOT EXISTS.
+#
+# Apply with:  kubectl apply -f deploy/k8s/schema-job.yaml
+# Check logs:  kubectl logs -n trading job/clickhouse-schema
+# Delete when done: kubectl delete job clickhouse-schema -n trading
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-schema
+  namespace: trading
+data:
+  schema.sql: |
+    CREATE TABLE IF NOT EXISTS trades (
+        exchange_event_ts  Int64,
+        local_recv_ts      Int64,
+        local_publish_ts   Int64,
+        venue_id           UInt8,
+        market_type        UInt8,
+        instrument_id      UInt32,
+        symbol             String,
+        sequence_number    UInt64,
+        trade_id           UInt64,
+        price              Decimal(18, 8),
+        qty                Decimal(18, 8),
+        trade_ts           Int64,
+        is_buyer_maker     UInt8,
+        aggressor_side     UInt8
+    ) ENGINE = MergeTree()
+    ORDER BY (symbol, exchange_event_ts);
+
+    CREATE TABLE IF NOT EXISTS best_bid_offers (
+        exchange_event_ts  Int64,
+        local_recv_ts      Int64,
+        local_publish_ts   Int64,
+        venue_id           UInt8,
+        market_type        UInt8,
+        instrument_id      UInt32,
+        symbol             String,
+        sequence_number    UInt64,
+        bid_price          Decimal(18, 8),
+        bid_qty            Decimal(18, 8),
+        ask_price          Decimal(18, 8),
+        ask_qty            Decimal(18, 8),
+        update_id          UInt64
+    ) ENGINE = MergeTree()
+    ORDER BY (symbol, exchange_event_ts);
+
+    CREATE TABLE IF NOT EXISTS mark_prices (
+        exchange_event_ts  Int64,
+        local_recv_ts      Int64,
+        local_publish_ts   Int64,
+        venue_id           UInt8,
+        market_type        UInt8,
+        instrument_id      UInt32,
+        symbol             String,
+        sequence_number    UInt64,
+        mark_price         Decimal(18, 8),
+        index_price        Decimal(18, 8)
+    ) ENGINE = MergeTree()
+    ORDER BY (symbol, exchange_event_ts);
+
+    CREATE TABLE IF NOT EXISTS funding_rates (
+        exchange_event_ts  Int64,
+        local_recv_ts      Int64,
+        local_publish_ts   Int64,
+        venue_id           UInt8,
+        market_type        UInt8,
+        instrument_id      UInt32,
+        symbol             String,
+        sequence_number    UInt64,
+        funding_rate       Decimal(18, 9),
+        next_funding_time  Int64
+    ) ENGINE = MergeTree()
+    ORDER BY (symbol, exchange_event_ts);
+
+    CREATE TABLE IF NOT EXISTS liquidations (
+        exchange_event_ts  Int64,
+        local_recv_ts      Int64,
+        local_publish_ts   Int64,
+        venue_id           UInt8,
+        market_type        UInt8,
+        instrument_id      UInt32,
+        symbol             String,
+        sequence_number    UInt64,
+        side               UInt8,
+        price              Decimal(18, 8),
+        qty                Decimal(18, 8),
+        avg_price          Decimal(18, 8),
+        last_filled_qty    Decimal(18, 8)
+    ) ENGINE = MergeTree()
+    ORDER BY (symbol, exchange_event_ts);
+
+    CREATE TABLE IF NOT EXISTS open_interest (
+        exchange_event_ts  Int64,
+        local_recv_ts      Int64,
+        local_publish_ts   Int64,
+        venue_id           UInt8,
+        market_type        UInt8,
+        instrument_id      UInt32,
+        symbol             String,
+        sequence_number    UInt64,
+        open_interest      Decimal(18, 8)
+    ) ENGINE = MergeTree()
+    ORDER BY (symbol, exchange_event_ts);
+
+    CREATE TABLE IF NOT EXISTS book_deltas (
+        exchange_event_ts  Int64,
+        local_recv_ts      Int64,
+        local_publish_ts   Int64,
+        venue_id           UInt8,
+        market_type        UInt8,
+        instrument_id      UInt32,
+        symbol             String,
+        sequence_number    UInt64,
+        first_update_id    UInt64,
+        final_update_id    UInt64,
+        prev_update_id     UInt64,
+        bid_prices         Array(Decimal(18, 8)),
+        bid_qtys           Array(Decimal(18, 8)),
+        ask_prices         Array(Decimal(18, 8)),
+        ask_qtys           Array(Decimal(18, 8))
+    ) ENGINE = MergeTree()
+    ORDER BY (symbol, exchange_event_ts);
+
+    CREATE TABLE IF NOT EXISTS instruments (
+        local_recv_ts   Int64,
+        venue_id        UInt8,
+        market_type     UInt8,
+        instrument_id   UInt32,
+        symbol          String,
+        base_asset      String,
+        quote_asset     String,
+        price_scale     UInt32,
+        qty_scale       UInt32,
+        tick_size       Decimal(18, 8),
+        step_size       Decimal(18, 8),
+        min_qty         Decimal(18, 8),
+        min_notional    Decimal(18, 8),
+        contract_size   Decimal(18, 8),
+        is_trading      UInt8
+    ) ENGINE = ReplacingMergeTree(local_recv_ts)
+    ORDER BY (venue_id, market_type, instrument_id);
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: clickhouse-schema
+  namespace: trading
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: schema
+          image: clickhouse/clickhouse-client:24
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              clickhouse-client \
+                --host clickhouse-0.clickhouse.trading.svc.cluster.local \
+                --port 9000 \
+                --user default \
+                --password "$CLICKHOUSE_PASSWORD" \
+                --database market_data \
+                --multiquery \
+                < /schema/schema.sql && echo "Schema applied successfully."
+          env:
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-credentials
+                  key: password
+          volumeMounts:
+            - name: schema
+              mountPath: /schema
+      volumes:
+        - name: schema
+          configMap:
+            name: clickhouse-schema

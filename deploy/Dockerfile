@@ -32,9 +32,9 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY bin/  bin/
 COPY crates/ crates/
 
-# Build release binary.  RUSTFLAGS optimises for the build host's CPU;
-# for cross-arch or portable images replace with a fixed -C target-cpu.
-ARG RUSTFLAGS="-C target-cpu=native"
+# neoverse-n1 = Graviton2 (t4g).  Override with --build-arg RUSTFLAGS="..."
+# for a different target, or "" for a fully portable image.
+ARG RUSTFLAGS="-C target-cpu=neoverse-n1"
 ENV RUSTFLAGS=$RUSTFLAGS
 
 RUN cargo build --release --bin connector

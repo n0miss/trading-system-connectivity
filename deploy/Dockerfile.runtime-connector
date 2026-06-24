@@ -1,0 +1,19 @@
+# Slim runtime image — built by CI after cross-compilation.
+# Do NOT use this for local builds; use deploy/Dockerfile instead.
+#
+# CI passes the pre-built binary via --build-arg BINARY_PATH.
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r connector && useradd -r -g connector -s /sbin/nologin connector
+
+ARG BINARY_PATH=target/aarch64-unknown-linux-gnu/release/connector
+COPY ${BINARY_PATH} /usr/local/bin/connector
+COPY config/ /etc/connector/
+
+EXPOSE 9090
+USER connector
+ENTRYPOINT ["/usr/local/bin/connector", "--config", "/etc/connector/default.toml"]

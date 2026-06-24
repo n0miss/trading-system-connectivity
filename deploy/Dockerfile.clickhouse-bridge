@@ -1,0 +1,39 @@
+# Multi-stage build for the clickhouse-bridge binary.
+#
+# Build (from repo root):
+#   docker build -t clickhouse-bridge:latest -f deploy/Dockerfile.clickhouse-bridge .
+#
+# ── Stage 1: build ───────────────────────────────────────────────────────────
+FROM rust:1-slim-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY bin/  bin/
+COPY crates/ crates/
+
+ARG RUSTFLAGS="-C target-cpu=neoverse-n1"
+ENV RUSTFLAGS=$RUSTFLAGS
+
+RUN cargo build --release --bin clickhouse-bridge
+
+# ── Stage 2: runtime ─────────────────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r connector && useradd -r -g connector -s /sbin/nologin connector
+
+COPY --from=builder /build/target/release/clickhouse-bridge /usr/local/bin/clickhouse-bridge
+
+USER connector
+
+# Args are supplied by the K8s Deployment spec (ClickHouse URL, stream IDs, etc.).
+ENTRYPOINT ["/usr/local/bin/clickhouse-bridge"]

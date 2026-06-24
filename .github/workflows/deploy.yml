@@ -1,0 +1,184 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # required for OIDC token → AWS role assumption
+  contents: read
+
+env:
+  AWS_REGION:    ap-northeast-1
+  AWS_ACCOUNT:   "931944281606"
+  ECR_REGISTRY:  931944281606.dkr.ecr.ap-northeast-1.amazonaws.com
+  RUST_TARGET:   aarch64-unknown-linux-gnu
+
+jobs:
+  # ── Build ─────────────────────────────────────────────────────────────────
+  build:
+    name: Build ARM64 images
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── AWS auth via OIDC (no static credentials) ──────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── Rust cross-compilation for aarch64 ────────────────────────────────
+      # Uses the native cross-compile toolchain (no QEMU — the compiler itself
+      # runs as x86 and emits ARM64 code).  Much faster than Docker buildx QEMU.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.RUST_TARGET }}
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ env.RUST_TARGET }}
+
+      - name: Install aarch64 cross-linker
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu
+
+      - name: Build release binaries (ARM64)
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          # Graviton2 / Neoverse-N1 optimisations.  The binary runs only on
+          # the t4g.small in ap-northeast-1; no need for a portable build.
+          RUSTFLAGS: "-C target-cpu=neoverse-n1"
+        run: |
+          cargo build --release \
+            --target ${{ env.RUST_TARGET }} \
+            --bin connector \
+            --bin aeron-driver \
+            --bin clickhouse-bridge
+
+      # ── Docker: build slim runtime images and push to ECR ─────────────────
+      # Three separate runtime images — each just COPYs the pre-built binary
+      # into debian:bookworm-slim.  No compilation happens in Docker.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push connector image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/Dockerfile.runtime-connector
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/trading/connector:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/trading/connector:latest
+          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/trading/connector:buildcache
+          cache-to:   type=registry,ref=${{ env.ECR_REGISTRY }}/trading/connector:buildcache,mode=max
+          build-args: |
+            BINARY_PATH=target/${{ env.RUST_TARGET }}/release/connector
+
+      - name: Build and push aeron-driver image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/Dockerfile.runtime-aeron-driver
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/trading/aeron-driver:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/trading/aeron-driver:latest
+          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/trading/aeron-driver:buildcache
+          cache-to:   type=registry,ref=${{ env.ECR_REGISTRY }}/trading/aeron-driver:buildcache,mode=max
+          build-args: |
+            BINARY_PATH=target/${{ env.RUST_TARGET }}/release/aeron-driver
+
+      - name: Build and push clickhouse-bridge image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/Dockerfile.runtime-bridge
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/trading/clickhouse-bridge:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/trading/clickhouse-bridge:latest
+          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/trading/clickhouse-bridge:buildcache
+          cache-to:   type=registry,ref=${{ env.ECR_REGISTRY }}/trading/clickhouse-bridge:buildcache,mode=max
+          build-args: |
+            BINARY_PATH=target/${{ env.RUST_TARGET }}/release/clickhouse-bridge
+
+  # ── Deploy ────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to tokyo-1
+    needs: build
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Write the SSH private key from the repo secret.
+      - name: Set up SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.TOKYO1_SSH_KEY }}" > ~/.ssh/tokyo1.pem
+          chmod 600 ~/.ssh/tokyo1.pem
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      # Deploy: copy updated manifests then patch the Deployment image tags.
+      - name: Deploy manifests and roll out
+        env:
+          SHA: ${{ github.sha }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          ECR: ${{ env.ECR_REGISTRY }}
+        run: |
+          SSH="ssh -i ~/.ssh/tokyo1.pem -o StrictHostKeyChecking=no ec2-user@$HOST"
+
+          # Ensure staging directory exists on the node.
+          $SSH mkdir -p /tmp/trading-deploy
+
+          # Copy k8s manifests and config to the node.
+          scp -i ~/.ssh/tokyo1.pem -o StrictHostKeyChecking=no \
+            -r deploy/k8s config \
+            "ec2-user@$HOST:/tmp/trading-deploy/"
+
+          # Apply manifests (idempotent) and update image tags.
+          $SSH bash -s -- "$ECR" "$SHA" <<'REMOTE'
+            set -euo pipefail
+            ECR_REGISTRY=$1
+            SHA=$2
+            KUBECTL="sudo k3s kubectl"
+
+            cd /tmp/trading-deploy
+
+            # Apply namespace, ConfigMaps, Service, StatefulSet (ClickHouse).
+            # Excludes credentials-secret.yaml — applied manually once.
+            $KUBECTL apply -f k8s/namespace.yaml
+            $KUBECTL apply -f k8s/clickhouse.yaml
+            $KUBECTL apply -f k8s/connector-configmap.yaml
+            $KUBECTL apply -f k8s/service.yaml
+            $KUBECTL apply -f k8s/deployment.yaml
+
+            # Pin each container to the exact image SHA.
+            $KUBECTL set image deployment/connector \
+              aeron-driver="${ECR_REGISTRY}/trading/aeron-driver:${SHA}" \
+              connector="${ECR_REGISTRY}/trading/connector:${SHA}" \
+              clickhouse-bridge="${ECR_REGISTRY}/trading/clickhouse-bridge:${SHA}" \
+              -n trading
+
+            # Wait for rollout to complete (strategy=Recreate so this waits
+            # until the new pod is Running).
+            $KUBECTL rollout status deployment/connector -n trading --timeout=120s
+            echo "Rollout complete."
+          REMOTE

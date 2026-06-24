@@ -1,0 +1,40 @@
+# Multi-stage build for the aeron-driver binary.
+#
+# Build (from repo root):
+#   docker build -t aeron-driver:latest -f deploy/Dockerfile.aeron-driver .
+#
+# ── Stage 1: build ───────────────────────────────────────────────────────────
+FROM rust:1-slim-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY bin/  bin/
+COPY crates/ crates/
+
+ARG RUSTFLAGS="-C target-cpu=neoverse-n1"
+ENV RUSTFLAGS=$RUSTFLAGS
+
+RUN cargo build --release --bin aeron-driver
+
+# ── Stage 2: runtime ─────────────────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r connector && useradd -r -g connector -s /sbin/nologin connector
+
+COPY --from=builder /build/target/release/aeron-driver /usr/local/bin/aeron-driver
+
+# aeron-driver writes its shared-memory files to /dev/shm/aeron which is
+# provided by the pod's emptyDir(medium=Memory) volume at runtime.
+USER connector
+
+ENTRYPOINT ["/usr/local/bin/aeron-driver", "--dir", "/dev/shm/aeron"]

@@ -1,0 +1,17 @@
+# ClusterIP service exposing the connector's Prometheus metrics endpoint.
+# Prometheus (if deployed in-cluster) scrapes this service on port 9090.
+apiVersion: v1
+kind: Service
+metadata:
+  name: connector
+  namespace: trading
+  labels:
+    app: connector
+spec:
+  selector:
+    app: connector
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+  type: ClusterIP

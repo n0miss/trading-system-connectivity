@@ -1,0 +1,113 @@
+# ── ClickHouse low-memory config (tuned for t4g.small 2 GB node) ─────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-config
+  namespace: trading
+data:
+  memory.xml: |
+    <clickhouse>
+      <!-- Hard cap: ClickHouse will not allocate more than this for all queries
+           combined.  Set below k8s limit to leave headroom for OS overhead. -->
+      <max_server_memory_usage>471859200</max_server_memory_usage>
+      <!-- Reduce background merge memory to avoid spikes. -->
+      <background_pool_size>2</background_pool_size>
+      <background_merges_mutations_concurrency_ratio>1</background_merges_mutations_concurrency_ratio>
+      <max_concurrent_queries>10</max_concurrent_queries>
+      <mark_cache_size>134217728</mark_cache_size>
+      <uncompressed_cache_size>134217728</uncompressed_cache_size>
+    </clickhouse>
+
+---
+# ── ClickHouse StatefulSet ────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+  namespace: trading
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clickhouse
+  template:
+    metadata:
+      labels:
+        app: clickhouse
+    spec:
+      containers:
+        - name: clickhouse
+          image: clickhouse/clickhouse-server:24
+          ports:
+            - name: http
+              containerPort: 8123
+            - name: native
+              containerPort: 9000
+          env:
+            - name: CLICKHOUSE_DB
+              value: market_data
+            - name: CLICKHOUSE_USER
+              value: default
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-credentials
+                  key: password
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "600Mi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+            - name: config
+              mountPath: /etc/clickhouse-server/config.d/memory.xml
+              subPath: memory.xml
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 8123
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 8123
+            initialDelaySeconds: 30
+            periodSeconds: 15
+      volumes:
+        - name: config
+          configMap:
+            name: clickhouse-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 20Gi
+
+---
+# ── ClusterIP service — reachable inside the cluster as "clickhouse" ──────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: trading
+spec:
+  selector:
+    app: clickhouse
+  ports:
+    - name: http
+      port: 8123
+      targetPort: 8123
+    - name: native
+      port: 9000
+      targetPort: 9000
+  clusterIP: None   # headless — StatefulSet stable DNS: clickhouse-0.clickhouse.trading

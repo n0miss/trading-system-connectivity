@@ -1,0 +1,14 @@
+# Slim runtime image — built by CI after cross-compilation.
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r connector && useradd -r -g connector -s /sbin/nologin connector
+
+ARG BINARY_PATH=target/aarch64-unknown-linux-gnu/release/clickhouse-bridge
+COPY ${BINARY_PATH} /usr/local/bin/clickhouse-bridge
+
+USER connector
+ENTRYPOINT ["/usr/local/bin/clickhouse-bridge"]
