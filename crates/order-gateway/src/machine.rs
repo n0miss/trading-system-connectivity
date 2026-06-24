@@ -659,9 +659,9 @@ mod tests {
         let mut gen = ClientOrderIdGenerator::new(0);
         // Fast-forward the generator to produce a unique cloid per call.
         for _ in 0..n {
-            gen.next();
+            gen.generate();
         }
-        gen.next()
+        gen.generate()
     }
 
     fn setup() -> (StateMachineEngine, ClientOrderId) {

@@ -693,8 +693,8 @@ mod tests {
     #[test]
     fn multiple_entries_round_trip_in_order() {
         let mut gen = ClientOrderIdGenerator::new(0);
-        let c1 = gen.next();
-        let c2 = gen.next();
+        let c1 = gen.generate();
+        let c2 = gen.generate();
 
         let entries = vec![
             JournalEntry::OrderRequested {
