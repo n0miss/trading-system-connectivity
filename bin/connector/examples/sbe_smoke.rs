@@ -111,6 +111,7 @@ async fn main() -> std::process::ExitCode {
 
     let config = WebSocketConfig {
         url: SBE_BASE.to_string(),
+        futures_url: SBE_BASE.to_string(),
         api_key,
         ping_interval_secs: 20,
         max_streams_per_connection: 1024,
@@ -205,7 +206,6 @@ async fn main() -> std::process::ExitCode {
 // ---------------------------------------------------------------------------
 
 fn print_sbe(msg: &SbeMessage) {
-    use protocol_sbe::AggressorSide;
     match msg {
         SbeMessage::Trade(t) => {
             info!(
