@@ -42,7 +42,9 @@ jobs:
             bash -c "
               echo '==> container arch:' \$(uname -m)
               apt-get update -qq
-              apt-get install -y --no-install-recommends pkg-config libssl-dev uuid-dev libbsd-dev
+              apt-get install -y --no-install-recommends \
+                pkg-config libssl-dev uuid-dev libbsd-dev \
+                cmake g++ make
               cargo build --release \
                 --bin connector \
                 --bin aeron-driver \
