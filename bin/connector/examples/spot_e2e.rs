@@ -892,11 +892,12 @@ fn shard_hdr(msg_type: MessageType, ctx: &NormalizeCtx, seq: &mut u64, ts: i64) 
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn set_feed_state(
     new: FeedState,
     shard_id: u32,
     current: &mut FeedState,
-    encode_buf: &mut Vec<u8>,
+    encode_buf: &mut [u8],
     publisher: &mut ShardedPublisher<NullPublication>,
     ctx: &NormalizeCtx,
     inst: &connector_core::InstrumentDefinition,
