@@ -64,6 +64,8 @@ fn snap(bids: Vec<PriceLevel>, asks: Vec<PriceLevel>, uid: u64) -> BookSnapshot 
         header: make_header(MessageType::BookSnapshot),
         symbol: "BTCUSDT".into(),
         update_id: uid,
+        price_scale: 2,
+        qty_scale: 5,
         bids,
         asks,
     }
@@ -76,6 +78,8 @@ fn delta(uid: u64) -> BookDelta {
         first_update_id: uid,
         final_update_id: uid,
         prev_update_id: UPDATE_ID_NONE,
+        price_scale: 2,
+        qty_scale: 5,
         bids: vec![PriceLevel {
             price: 99_000,
             qty: 1,
