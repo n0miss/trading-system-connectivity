@@ -1,7 +1,7 @@
-/// Binance USDT-M Futures WebSocket stream subscriptions (§5.21).
-///
-/// Stream names follow the Binance Futures combined-stream convention.
-/// The canonical base URL is [`FUTURES_WS_BASE`].
+//! Binance USDT-M Futures WebSocket stream subscriptions (§5.21).
+//!
+//! Stream names follow the Binance Futures combined-stream convention.
+//! The canonical base URL is [`FUTURES_WS_BASE`].
 
 /// WebSocket base URL for Binance USDT-M Futures.
 pub const FUTURES_WS_BASE: &str = "wss://fstream.binance.com:443";

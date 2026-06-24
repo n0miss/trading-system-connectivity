@@ -1,41 +1,41 @@
-/// Binance USDT-M Futures depth-update sequence validator (§5.24).
-///
-/// # Key difference vs Spot
-///
-/// In Active state the Spot validator checks `U == last_final + 1` (the
-/// first-update-id of the new event must immediately follow the last accepted
-/// final-update-id).  Futures events carry a `pu` (prev_final_update_id) field
-/// that Binance sets to the exact `u` of the previous event, so the check
-/// becomes `pu == last_final`.  This is more robust because Futures update IDs
-/// do not increment strictly by one — there can be events with no changes that
-/// still advance the ID by more than one.
-///
-/// # State machine
-///
-/// ```text
-///   AwaitingSnapshot ──on_snapshot(last_update_id)──► Bridging{snapshot_id}
-///
-///   Bridging{snapshot_id}:
-///     u ≤ snapshot_id                   → Discard   (predates snapshot)
-///     U ≤ snapshot_id + 1, u > snapshot → Active{last_final = u}   (Apply)
-///     U >  snapshot_id + 1              → Stale (gap right after snapshot)
-///
-///   Active{last_final}:
-///     pu == last_final → Active{last_final = u}   (Apply)
-///     pu <  last_final → Discard  (duplicate / old event)
-///     pu >  last_final → Stale    (gap)
-///
-///   Stale ──validate()──► Stale  (Buffering)
-///   Stale ──on_snapshot()──► Bridging  (recovery path)
-///   *     ──reset()──►     AwaitingSnapshot  (WebSocket reconnect)
-/// ```
-///
-/// # Parameters for `validate`
-///
-/// Pass the three depth-event fields verbatim:
-/// - `first` → `U` (first update ID in this event)
-/// - `final_` → `u` (final update ID in this event)
-/// - `prev_final` → `pu` (final update ID of the previous event)
+//! Binance USDT-M Futures depth-update sequence validator (§5.24).
+//!
+//! # Key difference vs Spot
+//!
+//! In Active state the Spot validator checks `U == last_final + 1` (the
+//! first-update-id of the new event must immediately follow the last accepted
+//! final-update-id).  Futures events carry a `pu` (prev_final_update_id) field
+//! that Binance sets to the exact `u` of the previous event, so the check
+//! becomes `pu == last_final`.  This is more robust because Futures update IDs
+//! do not increment strictly by one — there can be events with no changes that
+//! still advance the ID by more than one.
+//!
+//! # State machine
+//!
+//! ```text
+//!   AwaitingSnapshot ──on_snapshot(last_update_id)──► Bridging{snapshot_id}
+//!
+//!   Bridging{snapshot_id}:
+//!     u ≤ snapshot_id                   → Discard   (predates snapshot)
+//!     U ≤ snapshot_id + 1, u > snapshot → Active{last_final = u}   (Apply)
+//!     U >  snapshot_id + 1              → Stale (gap right after snapshot)
+//!
+//!   Active{last_final}:
+//!     pu == last_final → Active{last_final = u}   (Apply)
+//!     pu <  last_final → Discard  (duplicate / old event)
+//!     pu >  last_final → Stale    (gap)
+//!
+//!   Stale ──validate()──► Stale  (Buffering)
+//!   Stale ──on_snapshot()──► Bridging  (recovery path)
+//!   *     ──reset()──►     AwaitingSnapshot  (WebSocket reconnect)
+//! ```
+//!
+//! # Parameters for `validate`
+//!
+//! Pass the three depth-event fields verbatim:
+//! - `first` → `U` (first update ID in this event)
+//! - `final_` → `u` (final update ID in this event)
+//! - `prev_final` → `pu` (final update ID of the previous event)
 
 // ---------------------------------------------------------------------------
 // Types

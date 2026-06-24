@@ -1,23 +1,23 @@
-/// Binance Spot depth-update sequence validator (U/u rules, §2.2).
-///
-/// # State machine
-///
-/// ```text
-///   AwaitingSnapshot ──on_snapshot()──► Bridging{snapshot_id}
-///                                            │
-///                         final_ ≤ snapshot_id → Discard (stale buffer event)
-///                         first ≤ snapshot_id+1 → Active{last_final=final_}  (Apply)
-///                         first >  snapshot_id+1 → Stale (Gap)
-///
-///   Active{last_final} ──validate(first, final_)──►
-///                         first == last_final+1 → Active{last_final=final_}  (Apply)
-///                         first >  last_final+1 → Stale (Gap)
-///                         first <  last_final+1 → Active unchanged            (Discard)
-///
-///   Stale ──validate()──► Stale  (Buffering — caller stores for recovery)
-///   Stale ──on_snapshot()──► Bridging  (recovery path)
-///   * ──reset()──► AwaitingSnapshot  (WebSocket reconnect)
-/// ```
+//! Binance Spot depth-update sequence validator (U/u rules, §2.2).
+//!
+//! # State machine
+//!
+//! ```text
+//!   AwaitingSnapshot ──on_snapshot()──► Bridging{snapshot_id}
+//!                                            │
+//!                         final_ ≤ snapshot_id → Discard (stale buffer event)
+//!                         first ≤ snapshot_id+1 → Active{last_final=final_}  (Apply)
+//!                         first >  snapshot_id+1 → Stale (Gap)
+//!
+//!   Active{last_final} ──validate(first, final_)──►
+//!                         first == last_final+1 → Active{last_final=final_}  (Apply)
+//!                         first >  last_final+1 → Stale (Gap)
+//!                         first <  last_final+1 → Active unchanged            (Discard)
+//!
+//!   Stale ──validate()──► Stale  (Buffering — caller stores for recovery)
+//!   Stale ──on_snapshot()──► Bridging  (recovery path)
+//!   * ──reset()──► AwaitingSnapshot  (WebSocket reconnect)
+//! ```
 
 // ---------------------------------------------------------------------------
 // Types

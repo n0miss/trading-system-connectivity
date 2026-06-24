@@ -19,7 +19,7 @@
 //! `aeron-publisher` produces frames in the same binary format.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::mpsc::Receiver;
 
 use connector_core::NormalizedMessage;
 
@@ -165,35 +165,21 @@ impl Comparator {
     }
 
     fn drain_active(&mut self) {
-        loop {
-            match self.active_rx.try_recv() {
-                Ok(buf) => {
-                    if let Ok(NormalizedMessage::BestBidOffer(bbo)) =
-                        NormalizedMessage::from_bytes(&buf)
-                    {
-                        self.active_bbo
-                            .insert(bbo.symbol.clone(), (bbo.bid_price, bbo.ask_price));
-                        self.pending.insert(bbo.symbol);
-                    }
-                }
-                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+        while let Ok(buf) = self.active_rx.try_recv() {
+            if let Ok(NormalizedMessage::BestBidOffer(bbo)) = NormalizedMessage::from_bytes(&buf) {
+                self.active_bbo
+                    .insert(bbo.symbol.clone(), (bbo.bid_price, bbo.ask_price));
+                self.pending.insert(bbo.symbol);
             }
         }
     }
 
     fn drain_shadow(&mut self) {
-        loop {
-            match self.shadow_rx.try_recv() {
-                Ok(buf) => {
-                    if let Ok(NormalizedMessage::BestBidOffer(bbo)) =
-                        NormalizedMessage::from_bytes(&buf)
-                    {
-                        self.shadow_bbo
-                            .insert(bbo.symbol.clone(), (bbo.bid_price, bbo.ask_price));
-                        self.pending.insert(bbo.symbol);
-                    }
-                }
-                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+        while let Ok(buf) = self.shadow_rx.try_recv() {
+            if let Ok(NormalizedMessage::BestBidOffer(bbo)) = NormalizedMessage::from_bytes(&buf) {
+                self.shadow_bbo
+                    .insert(bbo.symbol.clone(), (bbo.bid_price, bbo.ask_price));
+                self.pending.insert(bbo.symbol);
             }
         }
     }

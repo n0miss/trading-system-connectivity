@@ -1,10 +1,3 @@
-/// A single recorded event ready for replay.
-///
-/// `captured_at_ns` is a Unix nanosecond timestamp taken at the moment the
-/// original event was observed.  The [`crate::replayer::Replayer`] uses this
-/// field for [`crate::mode::ReplayMode::OriginalTiming`] and
-/// [`crate::mode::ReplayMode::Scaled`] timing decisions.
-
 // ---------------------------------------------------------------------------
 // SourceKind
 // ---------------------------------------------------------------------------

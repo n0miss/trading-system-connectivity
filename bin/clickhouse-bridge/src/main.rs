@@ -690,10 +690,12 @@ async fn run(aeron_ready: Arc<AtomicBool>) -> Result<()> {
                     warn!("ClickHouse write timed out");
                 }
                 msgs_written += 1;
-                if msgs_written % 10_000 == 0 {
-                    if tokio::time::timeout(commit_timeout, inserters.commit()).await.is_err() {
-                        warn!("ClickHouse commit timed out");
-                    }
+                if msgs_written.is_multiple_of(10_000)
+                    && tokio::time::timeout(commit_timeout, inserters.commit())
+                        .await
+                        .is_err()
+                {
+                    warn!("ClickHouse commit timed out");
                 }
             }
         }

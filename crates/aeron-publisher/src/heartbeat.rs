@@ -24,7 +24,6 @@
 ///     hb.record_beat(now_ns);
 /// }
 /// ```
-
 /// Default heartbeat interval: one second.
 pub const HEARTBEAT_INTERVAL_NS: i64 = 1_000_000_000;
 

@@ -263,7 +263,7 @@ enum StreamKind {
 /// `"btcusdt@depth@100ms"` → `DepthUpdate`;
 /// `"btcusdt@markPrice@1s"` → `MarkPrice`.
 fn stream_kind(stream: &str) -> StreamKind {
-    let kind = stream.splitn(3, '@').nth(1).unwrap_or("");
+    let kind = stream.split('@').nth(1).unwrap_or("");
     match kind {
         "bookTicker" => StreamKind::BookTicker,
         "depth" => StreamKind::DepthUpdate,

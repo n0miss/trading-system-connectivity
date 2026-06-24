@@ -1,7 +1,7 @@
-/// Recovery circuit breaker for Binance USDT-M Futures (§5.25).
-///
-/// Limits consecutive recovery failures before suspending the channel.
-/// Defaults: 5 attempts / 30 s cooldown — identical to the Spot version.
+//! Recovery circuit breaker for Binance USDT-M Futures (§5.25).
+//!
+//! Limits consecutive recovery failures before suspending the channel.
+//! Defaults: 5 attempts / 30 s cooldown — identical to the Spot version.
 
 pub const MAX_ATTEMPTS: u32 = 5;
 pub const COOLDOWN_NS: i64 = 30_000_000_000;

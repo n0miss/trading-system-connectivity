@@ -91,7 +91,7 @@ impl ClientOrderIdGenerator {
     }
 
     /// Issue the next `ClientOrderId` and advance the internal counter.
-    pub fn next(&mut self) -> ClientOrderId {
+    pub fn generate(&mut self) -> ClientOrderId {
         let s = format!("{}-{:04x}-{:016x}", PREFIX, self.instance_id, self.counter);
         self.counter += 1;
         ClientOrderId(s)
@@ -116,15 +116,15 @@ mod tests {
     #[test]
     fn next_increments_counter() {
         let mut gen = ClientOrderIdGenerator::new(0);
-        gen.next();
-        gen.next();
+        gen.generate();
+        gen.generate();
         assert_eq!(gen.counter(), 2);
     }
 
     #[test]
     fn cloid_format_is_exactly_24_chars() {
         let mut gen = ClientOrderIdGenerator::new(0);
-        let cloid = gen.next();
+        let cloid = gen.generate();
         assert_eq!(
             cloid.as_str().len(),
             24,
@@ -137,7 +137,7 @@ mod tests {
     fn cloid_within_binance_36_char_limit() {
         let mut gen = ClientOrderIdGenerator::new(u16::MAX as u32);
         for _ in 0..100 {
-            let cloid = gen.next();
+            let cloid = gen.generate();
             assert!(
                 cloid.as_str().len() <= 36,
                 "cloid too long: {}",
@@ -150,7 +150,7 @@ mod tests {
     fn cloid_contains_only_valid_characters() {
         let mut gen = ClientOrderIdGenerator::new(42);
         for _ in 0..20 {
-            let cloid = gen.next();
+            let cloid = gen.generate();
             for ch in cloid.as_str().chars() {
                 assert!(
                     ch.is_ascii_hexdigit() || ch == '-',
@@ -165,7 +165,7 @@ mod tests {
     fn parse_counter_round_trips() {
         let mut gen = ClientOrderIdGenerator::new(7);
         for expected in 0u64..10 {
-            let cloid = gen.next();
+            let cloid = gen.generate();
             assert_eq!(
                 cloid.parse_counter(),
                 Some(expected),
@@ -179,7 +179,7 @@ mod tests {
     fn parse_instance_round_trips() {
         for inst in [0u32, 1, 255, 0xabcd] {
             let mut gen = ClientOrderIdGenerator::new(inst);
-            let cloid = gen.next();
+            let cloid = gen.generate();
             assert_eq!(cloid.parse_instance(), Some(inst));
         }
     }
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn with_start_after_resumes_correctly() {
         let mut gen = ClientOrderIdGenerator::with_start_after(0, 99);
-        let cloid = gen.next();
+        let cloid = gen.generate();
         assert_eq!(cloid.parse_counter(), Some(100));
     }
 
@@ -195,15 +195,15 @@ mod tests {
     fn different_instances_produce_different_cloids() {
         let mut gen_a = ClientOrderIdGenerator::new(0);
         let mut gen_b = ClientOrderIdGenerator::new(1);
-        let a = gen_a.next();
-        let b = gen_b.next();
+        let a = gen_a.generate();
+        let b = gen_b.generate();
         assert_ne!(a, b);
     }
 
     #[test]
     fn same_instance_produces_unique_cloids() {
         let mut gen = ClientOrderIdGenerator::new(0);
-        let ids: Vec<_> = (0..1000).map(|_| gen.next()).collect();
+        let ids: Vec<_> = (0..1000).map(|_| gen.generate()).collect();
         let unique: std::collections::HashSet<_> = ids.iter().collect();
         assert_eq!(unique.len(), 1000, "all generated cloids must be unique");
     }
@@ -211,7 +211,7 @@ mod tests {
     #[test]
     fn cloid_display_equals_as_str() {
         let mut gen = ClientOrderIdGenerator::new(3);
-        let cloid = gen.next();
+        let cloid = gen.generate();
         assert_eq!(format!("{cloid}"), cloid.as_str());
     }
 

@@ -1,11 +1,11 @@
-/// Recovery circuit breaker (§3.15).
-///
-/// Limits how many consecutive recovery attempts can fail before the channel
-/// is suspended.  After `max_attempts` consecutive failures the circuit opens
-/// and no further recovery is attempted until the `cooldown_ns` window expires.
-/// A single success resets the failure counter and closes the circuit.
-///
-/// Defaults match the SPEC: **5 attempts / 30 s cooldown**.
+//! Recovery circuit breaker (§3.15).
+//!
+//! Limits how many consecutive recovery attempts can fail before the channel
+//! is suspended.  After `max_attempts` consecutive failures the circuit opens
+//! and no further recovery is attempted until the `cooldown_ns` window expires.
+//! A single success resets the failure counter and closes the circuit.
+//!
+//! Defaults match the SPEC: **5 attempts / 30 s cooldown**.
 
 // ---------------------------------------------------------------------------
 // Constants

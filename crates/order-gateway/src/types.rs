@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn unfilled_qty_tracks_fills() {
-        let cloid = crate::ClientOrderIdGenerator::new(0).next();
+        let cloid = crate::ClientOrderIdGenerator::new(0).generate();
         let mut order = PendingOrder {
             cloid,
             request: OrderRequest {

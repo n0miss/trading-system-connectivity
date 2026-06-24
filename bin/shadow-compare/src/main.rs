@@ -138,10 +138,10 @@ fn run_demo(cfg: CompareConfig) {
         cfg.min_samples
     );
     let prices: &[(&str, i64, i64)] = &[
-        ("BTCUSDT", 6_400_000_00, 6_400_100_00),
-        ("ETHUSDT", 1_700_000_00, 1_700_100_00),
-        ("BNBUSDT", 600_000_00, 600_100_00),
-        ("SOLUSDT", 70_000_00, 70_100_00),
+        ("BTCUSDT", 640_000_000, 640_010_000),
+        ("ETHUSDT", 170_000_000, 170_010_000),
+        ("BNBUSDT",  60_000_000,  60_010_000),
+        ("SOLUSDT",   7_000_000,   7_010_000),
     ];
     for seq in 0..cfg.min_samples {
         for &(sym, bid, ask) in prices {
@@ -155,8 +155,8 @@ fn run_demo(cfg: CompareConfig) {
     // ── Phase 2: inject divergence into one symbol ──────────────────────────
     println!("\n[Phase 2] Injecting a diverging BBO for ETHUSDT...");
     // Shadow sends a price 50 bps higher on ETHUSDT (stale or lagged book)
-    send_bbo(&active_tx, "ETHUSDT", 1_700_000_00, 1_700_100_00, 9999);
-    send_bbo(&shadow_tx, "ETHUSDT", 1_708_500_00, 1_708_600_00, 9999); // +50 bps
+    send_bbo(&active_tx, "ETHUSDT", 170_000_000, 170_010_000, 9999);
+    send_bbo(&shadow_tx, "ETHUSDT", 170_850_000, 170_860_000, 9999); // +50 bps
     cmp.tick();
     print_report(&cmp, "After phase 2 (diverging ETHUSDT)");
 

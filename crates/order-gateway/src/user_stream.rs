@@ -146,7 +146,7 @@ pub struct RawBalanceUpdate {
 /// A single parsed message from the Binance user data stream.
 #[derive(Debug, PartialEq)]
 pub enum RawUserDataEvent {
-    ExecutionReport(RawExecutionReport),
+    ExecutionReport(Box<RawExecutionReport>),
     OutboundAccountPosition(RawBalancePosition),
     BalanceUpdate(RawBalanceUpdate),
     /// An event type not recognised by this parser.
@@ -172,9 +172,9 @@ pub fn parse(bytes: &[u8]) -> Result<RawUserDataEvent, ParseError> {
     }
     let disc: Discriminant = serde_json::from_slice(bytes)?;
     match disc.e.as_str() {
-        "executionReport" => Ok(RawUserDataEvent::ExecutionReport(serde_json::from_slice(
-            bytes,
-        )?)),
+        "executionReport" => Ok(RawUserDataEvent::ExecutionReport(Box::new(
+            serde_json::from_slice(bytes)?,
+        ))),
         "outboundAccountPosition" => Ok(RawUserDataEvent::OutboundAccountPosition(
             serde_json::from_slice(bytes)?,
         )),

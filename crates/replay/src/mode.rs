@@ -1,5 +1,3 @@
-/// Replay timing modes and fault-injection configuration.
-
 // ---------------------------------------------------------------------------
 // FaultConfig
 // ---------------------------------------------------------------------------
@@ -13,7 +11,7 @@
 ///
 /// All randomness is **deterministic**: the same `seed` always produces the
 /// same fault sequence, making test failures reproducible.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FaultConfig {
     /// Probability (0–100) that a frame is silently dropped.
     pub drop_percent: u8,
@@ -23,17 +21,6 @@ pub struct FaultConfig {
     pub duplicate_percent: u8,
     /// Seed for the deterministic PRNG.
     pub seed: u64,
-}
-
-impl Default for FaultConfig {
-    fn default() -> Self {
-        Self {
-            drop_percent: 0,
-            corrupt_percent: 0,
-            duplicate_percent: 0,
-            seed: 0,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

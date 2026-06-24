@@ -308,10 +308,10 @@ async fn main() -> Result<()> {
     for (i, chunk) in streams.chunks(max_streams).enumerate() {
         let url = match venue_id {
             VenueId::BinanceSpot => {
-                binance_spot_adapter::build_url(&cfg.websocket.url, &chunk.to_vec())
+                binance_spot_adapter::build_url(&cfg.websocket.url, chunk)
             }
             VenueId::BinanceFutures => {
-                binance_futures_adapter::build_url(&cfg.websocket.futures_url, &chunk.to_vec())
+                binance_futures_adapter::build_url(&cfg.websocket.futures_url, chunk)
             }
         };
         // Log just the base URL (no query string) so we can verify spot vs futures endpoint.
@@ -433,7 +433,7 @@ async fn main() -> Result<()> {
                         }
                     }
 
-                    if n_frames % LOG_INTERVAL == 0 {
+                    if n_frames.is_multiple_of(LOG_INTERVAL) {
                         info!(
                             conn    = conn_id,
                             frames  = n_frames,

@@ -25,24 +25,24 @@ use std::io::{BufWriter, Write};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 enum EntryTag {
-    OrderRequested = 1,
-    OrderAcknowledged = 2,
-    OrderFilled = 3,
-    OrderCancelled = 4,
-    OrderRejected = 5,
-    OrderExpired = 6,
+    Requested = 1,
+    Acknowledged = 2,
+    Filled = 3,
+    Cancelled = 4,
+    Rejected = 5,
+    Expired = 6,
 }
 
 impl TryFrom<u8> for EntryTag {
     type Error = u8;
     fn try_from(v: u8) -> Result<Self, u8> {
         match v {
-            1 => Ok(Self::OrderRequested),
-            2 => Ok(Self::OrderAcknowledged),
-            3 => Ok(Self::OrderFilled),
-            4 => Ok(Self::OrderCancelled),
-            5 => Ok(Self::OrderRejected),
-            6 => Ok(Self::OrderExpired),
+            1 => Ok(Self::Requested),
+            2 => Ok(Self::Acknowledged),
+            3 => Ok(Self::Filled),
+            4 => Ok(Self::Cancelled),
+            5 => Ok(Self::Rejected),
+            6 => Ok(Self::Expired),
             x => Err(x),
         }
     }
@@ -281,7 +281,7 @@ fn encode_entry(entry: &JournalEntry) -> Vec<u8> {
                     enc.i64(p);
                 }
             }
-            (EntryTag::OrderRequested, enc.finish())
+            (EntryTag::Requested, enc.finish())
         }
 
         JournalEntry::OrderAcknowledged {
@@ -292,7 +292,7 @@ fn encode_entry(entry: &JournalEntry) -> Vec<u8> {
             let mut enc = Encoder::new();
             enc.str_u8(cloid.as_str());
             enc.u64(*exchange_id);
-            (EntryTag::OrderAcknowledged, enc.finish())
+            (EntryTag::Acknowledged, enc.finish())
         }
 
         JournalEntry::OrderFilled {
@@ -307,7 +307,7 @@ fn encode_entry(entry: &JournalEntry) -> Vec<u8> {
             enc.i64(*fill_qty);
             enc.i64(*fill_price);
             enc.bool(*is_final);
-            (EntryTag::OrderFilled, enc.finish())
+            (EntryTag::Filled, enc.finish())
         }
 
         JournalEntry::OrderCancelled {
@@ -316,7 +316,7 @@ fn encode_entry(entry: &JournalEntry) -> Vec<u8> {
         } => {
             let mut enc = Encoder::new();
             enc.str_u8(cloid.as_str());
-            (EntryTag::OrderCancelled, enc.finish())
+            (EntryTag::Cancelled, enc.finish())
         }
 
         JournalEntry::OrderRejected {
@@ -327,7 +327,7 @@ fn encode_entry(entry: &JournalEntry) -> Vec<u8> {
             let mut enc = Encoder::new();
             enc.str_u8(cloid.as_str());
             enc.str_u16(reason);
-            (EntryTag::OrderRejected, enc.finish())
+            (EntryTag::Rejected, enc.finish())
         }
 
         JournalEntry::OrderExpired {
@@ -336,7 +336,7 @@ fn encode_entry(entry: &JournalEntry) -> Vec<u8> {
         } => {
             let mut enc = Encoder::new();
             enc.str_u8(cloid.as_str());
-            (EntryTag::OrderExpired, enc.finish())
+            (EntryTag::Expired, enc.finish())
         }
     };
 
@@ -376,7 +376,7 @@ fn decode_one(buf: &[u8], offset: usize) -> Result<(JournalEntry, usize), Error>
     let mut pdec = Decoder::new(payload);
 
     let entry = match tag {
-        EntryTag::OrderRequested => {
+        EntryTag::Requested => {
             let cloid = pdec.cloid()?;
             let symbol = pdec.str_u8()?;
             let side = OrderSide::try_from(pdec.u8()?).map_err(|v| Error::JournalCorrupt {
@@ -412,7 +412,7 @@ fn decode_one(buf: &[u8], offset: usize) -> Result<(JournalEntry, usize), Error>
             }
         }
 
-        EntryTag::OrderAcknowledged => {
+        EntryTag::Acknowledged => {
             let cloid = pdec.cloid()?;
             let exchange_id = pdec.u64()?;
             JournalEntry::OrderAcknowledged {
@@ -422,7 +422,7 @@ fn decode_one(buf: &[u8], offset: usize) -> Result<(JournalEntry, usize), Error>
             }
         }
 
-        EntryTag::OrderFilled => {
+        EntryTag::Filled => {
             let cloid = pdec.cloid()?;
             let fill_qty = pdec.i64()?;
             let fill_price = pdec.i64()?;
@@ -436,7 +436,7 @@ fn decode_one(buf: &[u8], offset: usize) -> Result<(JournalEntry, usize), Error>
             }
         }
 
-        EntryTag::OrderCancelled => {
+        EntryTag::Cancelled => {
             let cloid = pdec.cloid()?;
             JournalEntry::OrderCancelled {
                 timestamp_ns,
@@ -444,7 +444,7 @@ fn decode_one(buf: &[u8], offset: usize) -> Result<(JournalEntry, usize), Error>
             }
         }
 
-        EntryTag::OrderRejected => {
+        EntryTag::Rejected => {
             let cloid = pdec.cloid()?;
             let reason = pdec.str_u16()?;
             JournalEntry::OrderRejected {
@@ -454,7 +454,7 @@ fn decode_one(buf: &[u8], offset: usize) -> Result<(JournalEntry, usize), Error>
             }
         }
 
-        EntryTag::OrderExpired => {
+        EntryTag::Expired => {
             let cloid = pdec.cloid()?;
             JournalEntry::OrderExpired {
                 timestamp_ns,
@@ -566,7 +566,7 @@ mod tests {
     use crate::ClientOrderIdGenerator;
 
     fn cloid() -> ClientOrderId {
-        ClientOrderIdGenerator::new(0).next()
+        ClientOrderIdGenerator::new(0).generate()
     }
 
     fn limit_request() -> OrderRequest {

@@ -262,9 +262,8 @@ fn main() -> anyhow::Result<()> {
                 if bytes.len() < HEADER_SIZE {
                     return;
                 }
-                match MessageHeader::decode(bytes) {
-                    Ok(hdr) => stats.record(&hdr, obs_ts),
-                    Err(_) => {}
+                if let Ok(hdr) = MessageHeader::decode(bytes) {
+                    stats.record(&hdr, obs_ts);
                 }
             },
             256,

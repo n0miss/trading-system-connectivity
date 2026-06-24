@@ -1,20 +1,20 @@
-/// Top-of-book BBO validation (§3.16).
-///
-/// Each time a `BestBidOffer` event arrives, the caller compares the order
-/// book's best bid/ask *price* against the BBO stream's prices and passes the
-/// result to [`BboValidator::check`].  The validator tracks how long a mismatch
-/// has persisted and returns the appropriate action:
-///
-/// | Mismatch duration | Action            |
-/// |-------------------|-------------------|
-/// | < 250 ms          | none (wait)       |
-/// | ≥ 250 ms          | [`BboCheckResult::Degrade`]    |
-/// | ≥ 1 s             | [`BboCheckResult::MarkStale`] |
-///
-/// A mismatch timer is started on the *first* mis-matching BBO event and
-/// cancelled on the first matching one.  Calling `check` with `None` book
-/// prices (book not yet populated) is treated as a match — the empty-book
-/// period must not trigger a false positive.
+//! Top-of-book BBO validation (§3.16).
+//!
+//! Each time a `BestBidOffer` event arrives, the caller compares the order
+//! book's best bid/ask *price* against the BBO stream's prices and passes the
+//! result to [`BboValidator::check`].  The validator tracks how long a mismatch
+//! has persisted and returns the appropriate action:
+//!
+//! | Mismatch duration | Action            |
+//! |-------------------|-------------------|
+//! | < 250 ms          | none (wait)       |
+//! | ≥ 250 ms          | [`BboCheckResult::Degrade`]    |
+//! | ≥ 1 s             | [`BboCheckResult::MarkStale`] |
+//!
+//! A mismatch timer is started on the *first* mis-matching BBO event and
+//! cancelled on the first matching one.  Calling `check` with `None` book
+//! prices (book not yet populated) is treated as a match — the empty-book
+//! period must not trigger a false positive.
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -60,7 +60,7 @@ impl OrderGateway {
     /// track the order as `Pending`.  The caller is responsible for sending the
     /// order to the exchange after this returns.
     pub fn enqueue(&mut self, request: OrderRequest, now_ns: i64) -> Result<ClientOrderId, Error> {
-        let cloid = self.cloid_gen.next();
+        let cloid = self.cloid_gen.generate();
 
         let entry = JournalEntry::OrderRequested {
             timestamp_ns: now_ns,
@@ -470,7 +470,7 @@ mod tests {
     #[test]
     fn on_ack_unknown_cloid_returns_err() {
         let mut gw = gw();
-        let fake = ClientOrderIdGenerator::new(99).next();
+        let fake = ClientOrderIdGenerator::new(99).generate();
         let err = gw.on_ack(&fake, 1, 0);
         assert!(matches!(err, Err(Error::OrderNotFound { .. })));
     }
@@ -629,7 +629,7 @@ mod tests {
         gw2.replay_journal(recovered_entries).unwrap();
 
         // Next cloid must not collide with any previously issued cloid.
-        let next_cloid = gw2.cloid_gen.next();
+        let next_cloid = gw2.cloid_gen.generate();
         let next_ctr = next_cloid.parse_counter().unwrap();
         assert!(
             next_ctr >= 5,

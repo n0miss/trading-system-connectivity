@@ -35,8 +35,6 @@ pub const NUM_BOUNDS: usize = 19;
 /// Total buckets: one per bound plus the `+Inf` catch-all.
 pub const NUM_BUCKETS: usize = NUM_BOUNDS + 1;
 
-const ZERO: AtomicU64 = AtomicU64::new(0);
-
 // ---------------------------------------------------------------------------
 // Histogram
 // ---------------------------------------------------------------------------
@@ -71,7 +69,7 @@ impl Histogram {
         Self {
             name,
             help,
-            buckets: [ZERO; NUM_BUCKETS],
+            buckets: [const { AtomicU64::new(0) }; NUM_BUCKETS],
             sum: AtomicU64::new(0),
             count: AtomicU64::new(0),
         }
