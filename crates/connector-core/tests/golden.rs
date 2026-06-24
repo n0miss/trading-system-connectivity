@@ -100,6 +100,8 @@ fn golden_bbo() {
     let msg = BestBidOffer {
         header: base_header(MessageType::BestBidOffer),
         symbol: "BTCUSDT".to_string(),
+        price_scale: 8,
+        qty_scale: 8,
         bid_price: 4_300_000_000_000, // 43_000.00000000 at scale 8
         bid_qty: 100_000_000,         // 1.00000000
         ask_price: 4_300_100_000_000,
@@ -117,6 +119,8 @@ fn golden_trade() {
     let msg = Trade {
         header: base_header(MessageType::Trade),
         symbol: "BTCUSDT".to_string(),
+        price_scale: 8,
+        qty_scale: 8,
         trade_id: 987_654_321,
         price: 4_300_000_000_000,
         qty: 25_000_000,
@@ -135,6 +139,8 @@ fn golden_book_delta() {
     let msg = BookDelta {
         header: base_header(MessageType::BookDelta),
         symbol: "BTCUSDT".to_string(),
+        price_scale: 8,
+        qty_scale: 8,
         first_update_id: 1_000,
         final_update_id: 1_001,
         prev_update_id: 999,
@@ -164,6 +170,8 @@ fn golden_book_snapshot() {
     let msg = BookSnapshot {
         header: base_header(MessageType::BookSnapshot),
         symbol: "ETHUSDT".to_string(),
+        price_scale: 8,
+        qty_scale: 8,
         update_id: 5_000,
         bids: vec![PriceLevel {
             price: 230_000_000_000,
@@ -220,6 +228,7 @@ fn golden_mark_price() {
     let msg = MarkPrice {
         header: base_header(MessageType::MarkPrice),
         symbol: "BTCUSDT".to_string(),
+        price_scale: 8,
         mark_price: 4_300_050_000_000,
         index_price: 4_300_000_000_000,
     };
@@ -234,6 +243,7 @@ fn golden_funding_rate() {
     let msg = FundingRate {
         header: base_header(MessageType::FundingRate),
         symbol: "BTCUSDT".to_string(),
+        funding_rate_scale: 9,
         funding_rate: 100_000, // 0.0001 at scale 1e9 = 0.01%
         next_funding_time: 1_700_008_000_000_000_000,
     };
@@ -248,6 +258,8 @@ fn golden_liquidation() {
     let msg = Liquidation {
         header: base_header(MessageType::Liquidation),
         symbol: "BTCUSDT".to_string(),
+        price_scale: 8,
+        qty_scale: 8,
         side: AggressorSide::Sell,
         price: 4_280_000_000_000,
         qty: 10_000_000,
@@ -265,6 +277,7 @@ fn golden_open_interest() {
     let msg = OpenInterest {
         header: base_header(MessageType::OpenInterest),
         symbol: "BTCUSDT".to_string(),
+        qty_scale: 8,
         open_interest: 12_345_678_900_000_000,
     };
     let bytes = encode(|b| msg.encode_into(b));
@@ -322,6 +335,8 @@ fn book_delta_empty_sides_round_trip() {
     let msg = BookDelta {
         header: base_header(MessageType::BookDelta),
         symbol: "XRPUSDT".to_string(),
+        price_scale: 8,
+        qty_scale: 8,
         first_update_id: 1,
         final_update_id: 1,
         prev_update_id: UPDATE_ID_NONE,
@@ -343,6 +358,8 @@ fn book_snapshot_many_levels_round_trip() {
     let msg = BookSnapshot {
         header: base_header(MessageType::BookSnapshot),
         symbol: "SOLUSDT".to_string(),
+        price_scale: 8,
+        qty_scale: 8,
         update_id: 99_999,
         bids: levels.clone(),
         asks: levels,
@@ -364,6 +381,8 @@ fn normalized_message_round_trip_all_types() {
         NormalizedMessage::BestBidOffer(BestBidOffer {
             header: base_header(MessageType::BestBidOffer),
             symbol: "BTCUSDT".into(),
+            price_scale: 8,
+            qty_scale: 8,
             bid_price: 1,
             bid_qty: 1,
             ask_price: 2,
@@ -373,6 +392,8 @@ fn normalized_message_round_trip_all_types() {
         NormalizedMessage::BookDelta(BookDelta {
             header: base_header(MessageType::BookDelta),
             symbol: "BTCUSDT".into(),
+            price_scale: 8,
+            qty_scale: 8,
             first_update_id: 1,
             final_update_id: 1,
             prev_update_id: UPDATE_ID_NONE,
@@ -382,6 +403,8 @@ fn normalized_message_round_trip_all_types() {
         NormalizedMessage::Trade(Trade {
             header: base_header(MessageType::Trade),
             symbol: "BTCUSDT".into(),
+            price_scale: 8,
+            qty_scale: 8,
             trade_id: 1,
             price: 1,
             qty: 1,
@@ -392,18 +415,22 @@ fn normalized_message_round_trip_all_types() {
         NormalizedMessage::MarkPrice(MarkPrice {
             header: base_header(MessageType::MarkPrice),
             symbol: "BTCUSDT".into(),
+            price_scale: 8,
             mark_price: 1,
             index_price: 1,
         }),
         NormalizedMessage::FundingRate(FundingRate {
             header: base_header(MessageType::FundingRate),
             symbol: "BTCUSDT".into(),
+            funding_rate_scale: 9,
             funding_rate: 1,
             next_funding_time: 1,
         }),
         NormalizedMessage::Liquidation(Liquidation {
             header: base_header(MessageType::Liquidation),
             symbol: "BTCUSDT".into(),
+            price_scale: 8,
+            qty_scale: 8,
             side: AggressorSide::Buy,
             price: 1,
             qty: 1,
@@ -413,11 +440,14 @@ fn normalized_message_round_trip_all_types() {
         NormalizedMessage::OpenInterest(OpenInterest {
             header: base_header(MessageType::OpenInterest),
             symbol: "BTCUSDT".into(),
+            qty_scale: 8,
             open_interest: 1,
         }),
         NormalizedMessage::BookSnapshot(BookSnapshot {
             header: base_header(MessageType::BookSnapshot),
             symbol: "BTCUSDT".into(),
+            price_scale: 8,
+            qty_scale: 8,
             update_id: 1,
             bids: vec![],
             asks: vec![],
