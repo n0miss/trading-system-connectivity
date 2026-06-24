@@ -491,6 +491,7 @@ mod tests {
     }
 
     /// Build a golden `DepthDiffStreamEvent` frame.
+    #[allow(clippy::too_many_arguments)]
     fn build_depth_diff_frame(
         event_time: i64,
         transact_time: i64,
