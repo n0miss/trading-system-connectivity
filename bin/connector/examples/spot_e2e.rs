@@ -193,6 +193,7 @@ async fn run_shard(
 
     let ws_cfg = WebSocketConfig {
         url: SPOT_WS_BASE.into(),
+        futures_url: "wss://fstream.binance.com:443".into(),
         api_key: None,
         ping_interval_secs: 20,
         max_streams_per_connection: 1024,
