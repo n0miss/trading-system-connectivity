@@ -343,9 +343,7 @@ mod tests {
     #[test]
     fn stream_kind_depth_with_speed_suffix() {
         // Verify that "btcusdt@depth@250ms" and "btcusdt@depth@500ms" are also recognized.
-        let msg_250 = format!(
-            r#"{{"stream":"btcusdt@depth@250ms","data":{{"e":"depthUpdate","E":1,"s":"BTCUSDT","U":1,"u":2,"b":[],"a":[]}}}}"#
-        );
+        let msg_250 = r#"{"stream":"btcusdt@depth@250ms","data":{"e":"depthUpdate","E":1,"s":"BTCUSDT","U":1,"u":2,"b":[],"a":[]}}"#;
         let event = parse_spot_message(msg_250.as_bytes()).unwrap();
         assert!(matches!(event, SpotEvent::DepthUpdate(_)));
     }
