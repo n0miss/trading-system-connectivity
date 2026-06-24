@@ -38,7 +38,7 @@ jobs:
             -v "rust-target-cache:/build/target" \
             -w /build \
             -e RUSTFLAGS="-C target-cpu=neoverse-n1" \
-            rust:1-slim-bookworm \
+            rust:1.96-slim-bookworm \
             bash -c "
               echo '==> container arch:' \$(uname -m)
               apt-get update -qq
