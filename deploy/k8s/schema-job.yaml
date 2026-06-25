@@ -13,7 +13,9 @@ metadata:
   namespace: trading
 data:
   schema.sql: |
-    CREATE TABLE IF NOT EXISTS trades (
+    CREATE DATABASE IF NOT EXISTS market_data;
+
+    CREATE TABLE IF NOT EXISTS market_data.market_data.trades (
         exchange_event_ts  Int64,
         local_recv_ts      Int64,
         local_publish_ts   Int64,
@@ -31,7 +33,7 @@ data:
     ) ENGINE = MergeTree()
     ORDER BY (symbol, exchange_event_ts);
 
-    CREATE TABLE IF NOT EXISTS best_bid_offers (
+    CREATE TABLE IF NOT EXISTS market_data.best_bid_offers (
         exchange_event_ts  Int64,
         local_recv_ts      Int64,
         local_publish_ts   Int64,
@@ -48,7 +50,7 @@ data:
     ) ENGINE = MergeTree()
     ORDER BY (symbol, exchange_event_ts);
 
-    CREATE TABLE IF NOT EXISTS mark_prices (
+    CREATE TABLE IF NOT EXISTS market_data.mark_prices (
         exchange_event_ts  Int64,
         local_recv_ts      Int64,
         local_publish_ts   Int64,
@@ -62,7 +64,7 @@ data:
     ) ENGINE = MergeTree()
     ORDER BY (symbol, exchange_event_ts);
 
-    CREATE TABLE IF NOT EXISTS funding_rates (
+    CREATE TABLE IF NOT EXISTS market_data.funding_rates (
         exchange_event_ts  Int64,
         local_recv_ts      Int64,
         local_publish_ts   Int64,
@@ -76,7 +78,7 @@ data:
     ) ENGINE = MergeTree()
     ORDER BY (symbol, exchange_event_ts);
 
-    CREATE TABLE IF NOT EXISTS liquidations (
+    CREATE TABLE IF NOT EXISTS market_data.liquidations (
         exchange_event_ts  Int64,
         local_recv_ts      Int64,
         local_publish_ts   Int64,
@@ -93,7 +95,7 @@ data:
     ) ENGINE = MergeTree()
     ORDER BY (symbol, exchange_event_ts);
 
-    CREATE TABLE IF NOT EXISTS open_interest (
+    CREATE TABLE IF NOT EXISTS market_data.open_interest (
         exchange_event_ts  Int64,
         local_recv_ts      Int64,
         local_publish_ts   Int64,
@@ -106,7 +108,7 @@ data:
     ) ENGINE = MergeTree()
     ORDER BY (symbol, exchange_event_ts);
 
-    CREATE TABLE IF NOT EXISTS book_deltas (
+    CREATE TABLE IF NOT EXISTS market_data.book_deltas (
         exchange_event_ts  Int64,
         local_recv_ts      Int64,
         local_publish_ts   Int64,
@@ -125,7 +127,7 @@ data:
     ) ENGINE = MergeTree()
     ORDER BY (symbol, exchange_event_ts);
 
-    CREATE TABLE IF NOT EXISTS instruments (
+    CREATE TABLE IF NOT EXISTS market_data.instruments (
         local_recv_ts   Int64,
         venue_id        UInt8,
         market_type     UInt8,
@@ -157,7 +159,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: schema
-          image: clickhouse/clickhouse-client:24
+          image: clickhouse/clickhouse-server:24
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -166,7 +168,6 @@ spec:
                 --port 9000 \
                 --user default \
                 --password "$CLICKHOUSE_PASSWORD" \
-                --database market_data \
                 --multiquery \
                 < /schema/schema.sql && echo "Schema applied successfully."
           env:
