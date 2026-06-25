@@ -280,7 +280,7 @@ Production runs on a single AWS EC2 node (`ap-northeast-1`) under **k3s** (light
 2. `connector` — market-data connector (Prometheus metrics on `:9090`)
 3. `clickhouse-bridge` — reads from Aeron and writes to ClickHouse
 
-Images are built by GitHub Actions on a self-hosted ARM64 runner and pushed to ECR. Merging to `main` triggers an automatic deploy.
+Images are built by GitHub Actions on a free GitHub-hosted `ubuntu-24.04-arm` runner (4 vCPU, 16 GB RAM) and pushed to ECR. Merging to `main` triggers an automatic deploy via SSH to the EC2 node.
 
 See `deploy/` for:
 - `Dockerfile.runtime-connector`, `Dockerfile.runtime-aeron-driver`, `Dockerfile.runtime-bridge` — lightweight runtime images (copy pre-built binary into debian:bookworm-slim)
