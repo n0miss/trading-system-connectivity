@@ -1,8 +1,9 @@
 # Slim runtime image — built by CI after cross-compilation.
-FROM debian:bookworm-slim
+FROM ubuntu:24.04
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    libbsd0 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -r connector && useradd -r -g connector -s /sbin/nologin connector
