@@ -22,20 +22,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Build Rust binaries inside an Ubuntu Docker container.
+      # Build Rust binaries inside a Debian Docker container.
       # The node is aarch64 so Docker runs ARM64 containers natively — no QEMU.
-      # Ubuntu has libuuid and libbsd that rusteron's precompiled Aeron library
-      # requires; Amazon Linux 2023 does not.
-      # Named Docker volumes provide a persistent cargo cache across workflow runs.
-      - name: Clear stale build cache
-        run: docker volume rm rust-target-cache 2>/dev/null || true
-
+      # Debian bookworm has libuuid and libbsd that rusteron's precompiled Aeron
+      # library requires; Amazon Linux 2023 does not.
+      #
+      # target/ is bind-mounted from the workspace so compiled artifacts land
+      # directly on the host and are visible to docker buildx in the next step.
+      # cargo-registry is a named volume — it does not need to be on the host.
+      # Both caches persist across workflow runs on the self-hosted runner.
       - name: Build release binaries
         run: |
+          mkdir -p target
           docker run --rm \
             -v "${{ github.workspace }}:/build" \
             -v "cargo-registry:/usr/local/cargo/registry" \
-            -v "rust-target-cache:/build/target" \
             -w /build \
             -e RUSTFLAGS="-C target-cpu=neoverse-n1" \
             rust:1.96-slim-bookworm \
@@ -54,7 +55,7 @@ jobs:
                 --bin aeron-driver \
                 --bin clickhouse-bridge
             "
-          # Restore ownership — files inside the container are owned by root.
+          # Restore ownership — files written by root inside the container.
           sudo chown -R "$(id -u):$(id -g)" target/
 
       - name: Log in to ECR
