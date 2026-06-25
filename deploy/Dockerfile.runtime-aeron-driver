@@ -12,4 +12,4 @@ ARG BINARY_PATH=target/aarch64-unknown-linux-gnu/release/aeron-driver
 COPY ${BINARY_PATH} /usr/local/bin/aeron-driver
 
 USER connector
-ENTRYPOINT ["/usr/local/bin/aeron-driver", "--dir", "/dev/shm/aeron"]
+ENTRYPOINT ["/usr/local/bin/aeron-driver"]
