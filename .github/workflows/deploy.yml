@@ -39,6 +39,7 @@ jobs:
             -v "cargo-registry:/usr/local/cargo/registry" \
             -w /build \
             -e RUSTFLAGS="-C target-cpu=neoverse-n1" \
+            -e CARGO_BUILD_JOBS=1 \
             rust:1.96-slim-bookworm \
             bash -c "
               echo '==> container arch:' \$(uname -m)
