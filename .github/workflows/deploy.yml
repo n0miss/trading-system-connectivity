@@ -16,48 +16,50 @@ env:
 jobs:
   build:
     name: Build ARM64 images
-    runs-on: [self-hosted, linux, arm64]
+    runs-on: ubuntu-24.04-arm
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Build Rust binaries inside a Debian Docker container.
-      # The node is aarch64 so Docker runs ARM64 containers natively — no QEMU.
-      # Debian bookworm has libuuid and libbsd that rusteron's precompiled Aeron
-      # library requires; Amazon Linux 2023 does not.
-      #
-      # target/ is bind-mounted from the workspace so compiled artifacts land
-      # directly on the host and are visible to docker buildx in the next step.
-      # cargo-registry is a named volume — it does not need to be on the host.
-      # Both caches persist across workflow runs on the self-hosted runner.
-      - name: Build release binaries
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          components: rustfmt
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-arm64-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-arm64-cargo-
+
+      - name: Install build dependencies
         run: |
-          mkdir -p target
-          docker run --rm \
-            -v "${{ github.workspace }}:/build" \
-            -v "cargo-registry:/usr/local/cargo/registry" \
-            -w /build \
-            -e RUSTFLAGS="-C target-cpu=neoverse-n1" \
-            -e CARGO_BUILD_JOBS=1 \
-            rust:1.96-slim-bookworm \
-            bash -c "
-              echo '==> container arch:' \$(uname -m)
-              apt-get update -qq
-              apt-get install -y --no-install-recommends \
-                pkg-config libssl-dev uuid-dev libbsd-dev \
-                g++ make curl ca-certificates libclang-dev
-              rustup component add rustfmt
-              # Aeron CMakeLists.txt requires CMake 3.30+; bookworm ships 3.25.
-              curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.31.6/cmake-3.31.6-linux-aarch64.tar.gz \
-                | tar xz --strip-components=1 -C /usr/local
-              cargo build --release \
-                --bin connector \
-                --bin aeron-driver \
-                --bin clickhouse-bridge
-            "
-          # Restore ownership — files written by root inside the container.
-          sudo chown -R "$(id -u):$(id -g)" target/
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev uuid-dev libbsd-dev \
+            g++ make libclang-dev ca-certificates curl
+          # Aeron CMakeLists.txt requires CMake 3.30+; ubuntu-24.04 ships 3.28.
+          curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.31.6/cmake-3.31.6-linux-aarch64.tar.gz \
+            | sudo tar xz --strip-components=1 -C /usr/local
+
+      - name: Build release binaries
+        env:
+          RUSTFLAGS: "-C target-cpu=neoverse-n1"
+        run: |
+          cargo build --release \
+            --bin connector \
+            --bin aeron-driver \
+            --bin clickhouse-bridge
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::931944281606:role/github-actions-trading-deploy
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to ECR
         run: |
@@ -100,28 +102,43 @@ jobs:
   deploy:
     name: Deploy to k3s
     needs: build
-    runs-on: [self-hosted, linux, arm64]
+    runs-on: ubuntu-24.04-arm
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - name: Copy k8s manifests to node
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 35.77.39.5
+          username: ec2-user
+          key: ${{ secrets.TOKYO1_SSH_KEY }}
+          source: "deploy/k8s"
+          target: "/home/ec2-user"
 
       - name: Apply manifests and roll out
+        uses: appleboy/ssh-action@v1
         env:
           SHA: ${{ github.sha }}
-        run: |
-          KUBECTL="sudo k3s kubectl"
+        with:
+          host: 35.77.39.5
+          username: ec2-user
+          key: ${{ secrets.TOKYO1_SSH_KEY }}
+          envs: SHA
+          script: |
+            ECR="931944281606.dkr.ecr.ap-northeast-1.amazonaws.com"
+            KUBECTL="sudo k3s kubectl"
 
-          $KUBECTL apply -f deploy/k8s/namespace.yaml
-          $KUBECTL apply -f deploy/k8s/clickhouse.yaml
-          $KUBECTL apply -f deploy/k8s/connector-configmap.yaml
-          $KUBECTL apply -f deploy/k8s/service.yaml
-          $KUBECTL apply -f deploy/k8s/deployment.yaml
+            $KUBECTL apply -f /home/ec2-user/deploy/k8s/namespace.yaml
+            $KUBECTL apply -f /home/ec2-user/deploy/k8s/clickhouse.yaml
+            $KUBECTL apply -f /home/ec2-user/deploy/k8s/connector-configmap.yaml
+            $KUBECTL apply -f /home/ec2-user/deploy/k8s/service.yaml
+            $KUBECTL apply -f /home/ec2-user/deploy/k8s/deployment.yaml
 
-          $KUBECTL set image deployment/connector \
-            aeron-driver="${{ env.ECR_REGISTRY }}/trading/aeron-driver:${SHA}" \
-            connector="${{ env.ECR_REGISTRY }}/trading/connector:${SHA}" \
-            clickhouse-bridge="${{ env.ECR_REGISTRY }}/trading/clickhouse-bridge:${SHA}" \
-            -n trading
+            $KUBECTL set image deployment/connector \
+              aeron-driver="$ECR/trading/aeron-driver:$SHA" \
+              connector="$ECR/trading/connector:$SHA" \
+              clickhouse-bridge="$ECR/trading/clickhouse-bridge:$SHA" \
+              -n trading
 
-          $KUBECTL rollout status deployment/connector -n trading --timeout=180s
+            $KUBECTL rollout status deployment/connector -n trading --timeout=180s
