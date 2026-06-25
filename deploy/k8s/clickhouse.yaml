@@ -9,7 +9,7 @@ data:
     <clickhouse>
       <!-- Hard cap: total memory ClickHouse may use; set below k8s limit (600Mi)
            to leave headroom for OS overhead. -->
-      <max_server_memory_usage>314572800</max_server_memory_usage>
+      <max_server_memory_usage>471859200</max_server_memory_usage>
       <max_concurrent_queries>10</max_concurrent_queries>
       <mark_cache_size>134217728</mark_cache_size>
       <uncompressed_cache_size>134217728</uncompressed_cache_size>
@@ -56,7 +56,7 @@ spec:
               memory: "256Mi"
               cpu: "250m"
             limits:
-              memory: "400Mi"
+              memory: "600Mi"
               cpu: "1000m"
           volumeMounts:
             - name: data
