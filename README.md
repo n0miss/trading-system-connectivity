@@ -283,7 +283,8 @@ Production runs on a single AWS EC2 node (`ap-northeast-1`) under **k3s** (light
 Images are built by GitHub Actions on a self-hosted ARM64 runner and pushed to ECR. Merging to `main` triggers an automatic deploy.
 
 See `deploy/` for:
-- `Dockerfile`, `Dockerfile.aeron-driver`, `Dockerfile.clickhouse-bridge` — multi-stage production images
+- `Dockerfile.runtime-connector`, `Dockerfile.runtime-aeron-driver`, `Dockerfile.runtime-bridge` — lightweight runtime images (copy pre-built binary into debian:bookworm-slim)
+- `Dockerfile`, `Dockerfile.aeron-driver`, `Dockerfile.clickhouse-bridge` — full build images (compile from source)
 - `k8s/` — K8s manifests (namespace, ClickHouse StatefulSet, connector Deployment, schema Job)
 - `scripts/aws-setup.sh` — creates ECR repos and GitHub OIDC IAM role
 - `scripts/node-setup.sh` — bootstraps k3s on the EC2 node
