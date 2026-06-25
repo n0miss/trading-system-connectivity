@@ -267,14 +267,14 @@ cargo build --examples                # ensures examples compile too
 
 Tests are in-crate (`#[cfg(test)]`). No integration test crate yet. Golden-file fixtures in `crates/protocol-sbe/`.
 
-### Binance geo-IP restriction (US IPs)
+### Binance ASN restriction (AWS and other cloud providers)
 
-`fstream.binance.com` silently blocks `@aggTrade`, `@markPrice`, and `@forceOrder` streams from US IP addresses. The WebSocket connection succeeds and `@bookTicker` / `@depth` are delivered normally, but trade, mark-price, and liquidation streams produce zero events with no error. This is a Binance compliance restriction, not a code bug.
+`fstream.binance.com` silently blocks `@aggTrade`, `@markPrice`, and `@forceOrder` streams based on **ASN**, not geography. Any IP belonging to `AS16509 Amazon.com, Inc.` is affected — including EC2 instances in Tokyo, Frankfurt, or São Paulo. The WebSocket connection succeeds and `@bookTicker` / `@depth` are delivered normally, but trade, mark-price, and liquidation streams produce zero events with no error. This is a Binance compliance restriction, not a code bug.
 
-**Effect on local dev**: ClickHouse tables `trades`, `mark_prices`, `funding_rates`, and `liquidations` will be empty when running from a US IP. `best_bid_offers` and `book_deltas` work correctly.
+**Effect on production**: ClickHouse tables `trades`, `mark_prices`, `funding_rates`, and `liquidations` will be empty when running on AWS. `best_bid_offers` and `book_deltas` work correctly.
 
 **Workaround**:
-- Run the connector on a non-US IP (cloud instance, VPN)
+- Run the connector on a non-AWS IP (Hetzner, OVH, Equinix Metal, residential VPN)
 - Or point `futures_url` at the Binance futures testnet for smoke-testing:
   ```toml
   [websocket]
