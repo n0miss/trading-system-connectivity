@@ -257,7 +257,7 @@ No floats — all prices and quantities are scaled `i64`. Divide by `10^scale` f
 ## Testing
 
 ```bash
-# 855 unit tests
+# 854 unit tests
 cargo test --workspace --lib --bins
 
 # Ensure examples compile
@@ -283,7 +283,7 @@ Production runs on a single AWS EC2 node (`ap-northeast-1`) under **k3s** (light
 Images are built by GitHub Actions on a free GitHub-hosted `ubuntu-24.04-arm` runner (4 vCPU, 16 GB RAM) and pushed to ECR. Merging to `main` triggers an automatic deploy via SSH to the EC2 node.
 
 See `deploy/` for:
-- `Dockerfile.runtime-connector`, `Dockerfile.runtime-aeron-driver`, `Dockerfile.runtime-bridge` — lightweight runtime images (copy pre-built binary into debian:bookworm-slim)
+- `Dockerfile.runtime-connector`, `Dockerfile.runtime-aeron-driver`, `Dockerfile.runtime-bridge` — lightweight runtime images (copy pre-built binary into ubuntu:24.04; requires glibc 2.38+ and libbsd0)
 - `Dockerfile`, `Dockerfile.aeron-driver`, `Dockerfile.clickhouse-bridge` — full build images (compile from source)
 - `k8s/` — K8s manifests (namespace, ClickHouse StatefulSet, connector Deployment, schema Job)
 - `scripts/aws-setup.sh` — creates ECR repos and GitHub OIDC IAM role
