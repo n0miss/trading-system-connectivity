@@ -20,13 +20,14 @@ Full specification: `SPEC.md` and the spec addendum embedded in the same file.
 Cargo.toml                  workspace root
 config/default.toml         runtime configuration (the single source of truth)
 SPEC.md                     product specification v0.1 + addendum v0.2
-deploy/                     Dockerfile, systemd units, AWS tuning notes, migration runbook
+deploy/                     Dockerfiles, k8s manifests, systemd units, AWS tuning notes, migration runbook
 docs/                       (empty — Notion is used for documentation)
 
 bin/
   connector/                main binary — the market-data connector
   aeron-driver/             standalone Aeron C media driver process
   aeron-observer/           latency validation tool (subscribe + decode + report)
+  clickhouse-bridge/        subscribes to all Aeron shards and inserts into ClickHouse
   shadow-compare/           active/shadow generation comparison tool
 
 crates/
@@ -64,7 +65,7 @@ cargo run -p aeron-observer -- --stream 1 --interval 5 # terminal 3 — latency 
 
 `cargo test --workspace` also compiles examples; those are always valid. If they fail, it is a bug.
 
-Rust toolchain: **stable** (see `rust-toolchain.toml`).
+Rust toolchain: **1.96.0** (pinned in `rust-toolchain.toml` and CI — do not change without updating both).
 
 ---
 
@@ -189,7 +190,9 @@ Binance `E` field (event_time_ms) is **milliseconds** — multiply by `1_000_000
 - Active/passive redundancy: `BookChecksum` published by passive instances to status stream
 - Replay crate: raw WS / normalised / Aeron Archive replay with timing modes
 - Order gateway: CLOID generator, order state machine, journal (Phase 1.5 — not yet wired to live trading)
-- Deploy: Dockerfile, systemd template (`connector@.service`), AWS tuning script, migration runbook
+- Deploy: k3s on AWS EC2 (`ap-northeast-1`), three containers (aeron-driver, connector, clickhouse-bridge) sharing Aeron IPC via `emptyDir(medium=Memory)`
+- CI/CD: GitHub Actions — `ci.yml` runs fmt/clippy/test on GitHub-hosted runner; `deploy.yml` builds ARM64 binaries and Docker images on self-hosted runner and pushes to ECR, then deploys to k3s
+- Dockerfile, systemd template (`connector@.service`), AWS tuning script, migration runbook
 
 ### Not yet done / stubs
 - `AccountUpdate` / `OrderUpdate` payloads: message types allocated, bodies empty
@@ -291,7 +294,7 @@ The ignored integration test `integration_agg_trade_and_mark_price_received` in 
 | EC2 node | i-024bc8ad47ce7fabf — `tokyo-1` |
 | Public IP | 35.77.39.5 |
 | Internal DNS | ip-172-31-22-180.ap-northeast-1.compute.internal |
-| Key pair | `~/Documents/Documents - MacBook Air de Simon/tokyo-1-secrets.pem` |
+| Key pair | `~/.ssh/tokyo-1.pem` |
 
 ---
 
