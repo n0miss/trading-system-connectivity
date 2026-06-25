@@ -141,3 +141,22 @@ spec:
           volumeMounts:
             - name: aeron-shm
               mountPath: /dev/shm
+
+---
+# NodePort service — exposes connector Prometheus metrics externally.
+# Access: http://35.77.39.5:30091/metrics
+# Security group rule for port 30091 must be open on the EC2 instance.
+apiVersion: v1
+kind: Service
+metadata:
+  name: connector-metrics
+  namespace: trading
+spec:
+  type: NodePort
+  selector:
+    app: connector
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      nodePort: 30091

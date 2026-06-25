@@ -8,18 +8,33 @@ Currently supported venues: **Binance Spot** and **Binance USD-M Futures**.
 
 ## latency
 
-To follow: latency metric on aws close to Binance (same availability zone)
-From reception to publication latency (exchange event timestamp → observer receipt) measured on macOS macbook air m2 over a live Binance Futures feed:
+Live Prometheus metrics: **http://35.77.39.5:30091/metrics**
 
-| Percentile |       Latency |
-| ---------: | ------------: |
-|        p50 | **0.0047 ms** |
-|        p90 | **0.0166 ms** |
-|        p95 | **0.0233 ms** |
-|        p99 | **0.0462 ms** |
-|      p99.9 |  **0.241 ms** |
+**Wire latency** (Binance exchange event timestamp → local socket receive) measured on the production deployment — AWS EC2 `ap-northeast-1` (Tokyo), over a live Binance USD-M Futures feed, sample count 1,469,257:
 
-Latency segments: `wire` (exchange→socket) · `encode` (parse+normalise) · `ipc` (Aeron shared memory) · `e2e` (exchange→observer).
+| Percentile | Latency |
+| ---------: | ------: |
+|        p50 | **1.748 ms** |
+|        p90 | **2.359 ms** |
+|        p95 | **2.435 ms** |
+|        p99 | **2.496 ms** |
+|      p99.9 | **45.249 ms** |
+
+The p50–p99 band is tight at ~1.7–2.5 ms, dominated by Binance's 1 ms event-timestamp quantization (the `E` field is millisecond-resolution) plus ~0.7 ms true network transit from EC2 Tokyo to Binance. The p99.9 spike reflects OS/container scheduling jitter on a burstable `t4g.small` instance; a dedicated bare-metal server in the same data centre (Equinix TY3) would bring this below 5 ms.
+
+**Processing latency** (local socket receive → Aeron offer), same deployment, sample count 10,043,996:
+
+| Percentile | Latency |
+| ---------: | ------: |
+|        p50 | **4.8 µs** |
+|        p90 | **14.6 µs** |
+|        p95 | **23.4 µs** |
+|        p99 | **55 µs** |
+|      p99.9 | **218 µs** |
+
+This covers the full hot path per message: JSON parsing · field normalisation (string prices → scaled `i64`) · order-book delta apply and BBO validation · binary encoding into the 56-byte wire header · Aeron IPC offer. The ~5 µs median is negligible relative to wire latency, confirming the bottleneck is the network, not the processing pipeline.
+
+Latency segments: `wire` (exchange→socket) · `encode` (parse+normalise+validate+publish) · `e2e` (exchange→Aeron offer = wire + encode).
 
 ---
 
