@@ -15,7 +15,7 @@ total_logical_shards = 16
 
 [symbols]
 # Empty = auto-discover from exchange info at startup.
-universe = []
+universe = ["BTCUSDT", "ETHUSDT", "XRPUSDT"]
 
 [aeron]
 # Linux production: /dev/shm/aeron  (tmpfs, lowest latency)
